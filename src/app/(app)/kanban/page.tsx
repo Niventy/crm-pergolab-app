@@ -31,7 +31,7 @@ export default async function KanbanPage({
     db.select().from(stagesTable).orderBy(asc(stagesTable.position)),
     db.query.leads.findMany({
       with: { responsable: true, modifiePar: true },
-      orderBy: (l, { asc }) => [asc(l.createdAt)],
+      orderBy: (l, { desc }) => [desc(l.createdAt)],
     }),
   ]);
 

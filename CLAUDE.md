@@ -62,6 +62,9 @@ CYCLE 2 — Devis & closing :
 
 Kanban + Liste ont un sélecteur « Prospection | Devis | Pose & technique » (toggle)
 qui filtre les colonnes / lignes selon le cycle de l'étape.
+Mode FOCUS (Kanban) : sélecteur 🎯 à droite (`FocusSelect`) → on choisit une étape,
+le board n'affiche plus que ses cartes en grille pleine largeur (pour traiter un
+gros volume d'une zone, ex. « À traiter » / « Rappeler »). « Vue normale » pour sortir.
 Changer de CYCLE (le drag ne marche qu'au sein du cycle affiché) :
 - Kanban : glisser une carte sur l'ONGLET d'un cycle → la place dans la 1ère étape de
   ce cycle (onglets = zones droppables `cycle-<n>`, la vue suit la carte).
@@ -111,9 +114,12 @@ Statut « gagnée » COLLANT : une fiche signée reste gagnee à travers tout le
 (la dérivation statut traite cycle===3 comme gagnee ; perdue uniquement via KO).
 Marge = montant - montant_achat.
 
-notes
+notes  (= fil de CONVERSATION d'équipe sur la fiche, avec @mentions)
   id (uuid, PK), lead_id (FK -> leads), user_id (FK -> profiles),
-  contenu (text), created_at (timestamptz)
+  contenu (text), mentions (uuid[] : profils @mentionnés), created_at (timestamptz)
+  → composant leads/[id]/conversation.tsx : autocomplétion @ (1er mot du nom),
+    mise en évidence des mentions, action serveur addMessage(leadId, contenu, mentions[]).
+    Notifications des mentionnés = à venir (email Gmail quand configuré).
 
 echanges  (= journal d'activité, alimenté par les PILULES d'actions rapides de la fiche)
   id (uuid, PK), lead_id (FK -> leads), user_id (FK -> profiles),
@@ -172,21 +178,22 @@ La fiche ÉVOLUE selon le cycle de l'étape (`lead.stage.cycle`) :
 - Protégé par `Authorization: Bearer <SECRET>` lu depuis `INBOUND_WEBHOOK_SECRET`.
 - Valide le secret, normalise les champs (dont métier), insère dans « À traiter ».
 
-## Envoi d'emails via Gmail (Google Workspace) — niveau 1 : manuel depuis la fiche
+## Envoi d'emails via Gmail (OAuth) — niveau 1 : manuel depuis la fiche
 - Bloc « Envoyer un email » dans la carte Activité de la fiche : modèles (Relance /
   Envoi de devis / Prise de contact) avec le prénom, destinataire pré-rempli.
-- Action serveur `sendLeadEmail()` (leads/[id]/email-actions.ts) : envoie AU NOM de
-  l'ADV connecté via l'API Gmail (compte de service + délégation à l'échelle du
-  domaine, impersonation `subject = email de l'ADV`). Le mail apparaît dans ses
-  « Envoyés » et les réponses se threadent dans Gmail. Journalise un `echange` type=email.
-- Lib `google-auth-library` (JWT) → access token → POST gmail.googleapis.com send.
-- Variables d'env : `GOOGLE_CLIENT_EMAIL` + `GOOGLE_PRIVATE_KEY` (compte de service).
-  Si absentes, le bloc affiche « à configurer ». L'ADV doit se connecter au CRM avec
-  son adresse @pergolab.fr (= expéditeur, doit être un compte du Workspace).
-- Setup admin : projet Google Cloud + Gmail API + compte de service, puis Admin
-  Workspace > Sécurité > Délégation domaine : Client ID + scope gmail.send.
-- Évolutions : niveau 2 (relances auto via cron — Resend possible pour le masse),
-  niveau 3 (réception des réponses).
+- Action serveur `sendLeadEmail()` (leads/[id]/email-actions.ts) : `OAuth2Client`
+  (`google-auth-library`) avec refresh token → access token → POST gmail send.
+  From = `GOOGLE_SENDER` (compte d'envoi autorisé, ex. adv@pergolab.fr) ; Reply-To =
+  email de l'ADV connecté (réponses dans SA boîte). Journalise un `echange` type=email.
+  → NB : on a basculé du compte de service + délégation domaine vers OAuth car l'org
+    Google bloquait la création de clés de compte de service (iam.disableServiceAccountKeyCreation)
+    et l'admin n'avait pas les droits org.
+- Variables d'env : `GOOGLE_CLIENT_ID` + `GOOGLE_CLIENT_SECRET` + `GOOGLE_REFRESH_TOKEN`
+  + `GOOGLE_SENDER`. Absentes → bloc « à configurer ». Setup : écran de consentement
+  OAuth (Interne) + ID client OAuth (Web) + refresh token via OAuth Playground (compte
+  adv@). Droits « Propriétaire de projet » suffisent (pas besoin de droits org).
+- Évolutions : refresh token PAR ADV (envoi perso depuis chaque boîte), niveau 2
+  (relances auto via cron), niveau 3 (réception des réponses).
 
 ## Sécurité
 - Supabase Auth (email + mot de passe), 2FA TOTP activable.

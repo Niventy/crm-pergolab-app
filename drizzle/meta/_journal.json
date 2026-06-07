@@ -43,6 +43,13 @@
       "when": 1780765082737,
       "tag": "0005_young_red_ghost",
       "breakpoints": true
+    },
+    {
+      "idx": 6,
+      "version": "7",
+      "when": 1780836138544,
+      "tag": "0006_flat_colossus",
+      "breakpoints": true
     }
   ]
 }

@@ -8,9 +8,9 @@ import { Card, CardContent, CardHeader, CardTitle } from "@/components/ui/card";
 import { Separator } from "@/components/ui/separator";
 import { formatEuros, formatDate, initiales, tempsRelatif, humanise } from "@/lib/format";
 import { markGagnee, markPerdue, passerAuCycle } from "./actions";
-import { AddNoteForm } from "./add-note-form";
 import { ActivitePills } from "./activite-pills";
 import { EmailCompose } from "./email-compose";
+import { Conversation } from "./conversation";
 
 export const dynamic = "force-dynamic";
 
@@ -104,30 +104,36 @@ export default async function LeadPage({
 }) {
   const { id } = await params;
 
-  const lead = await db.query.leads.findFirst({
-    where: eq(leadsTable.id, id),
-    with: {
-      stage: true,
-      responsable: true,
-      modifiePar: true,
-      poseur: true,
-      notes: {
-        with: { auteur: true },
-        orderBy: (n, { desc }) => [desc(n.createdAt)],
+  const [lead, profiles] = await Promise.all([
+    db.query.leads.findFirst({
+      where: eq(leadsTable.id, id),
+      with: {
+        stage: true,
+        responsable: true,
+        modifiePar: true,
+        poseur: true,
+        notes: {
+          with: { auteur: true },
+          orderBy: (n, { desc }) => [desc(n.createdAt)],
+        },
+        echanges: {
+          with: { auteur: true },
+          orderBy: (e, { desc }) => [desc(e.date)],
+        },
       },
-      echanges: {
-        with: { auteur: true },
-        orderBy: (e, { desc }) => [desc(e.date)],
-      },
-    },
-  });
+    }),
+    db.query.profiles.findMany({ orderBy: (p, { asc }) => [asc(p.nom)] }),
+  ]);
 
   if (!lead) notFound();
 
   const cycle = lead.stage?.cycle ?? 1;
   const hasRelance = lead.relanceCount > 0 || !!lead.nextRelanceDate;
   const emailConfigured =
-    !!process.env.GOOGLE_CLIENT_EMAIL && !!process.env.GOOGLE_PRIVATE_KEY;
+    !!process.env.GOOGLE_CLIENT_ID &&
+    !!process.env.GOOGLE_CLIENT_SECRET &&
+    !!process.env.GOOGLE_REFRESH_TOKEN &&
+    !!process.env.GOOGLE_SENDER;
 
   return (
     <main className="mx-auto w-full max-w-4xl flex-1 space-y-4 px-6 py-6">
@@ -289,43 +295,15 @@ export default async function LeadPage({
         </CardContent>
       </Card>
 
-      {/* Notes — mis en avant */}
+      {/* Conversation d'équipe — mis en avant */}
       <Card className="border-l-4 border-l-brand">
         <CardHeader>
-          <CardTitle className="text-base font-semibold text-foreground">Notes</CardTitle>
+          <CardTitle className="text-base font-semibold text-foreground">
+            Conversation
+          </CardTitle>
         </CardHeader>
-        <CardContent className="space-y-4">
-          <AddNoteForm leadId={lead.id} />
-
-          {lead.notes.length > 0 ? (
-            <>
-              <Separator />
-              <ul className="space-y-3">
-                {lead.notes.map((note) => (
-                  <li key={note.id} className="flex gap-3">
-                    <span className="flex size-7 shrink-0 items-center justify-center rounded-full bg-muted text-xs font-medium">
-                      {initiales(note.auteur?.nom ?? note.auteur?.email ?? "?")}
-                    </span>
-                    <div className="space-y-0.5">
-                      <div className="text-xs text-muted-foreground">
-                        {note.auteur?.nom ?? note.auteur?.email ?? "Inconnu"} ·{" "}
-                        {new Date(note.createdAt).toLocaleString("fr-FR", {
-                          dateStyle: "short",
-                          timeStyle: "short",
-                          timeZone: "Europe/Paris",
-                        })}
-                      </div>
-                      <div className="whitespace-pre-wrap text-sm text-foreground">
-                        {note.contenu}
-                      </div>
-                    </div>
-                  </li>
-                ))}
-              </ul>
-            </>
-          ) : (
-            <p className="text-sm text-muted-foreground">Aucune note pour l&apos;instant.</p>
-          )}
+        <CardContent>
+          <Conversation leadId={lead.id} profiles={profiles} messages={lead.notes} />
         </CardContent>
       </Card>
 

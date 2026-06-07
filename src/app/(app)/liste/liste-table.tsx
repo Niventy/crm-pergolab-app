@@ -2,10 +2,10 @@
 
 import { useState, useTransition } from "react";
 import { useRouter } from "next/navigation";
-import { Trash2 } from "lucide-react";
+import { Trash2, CheckSquare } from "lucide-react";
 import { toast } from "sonner";
 import { cn } from "@/lib/utils";
-import { deleteLead } from "./actions";
+import { deleteLead, deleteLeads } from "./actions";
 import {
   formatEuros,
   formatHorodatage,
@@ -60,7 +60,6 @@ const COLS = [
   "RDV",
   "Relances",
   "Reçu",
-  "",
 ];
 
 const FILTERS = [
@@ -85,7 +84,9 @@ export function ListeTable({
   const [resp, setResp] = useState("all");
   const [mois, setMois] = useState("all");
   const [dept, setDept] = useState("all");
-  const [, startDelete] = useTransition();
+  const [selectMode, setSelectMode] = useState(false);
+  const [selected, setSelected] = useState<Set<string>>(new Set());
+  const [pending, startDelete] = useTransition();
 
   function onDelete(e: React.MouseEvent, lead: Row) {
     e.stopPropagation();
@@ -95,6 +96,36 @@ export function ListeTable({
       try {
         await deleteLead(lead.id);
         toast.success("Lead supprimé");
+      } catch {
+        toast.error("Échec de la suppression");
+      }
+    });
+  }
+
+  function toggleSelect(id: string) {
+    setSelected((prev) => {
+      const next = new Set(prev);
+      if (next.has(id)) next.delete(id);
+      else next.add(id);
+      return next;
+    });
+  }
+
+  function exitSelect() {
+    setSelectMode(false);
+    setSelected(new Set());
+  }
+
+  function deleteSelection() {
+    const ids = [...selected];
+    if (ids.length === 0) return;
+    if (!confirm(`Supprimer définitivement ${ids.length} lead(s) ? Cette action est irréversible.`))
+      return;
+    startDelete(async () => {
+      try {
+        await deleteLeads(ids);
+        toast.success(`${ids.length} lead(s) supprimé(s)`);
+        exitSelect();
       } catch {
         toast.error("Échec de la suppression");
       }
@@ -181,6 +212,17 @@ export function ListeTable({
     setDept("all");
   }
 
+  const allFilteredSelected =
+    rows.length > 0 && rows.every((r) => selected.has(r.id));
+  function toggleSelectAll() {
+    setSelected((prev) => {
+      const next = new Set(prev);
+      if (rows.every((r) => next.has(r.id))) rows.forEach((r) => next.delete(r.id));
+      else rows.forEach((r) => next.add(r.id));
+      return next;
+    });
+  }
+
   return (
     <div className="flex min-h-0 flex-1 flex-col">
       <div className="space-y-2 px-6 pb-3">
@@ -256,9 +298,50 @@ export function ListeTable({
               Réinitialiser
             </button>
           ) : null}
-          <span className="ml-auto text-xs text-muted-foreground">
-            {rows.length} résultat{rows.length > 1 ? "s" : ""}
-          </span>
+          {selectMode ? (
+            <div className="ml-auto flex items-center gap-2">
+              <span className="text-xs font-medium text-foreground">
+                {selected.size} sélectionné{selected.size > 1 ? "s" : ""}
+              </span>
+              <button
+                type="button"
+                onClick={toggleSelectAll}
+                className="text-xs font-medium text-primary hover:underline"
+              >
+                {allFilteredSelected ? "Tout décocher" : "Tout cocher"}
+              </button>
+              <button
+                type="button"
+                onClick={deleteSelection}
+                disabled={selected.size === 0 || pending}
+                className="inline-flex items-center gap-1 rounded-md bg-red-600 px-2.5 py-1 text-xs font-semibold text-white hover:bg-red-700 disabled:opacity-50"
+              >
+                <Trash2 className="size-3.5" />
+                Supprimer
+              </button>
+              <button
+                type="button"
+                onClick={exitSelect}
+                className="text-xs font-medium text-muted-foreground hover:text-foreground"
+              >
+                Annuler
+              </button>
+            </div>
+          ) : (
+            <div className="ml-auto flex items-center gap-3">
+              <span className="text-xs text-muted-foreground">
+                {rows.length} résultat{rows.length > 1 ? "s" : ""}
+              </span>
+              <button
+                type="button"
+                onClick={() => setSelectMode(true)}
+                className="inline-flex items-center gap-1.5 rounded-md border border-border px-2.5 py-1 text-xs font-medium text-foreground hover:bg-muted"
+              >
+                <CheckSquare className="size-3.5" />
+                Sélectionner
+              </button>
+            </div>
+          )}
         </div>
       </div>
 
@@ -272,14 +355,28 @@ export function ListeTable({
             <table className="w-full border-collapse text-sm">
           <thead className="sticky top-0 z-10">
             <tr className="bg-muted">
+              {selectMode ? (
+                <th className="w-10 border-b border-r border-border px-3 py-2 text-center">
+                  <input
+                    type="checkbox"
+                    checked={allFilteredSelected}
+                    onChange={toggleSelectAll}
+                    className="size-4 accent-green-700"
+                    aria-label="Tout sélectionner"
+                  />
+                </th>
+              ) : null}
               {COLS.map((c) => (
                 <th
                   key={c}
-                  className="border-b border-r border-border px-3 py-2 text-left text-[0.7rem] font-semibold uppercase tracking-wide text-muted-foreground last:border-r-0 whitespace-nowrap"
+                  className="border-b border-r border-border px-3 py-2 text-left text-[0.7rem] font-semibold uppercase tracking-wide text-muted-foreground whitespace-nowrap"
                 >
                   {c}
                 </th>
               ))}
+              {!selectMode ? (
+                <th className="w-10 border-b border-border px-3 py-2" />
+              ) : null}
             </tr>
           </thead>
           <tbody>
@@ -289,9 +386,29 @@ export function ListeTable({
               return (
                 <tr
                   key={lead.id}
-                  onClick={() => router.push(`/leads/${lead.id}`)}
-                  className="cursor-pointer bg-white transition-colors hover:bg-primary/[0.06]"
+                  onClick={() =>
+                    selectMode
+                      ? toggleSelect(lead.id)
+                      : router.push(`/leads/${lead.id}`)
+                  }
+                  className={cn(
+                    "cursor-pointer bg-white transition-colors",
+                    selected.has(lead.id)
+                      ? "bg-primary/10 hover:bg-primary/15"
+                      : "hover:bg-primary/[0.06]",
+                  )}
                 >
+                  {selectMode ? (
+                    <Td className="w-10 text-center">
+                      <input
+                        type="checkbox"
+                        checked={selected.has(lead.id)}
+                        readOnly
+                        tabIndex={-1}
+                        className="pointer-events-none size-4 accent-green-700"
+                      />
+                    </Td>
+                  ) : null}
                   <Td className="font-medium text-foreground">{lead.nom}</Td>
                   <Td>
                     {lead.responsable?.nom ??
@@ -358,17 +475,19 @@ export function ListeTable({
                   >
                     {tempsRelatif(lead.createdAt)}
                   </Td>
-                  <Td className="w-10 text-center">
-                    <button
-                      type="button"
-                      onClick={(e) => onDelete(e, lead)}
-                      title="Supprimer"
-                      aria-label="Supprimer"
-                      className="inline-flex size-7 items-center justify-center rounded-md text-muted-foreground transition-colors hover:bg-red-50 hover:text-red-600"
-                    >
-                      <Trash2 className="size-4" />
-                    </button>
-                  </Td>
+                  {!selectMode ? (
+                    <Td className="w-10 text-center">
+                      <button
+                        type="button"
+                        onClick={(e) => onDelete(e, lead)}
+                        title="Supprimer"
+                        aria-label="Supprimer"
+                        className="inline-flex size-7 items-center justify-center rounded-md text-muted-foreground transition-colors hover:bg-red-50 hover:text-red-600"
+                      >
+                        <Trash2 className="size-4" />
+                      </button>
+                    </Td>
+                  ) : null}
                 </tr>
               );
             })}

@@ -126,6 +126,24 @@ export async function passerAuCycle(leadId: string, cycle: number) {
   revalidatePath("/kanban");
 }
 
+// Poste un message dans la conversation, avec les profils @mentionnés.
+export async function addMessage(
+  leadId: string,
+  contenu: string,
+  mentions: string[],
+) {
+  const c = contenu.trim();
+  if (!c) return { ok: false, error: "Message vide." };
+  await db.insert(notes).values({
+    leadId,
+    userId: await currentUserId(),
+    contenu: c,
+    mentions: mentions.length ? mentions : null,
+  });
+  revalidatePath(`/leads/${leadId}`);
+  return { ok: true, error: null };
+}
+
 export type NoteState = { error: string | null };
 
 export async function addNote(

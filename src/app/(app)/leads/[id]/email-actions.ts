@@ -1,6 +1,6 @@
 "use server";
 
-import { JWT } from "google-auth-library";
+import { OAuth2Client } from "google-auth-library";
 import { revalidatePath } from "next/cache";
 import { db } from "@/db";
 import { echanges } from "@/db/schema";
@@ -9,22 +9,27 @@ import { currentUserId } from "@/lib/current-user";
 
 export type EmailState = { ok: boolean; error: string | null };
 
-const GMAIL_SCOPE = "https://www.googleapis.com/auth/gmail.send";
-
 function escapeHtml(s: string): string {
   return s.replace(/&/g, "&amp;").replace(/</g, "&lt;").replace(/>/g, "&gt;");
 }
 
-// Encodage MIME « encoded-word » pour un en-tête (objet) contenant des accents.
+// Encodage MIME « encoded-word » pour un en-tête (objet) avec accents.
 function encodeHeader(s: string): string {
   return `=?UTF-8?B?${Buffer.from(s, "utf-8").toString("base64")}?=`;
 }
 
-// Construit un message RFC 5322 encodé en base64url pour l'API Gmail.
-function buildRawMessage(from: string, to: string, subject: string, html: string) {
+// Message RFC 5322 encodé en base64url pour l'API Gmail.
+function buildRawMessage(
+  from: string,
+  to: string,
+  subject: string,
+  html: string,
+  replyTo?: string,
+) {
   const lines = [
     `From: ${from}`,
     `To: ${to}`,
+    ...(replyTo ? [`Reply-To: ${replyTo}`] : []),
     `Subject: ${encodeHeader(subject)}`,
     "MIME-Version: 1.0",
     'Content-Type: text/html; charset="UTF-8"',
@@ -35,9 +40,9 @@ function buildRawMessage(from: string, to: string, subject: string, html: string
   return Buffer.from(lines.join("\r\n"), "utf-8").toString("base64url");
 }
 
-// Envoie un email AU NOM de l'ADV connecté via l'API Gmail (délégation à
-// l'échelle du domaine Google Workspace). Le mail apparaît dans ses « Envoyés »
-// et les réponses se threadent dans Gmail. L'envoi est journalisé (type "email").
+// Envoie un email via l'API Gmail en OAuth (compte d'envoi autorisé via refresh
+// token). From = compte d'envoi (GOOGLE_SENDER) ; Reply-To = l'ADV connecté
+// (les réponses arrivent dans SA boîte). Journalise un `echange` type=email.
 export async function sendLeadEmail(
   leadId: string,
   data: { to: string; subject: string; body: string },
@@ -48,57 +53,47 @@ export async function sendLeadEmail(
   if (!to || !subject || !body)
     return { ok: false, error: "Destinataire, objet et message sont requis." };
 
-  const clientEmail = process.env.GOOGLE_CLIENT_EMAIL;
-  const privateKey = process.env.GOOGLE_PRIVATE_KEY?.replace(/\\n/g, "\n");
-  if (!clientEmail || !privateKey)
-    return { ok: false, error: "Envoi Gmail non configuré (compte de service manquant)." };
+  const clientId = process.env.GOOGLE_CLIENT_ID;
+  const clientSecret = process.env.GOOGLE_CLIENT_SECRET;
+  const refreshToken = process.env.GOOGLE_REFRESH_TOKEN;
+  const sender = process.env.GOOGLE_SENDER; // ex. "Pergolab <adv@pergolab.fr>"
+  if (!clientId || !clientSecret || !refreshToken || !sender)
+    return { ok: false, error: "Envoi Gmail non configuré (OAuth manquant)." };
 
-  // L'ADV connecté = expéditeur impersonifié. Doit être un compte du domaine Workspace.
+  // Reply-to = adresse de l'ADV connecté.
   const supabase = await createClient();
   const {
     data: { user },
   } = await supabase.auth.getUser();
-  const from = user?.email;
-  if (!from)
-    return { ok: false, error: "Impossible de déterminer votre adresse d'envoi." };
+  const replyTo = user?.email ?? undefined;
 
   const html = body
     .split("\n")
     .map((l) => (l.trim() ? `<p>${escapeHtml(l)}</p>` : "<br/>"))
     .join("");
-  const raw = buildRawMessage(from, to, subject, html);
+  const raw = buildRawMessage(sender, to, subject, html, replyTo);
 
   try {
-    const auth = new JWT({
-      email: clientEmail,
-      key: privateKey,
-      scopes: [GMAIL_SCOPE],
-      subject: from, // impersonation de l'ADV
-    });
-    const { access_token } = await auth.authorize();
-    if (!access_token) return { ok: false, error: "Authentification Gmail échouée." };
+    const client = new OAuth2Client(clientId, clientSecret);
+    client.setCredentials({ refresh_token: refreshToken });
+    const at = await client.getAccessToken();
+    const token = typeof at === "string" ? at : at?.token;
+    if (!token) return { ok: false, error: "Authentification Gmail échouée." };
 
     const res = await fetch(
       "https://gmail.googleapis.com/gmail/v1/users/me/messages/send",
       {
         method: "POST",
         headers: {
-          Authorization: `Bearer ${access_token}`,
+          Authorization: `Bearer ${token}`,
           "Content-Type": "application/json",
         },
         body: JSON.stringify({ raw }),
       },
     );
     if (!res.ok) {
-      const detail = await res.text();
-      console.error("Gmail send error:", res.status, detail);
-      return {
-        ok: false,
-        error:
-          res.status === 403
-            ? "Accès refusé : vérifie la délégation du domaine et que ton compte est bien sur le Workspace."
-            : "Échec de l'envoi de l'email.",
-      };
+      console.error("Gmail send error:", res.status, await res.text());
+      return { ok: false, error: "Échec de l'envoi de l'email." };
     }
   } catch (e) {
     console.error("Gmail send exception:", e);

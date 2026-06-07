@@ -174,6 +174,8 @@ export const notes = pgTable("notes", {
     onDelete: "set null",
   }),
   contenu: text("contenu").notNull(),
+  // Profils @mentionnés dans le message (pour notifications futures).
+  mentions: uuid("mentions").array(),
   createdAt: timestamp("created_at", { withTimezone: true })
     .notNull()
     .defaultNow(),

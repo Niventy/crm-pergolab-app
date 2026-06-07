@@ -15,8 +15,14 @@ import {
 } from "@dnd-kit/core";
 import { CSS } from "@dnd-kit/utilities";
 import { toast } from "sonner";
-import { MapPin, Clock } from "lucide-react";
+import { MapPin, Clock, Crosshair, X } from "lucide-react";
 import { cn } from "@/lib/utils";
+import {
+  Select,
+  SelectContent,
+  SelectItem,
+  SelectTrigger,
+} from "@/components/ui/select";
 import {
   formatEuros,
   formatHorodatage,
@@ -240,6 +246,7 @@ export function KanbanBoard({
   const [leads, setLeads] = useState<LeadWithRel[]>(initialLeads);
   const [activeId, setActiveId] = useState<string | null>(null);
   const [cycle, setCycle] = useState<number>(1);
+  const [focusStageId, setFocusStageId] = useState<string | null>(null);
 
   const sensors = useSensors(
     useSensor(PointerSensor, { activationConstraint: { distance: 5 } }),
@@ -270,6 +277,12 @@ export function KanbanBoard({
   }, [stages, leads]);
 
   const activeLead = leads.find((l) => l.id === activeId) ?? null;
+
+  // Mode focus : on n'affiche qu'une seule étape, en grille pleine largeur.
+  const focusStage = focusStageId
+    ? (stages.find((s) => s.id === focusStageId) ?? null)
+    : null;
+  const focusLeads = focusStage ? (leadsByStage.get(focusStage.id) ?? []) : [];
 
   function handleDragStart(event: DragStartEvent) {
     setActiveId(String(event.active.id));
@@ -325,23 +338,71 @@ export function KanbanBoard({
       onDragEnd={handleDragEnd}
     >
       <div className="flex min-h-0 flex-1 flex-col">
-        <div className="px-6 pt-2 pb-3">
-          <CycleTabs
-            cycle={cycle}
-            onChange={setCycle}
-            counts={{ 1: cycleCount(1), 2: cycleCount(2), 3: cycleCount(3) }}
+        <div className="flex flex-wrap items-center justify-between gap-2 px-6 pt-2 pb-3">
+          {focusStage ? (
+            <div className="flex items-center gap-2">
+              <span className="text-eyebrow text-muted-foreground">Focus</span>
+              <span className="inline-flex items-center gap-1.5 rounded-full bg-primary/10 px-2.5 py-1 text-xs font-semibold text-primary">
+                <span
+                  className="size-2 rounded-full"
+                  style={{ backgroundColor: focusStage.couleur }}
+                />
+                {focusStage.nom} · {focusLeads.length}
+              </span>
+              <button
+                type="button"
+                onClick={() => setFocusStageId(null)}
+                className="inline-flex items-center gap-1 text-xs font-medium text-muted-foreground hover:text-foreground"
+              >
+                <X className="size-3.5" /> Quitter
+              </button>
+            </div>
+          ) : (
+            <CycleTabs
+              cycle={cycle}
+              onChange={setCycle}
+              counts={{ 1: cycleCount(1), 2: cycleCount(2), 3: cycleCount(3) }}
+            />
+          )}
+
+          <FocusSelect
+            stages={stages}
+            value={focusStageId}
+            onChange={setFocusStageId}
           />
         </div>
 
-        <div className="flex flex-1 gap-4 overflow-x-auto px-6 pb-6">
-          {visibleStages.map((stage) => (
-            <Column
-              key={stage.id}
-              stage={stage}
-              leads={leadsByStage.get(stage.id) ?? []}
-            />
-          ))}
-        </div>
+        {focusStage ? (
+          <div className="flex-1 overflow-y-auto px-6 pb-6">
+            {focusLeads.length === 0 ? (
+              <p className="py-16 text-center text-sm text-muted-foreground">
+                Aucune carte dans « {focusStage.nom} ».
+              </p>
+            ) : (
+              <div className="grid grid-cols-1 gap-3 sm:grid-cols-2 lg:grid-cols-3 xl:grid-cols-4">
+                {focusLeads.map((lead) => (
+                  <Link
+                    key={lead.id}
+                    href={`/leads/${lead.id}`}
+                    className="block rounded-xl outline-none focus-visible:ring-2 focus-visible:ring-primary/50"
+                  >
+                    <LeadCard lead={lead} />
+                  </Link>
+                ))}
+              </div>
+            )}
+          </div>
+        ) : (
+          <div className="flex flex-1 gap-4 overflow-x-auto px-6 pb-6">
+            {visibleStages.map((stage) => (
+              <Column
+                key={stage.id}
+                stage={stage}
+                leads={leadsByStage.get(stage.id) ?? []}
+              />
+            ))}
+          </div>
+        )}
       </div>
 
       <DragOverlay>
@@ -352,6 +413,45 @@ export function KanbanBoard({
         ) : null}
       </DragOverlay>
     </DndContext>
+  );
+}
+
+// --- Sélecteur de focus (afficher une seule étape) -------------------------
+function FocusSelect({
+  stages,
+  value,
+  onChange,
+}: {
+  stages: Stage[];
+  value: string | null;
+  onChange: (id: string | null) => void;
+}) {
+  const current = value ? stages.find((s) => s.id === value) : null;
+  return (
+    <Select
+      value={value ?? "none"}
+      onValueChange={(v) => onChange(!v || v === "none" ? null : v)}
+    >
+      <SelectTrigger
+        className={cn(
+          "h-8 w-52",
+          value && "border-primary/40 bg-primary/5 text-primary",
+        )}
+      >
+        <span className="flex items-center gap-1.5 truncate">
+          <Crosshair className="size-3.5 shrink-0" />
+          <span className="truncate">{current ? current.nom : "Focus une étape"}</span>
+        </span>
+      </SelectTrigger>
+      <SelectContent>
+        <SelectItem value="none">Vue normale</SelectItem>
+        {stages.map((s) => (
+          <SelectItem key={s.id} value={s.id}>
+            {s.nom}
+          </SelectItem>
+        ))}
+      </SelectContent>
+    </Select>
   );
 }
 
