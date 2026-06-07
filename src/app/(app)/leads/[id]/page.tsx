@@ -12,6 +12,7 @@ import { formatEuros, formatDate, initiales, tempsRelatif, humanise } from "@/li
 import { markGagnee, markPerdue, passerAuCycle } from "./actions";
 import { ActivitePills } from "./activite-pills";
 import { EmailCompose } from "./email-compose";
+import { EmailThread } from "./email-thread";
 import { Conversation } from "./conversation";
 
 export const dynamic = "force-dynamic";
@@ -303,6 +304,18 @@ export default async function LeadPage({
           />
         </CardContent>
       </Card>
+
+      {/* Emails (Gmail) — fil envois + réponses */}
+      {emailConfigured && lead.email ? (
+        <Card>
+          <CardHeader>
+            <CardTitle className="text-eyebrow text-muted-foreground">Emails</CardTitle>
+          </CardHeader>
+          <CardContent>
+            <EmailThread leadEmail={lead.email} />
+          </CardContent>
+        </Card>
+      ) : null}
 
       {/* Conversation d'équipe — mis en avant */}
       <Card className="border-l-4 border-l-brand">

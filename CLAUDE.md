@@ -188,10 +188,16 @@ La fiche ÉVOLUE selon le cycle de l'étape (`lead.stage.cycle`) :
   → NB : on a basculé du compte de service + délégation domaine vers OAuth car l'org
     Google bloquait la création de clés de compte de service (iam.disableServiceAccountKeyCreation)
     et l'admin n'avait pas les droits org.
-- Variables d'env : `GOOGLE_CLIENT_ID` + `GOOGLE_CLIENT_SECRET` + `GOOGLE_REFRESH_TOKEN`
-  + `GOOGLE_SENDER`. Absentes → bloc « à configurer ». Setup : écran de consentement
-  OAuth (Interne) + ID client OAuth (Web) + refresh token via OAuth Playground (compte
-  adv@). Droits « Propriétaire de projet » suffisent (pas besoin de droits org).
+- Variables d'env : `GOOGLE_CLIENT_ID` + `GOOGLE_CLIENT_SECRET` + soit `GOOGLE_REFRESH_TOKEN`
+  + `GOOGLE_SENDER` (expéditeur unique), soit `GOOGLE_SENDERS` (JSON multi-expéditeurs :
+  `[{login,from,refreshToken}]`, routage selon l'email de connexion ; `resolveSender`
+  dans `lib/email-sender.ts`). Absentes → bloc « à configurer ». Setup : écran de
+  consentement OAuth (Interne) + ID client OAuth (Web) + refresh token via OAuth
+  Playground. Droits « Propriétaire de projet » suffisent (pas besoin de droits org).
+- LECTURE du fil Gmail : `fetchLeadEmails(leadEmail)` (scope `gmail.readonly`) cherche
+  `from:/to:` le lead dans la boîte de l'ADV connecté → section « Emails » sur la fiche
+  (`email-thread.tsx`) qui affiche envois + réponses (objet, date, corps, Reçu/Envoyé).
+  La fiche affiche aussi « Connecté : X → envoi depuis Y » (diagnostic expéditeur).
 - Évolutions : refresh token PAR ADV (envoi perso depuis chaque boîte), niveau 2
   (relances auto via cron), niveau 3 (réception des réponses).
 
