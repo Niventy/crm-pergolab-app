@@ -255,6 +255,7 @@ export default async function LeadPage({
               value={new Date(lead.createdAt).toLocaleString("fr-FR", {
                 dateStyle: "short",
                 timeStyle: "short",
+                timeZone: "Europe/Paris",
               })}
             />
             <Field
@@ -311,6 +312,7 @@ export default async function LeadPage({
                         {new Date(note.createdAt).toLocaleString("fr-FR", {
                           dateStyle: "short",
                           timeStyle: "short",
+                          timeZone: "Europe/Paris",
                         })}
                       </div>
                       <div className="whitespace-pre-wrap text-sm text-foreground">
@@ -386,6 +388,7 @@ export default async function LeadPage({
                 ? new Date(lead.datePremierContact).toLocaleString("fr-FR", {
                     dateStyle: "short",
                     timeStyle: "short",
+                    timeZone: "Europe/Paris",
                   })
                 : "—"
             }
