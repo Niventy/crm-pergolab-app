@@ -57,6 +57,30 @@ function Field({
   );
 }
 
+function AssignationBadge({
+  profil,
+}: {
+  profil: { nom: string | null; email: string } | null;
+}) {
+  const nom = profil?.nom ?? profil?.email ?? null;
+  if (nom) {
+    return (
+      <span className="inline-flex items-center gap-1.5 rounded-full bg-primary/10 py-0.5 pr-2.5 pl-0.5 text-xs font-semibold text-primary">
+        <span className="flex size-5 items-center justify-center rounded-full bg-primary text-[10px] font-bold text-primary-foreground">
+          {initiales(nom)}
+        </span>
+        {nom}
+      </span>
+    );
+  }
+  return (
+    <span className="inline-flex items-center gap-1.5 rounded-full bg-amber-100 px-2.5 py-1 text-xs font-semibold text-amber-700">
+      <span className="size-1.5 rounded-full bg-amber-500" />
+      Non assigné
+    </span>
+  );
+}
+
 function StatutBadge({ statut }: { statut: string }) {
   const map: Record<string, { label: string; cls: string }> = {
     en_cours: { label: "En cours", cls: "bg-slate-200 text-slate-700" },
@@ -127,9 +151,10 @@ export default async function LeadPage({
         <CardHeader>
           <div className="flex flex-wrap items-start justify-between gap-3">
             <div className="space-y-1">
-              <div className="flex items-center gap-2">
+              <div className="flex flex-wrap items-center gap-2">
                 <CardTitle className="text-display text-2xl">{lead.nom}</CardTitle>
                 <StatutBadge statut={lead.statut} />
+                <AssignationBadge profil={lead.responsable} />
               </div>
               {lead.entreprise ? (
                 <div className="text-sm text-muted-foreground">
@@ -231,10 +256,6 @@ export default async function LeadPage({
                 dateStyle: "short",
                 timeStyle: "short",
               })}
-            />
-            <Field
-              label="Responsable"
-              value={lead.responsable?.nom ?? lead.responsable?.email ?? "Non assigné"}
             />
             <Field
               label="Dernière modification"
