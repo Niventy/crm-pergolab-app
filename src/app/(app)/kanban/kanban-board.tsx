@@ -51,15 +51,29 @@ function Avatar({ profil }: { profil: Profile | null }) {
   const nom = nomProfil(profil);
   return (
     <span
-      className={cn(
-        "flex size-5 shrink-0 items-center justify-center rounded-full text-[10px] font-medium",
-        nom
-          ? "bg-blue-50 text-blue-700"
-          : "border border-dashed border-border text-muted-foreground",
-      )}
+      className="flex size-5 shrink-0 items-center justify-center rounded-full bg-primary text-[10px] font-bold text-primary-foreground"
       title={nom ?? "Non assigné"}
     >
-      {nom ? initiales(nom) : "·"}
+      {nom ? initiales(nom) : "?"}
+    </span>
+  );
+}
+
+// Bandeau d'assignation mis en avant : vert si assigné, ambre si à attribuer.
+function Assignation({ profil }: { profil: Profile | null }) {
+  const nom = nomProfil(profil);
+  if (nom) {
+    return (
+      <span className="inline-flex max-w-full items-center gap-1.5 rounded-full bg-primary/10 py-0.5 pr-2.5 pl-0.5 text-xs font-semibold text-primary">
+        <Avatar profil={profil} />
+        <span className="truncate">{nom}</span>
+      </span>
+    );
+  }
+  return (
+    <span className="inline-flex items-center gap-1.5 rounded-full bg-amber-100 px-2.5 py-1 text-xs font-semibold text-amber-700">
+      <span className="size-1.5 rounded-full bg-amber-500" />
+      Non assigné
     </span>
   );
 }
@@ -71,15 +85,14 @@ let lastDragEnd = 0;
 // --- Carte (présentation) --------------------------------------------------
 function LeadCard({ lead, dragging }: { lead: LeadWithRel; dragging?: boolean }) {
   const hasRelance = lead.relanceCount > 0 || !!lead.nextRelanceDate;
-  const responsable = nomProfil(lead.responsable);
 
   return (
     <div
       className={cn(
-        "rounded-xl border border-border bg-white p-3 text-left transition-shadow",
+        "rounded-xl border bg-white p-3 text-left transition-all",
         dragging
-          ? "shadow-lg ring-1 ring-blue-200"
-          : "shadow-none hover:border-blue-200 hover:shadow-sm",
+          ? "border-primary/40 shadow-xl ring-1 ring-primary/30"
+          : "border-border shadow-none hover:-translate-y-0.5 hover:border-primary/50 hover:shadow-md",
       )}
     >
       {/* Nom — mis en avant */}
@@ -88,16 +101,8 @@ function LeadCard({ lead, dragging }: { lead: LeadWithRel; dragging?: boolean })
       </div>
 
       {/* Assignation — mise en avant */}
-      <div className="mt-1.5 flex items-center gap-1.5">
-        <Avatar profil={lead.responsable} />
-        <span
-          className={cn(
-            "truncate text-xs",
-            responsable ? "font-medium text-foreground/80" : "text-muted-foreground",
-          )}
-        >
-          {responsable ?? "Non assigné"}
-        </span>
+      <div className="mt-1.5">
+        <Assignation profil={lead.responsable} />
       </div>
 
       {/* Projet (type ou dimensions) + créneaux souhaités */}
@@ -177,7 +182,7 @@ function DraggableCard({ lead }: { lead: LeadWithRel }) {
       {...listeners}
       {...attributes}
       className={cn(
-        "block cursor-grab touch-none rounded-lg outline-none focus-visible:ring-2 focus-visible:ring-blue-400",
+        "block cursor-grab touch-none rounded-xl outline-none focus-visible:ring-2 focus-visible:ring-primary/50",
         isDragging && "opacity-40",
       )}
     >

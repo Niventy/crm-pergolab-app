@@ -290,7 +290,7 @@ export function ListeTable({
                 <tr
                   key={lead.id}
                   onClick={() => router.push(`/leads/${lead.id}`)}
-                  className="cursor-pointer bg-white transition-colors hover:bg-accent"
+                  className="cursor-pointer bg-white transition-colors hover:bg-primary/[0.06]"
                 >
                   <Td className="font-medium text-foreground">{lead.nom}</Td>
                   <Td>
