@@ -94,7 +94,14 @@ export function EmailThread({ leadEmail }: { leadEmail: string }) {
                 </button>
                 {open ? (
                   <div className="border-t border-border bg-muted/20 px-3 py-2 text-sm">
-                    <div className="mb-1 text-xs text-muted-foreground">{m.from}</div>
+                    <div className="mb-1 text-xs text-muted-foreground">
+                      {m.from}
+                      {m.account ? (
+                        <span className="ml-2 rounded bg-muted px-1.5 py-0.5">
+                          boîte : {m.account}
+                        </span>
+                      ) : null}
+                    </div>
                     <div className="max-h-72 overflow-auto whitespace-pre-wrap text-foreground">
                       {m.body || "(vide)"}
                     </div>

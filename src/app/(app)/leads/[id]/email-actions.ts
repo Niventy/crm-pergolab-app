@@ -6,7 +6,7 @@ import { db } from "@/db";
 import { echanges } from "@/db/schema";
 import { createClient } from "@/lib/supabase/server";
 import { currentUserId } from "@/lib/current-user";
-import { resolveSender } from "@/lib/email-sender";
+import { resolveSender, allSenders } from "@/lib/email-sender";
 
 export type EmailState = { ok: boolean; error: string | null };
 
@@ -128,6 +128,7 @@ export type ThreadMessage = {
   subject: string;
   date: number; // internalDate (ms)
   body: string;
+  account: string; // boîte d'où vient le message
 };
 
 type GPart = { mimeType?: string; body?: { data?: string }; parts?: GPart[] };
@@ -181,62 +182,72 @@ export async function fetchLeadEmails(
   if (!clientId || !clientSecret)
     return { ok: false, error: "Email non configuré." };
 
-  const supabase = await createClient();
-  const {
-    data: { user },
-  } = await supabase.auth.getUser();
-  const account = resolveSender(user?.email);
-  if (!account) return { ok: false, error: "Aucun compte Gmail configuré." };
+  const accounts = allSenders();
+  if (accounts.length === 0)
+    return { ok: false, error: "Aucun compte Gmail configuré." };
 
-  try {
-    const client = new OAuth2Client(clientId, clientSecret);
-    client.setCredentials({ refresh_token: account.refreshToken });
-    const at = await client.getAccessToken();
-    const token = typeof at === "string" ? at : at?.token;
-    if (!token) return { ok: false, error: "Auth Gmail échouée." };
+  const q = encodeURIComponent(`from:${email} OR to:${email}`);
+  const out: ThreadMessage[] = [];
+  const seen = new Set<string>(); // dédoublonnage inter-boîtes (Message-ID)
+  let anyOk = false;
+  let scopeError = false;
 
-    const q = encodeURIComponent(`from:${email} OR to:${email}`);
-    const listRes = await fetch(
-      `https://gmail.googleapis.com/gmail/v1/users/me/messages?q=${q}&maxResults=10`,
-      { headers: { Authorization: `Bearer ${token}` } },
-    );
-    if (!listRes.ok) {
-      if (listRes.status === 403)
-        return {
-          ok: false,
-          error:
-            "Lecture Gmail non autorisée — régénère les tokens avec le scope gmail.readonly.",
-        };
-      return { ok: false, error: `Gmail ${listRes.status}` };
-    }
-    const list = (await listRes.json()) as { messages?: { id: string }[] };
-    const ids = (list.messages ?? []).map((m) => m.id);
+  // On interroge TOUTES les boîtes configurées (Sofiane, adv@, …).
+  for (const acc of accounts) {
+    try {
+      const client = new OAuth2Client(clientId, clientSecret);
+      client.setCredentials({ refresh_token: acc.refreshToken });
+      const at = await client.getAccessToken();
+      const token = typeof at === "string" ? at : at?.token;
+      if (!token) continue;
 
-    const out: ThreadMessage[] = [];
-    for (const id of ids) {
-      const mRes = await fetch(
-        `https://gmail.googleapis.com/gmail/v1/users/me/messages/${id}?format=full`,
+      const listRes = await fetch(
+        `https://gmail.googleapis.com/gmail/v1/users/me/messages?q=${q}&maxResults=10`,
         { headers: { Authorization: `Bearer ${token}` } },
       );
-      if (!mRes.ok) continue;
-      const msg = (await mRes.json()) as GMessage;
-      const headers = msg.payload?.headers ?? [];
-      const h = (n: string) =>
-        headers.find((x) => x.name.toLowerCase() === n.toLowerCase())?.value ?? "";
-      const from = h("From");
-      out.push({
-        id,
-        direction: from.toLowerCase().includes(email.toLowerCase()) ? "in" : "out",
-        from,
-        subject: h("Subject"),
-        date: Number(msg.internalDate ?? 0),
-        body: extractBody(msg.payload).slice(0, 4000),
-      });
+      if (!listRes.ok) {
+        if (listRes.status === 403) scopeError = true;
+        continue;
+      }
+      anyOk = true;
+      const list = (await listRes.json()) as { messages?: { id: string }[] };
+
+      for (const { id } of list.messages ?? []) {
+        const mRes = await fetch(
+          `https://gmail.googleapis.com/gmail/v1/users/me/messages/${id}?format=full`,
+          { headers: { Authorization: `Bearer ${token}` } },
+        );
+        if (!mRes.ok) continue;
+        const msg = (await mRes.json()) as GMessage;
+        const headers = msg.payload?.headers ?? [];
+        const h = (n: string) =>
+          headers.find((x) => x.name.toLowerCase() === n.toLowerCase())?.value ?? "";
+        const key = h("Message-ID") || id;
+        if (seen.has(key)) continue;
+        seen.add(key);
+        const from = h("From");
+        out.push({
+          id,
+          account: acc.label,
+          direction: from.toLowerCase().includes(email.toLowerCase()) ? "in" : "out",
+          from,
+          subject: h("Subject"),
+          date: Number(msg.internalDate ?? 0),
+          body: extractBody(msg.payload).slice(0, 4000),
+        });
+      }
+    } catch (e) {
+      console.error("Gmail read error:", acc.label, e);
     }
-    out.sort((a, b) => a.date - b.date);
-    return { ok: true, messages: out };
-  } catch (e) {
-    console.error("Gmail read error:", e);
-    return { ok: false, error: "Échec de la lecture Gmail." };
   }
+
+  if (!anyOk && scopeError)
+    return {
+      ok: false,
+      error:
+        "Lecture Gmail non autorisée — régénère les tokens avec le scope gmail.readonly.",
+    };
+
+  out.sort((a, b) => a.date - b.date);
+  return { ok: true, messages: out };
 }

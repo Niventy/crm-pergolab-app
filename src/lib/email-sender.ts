@@ -31,3 +31,28 @@ export function resolveSender(userEmail?: string | null): SenderAccount | null {
   if (from && refreshToken) return { from, refreshToken };
   return null;
 }
+
+export type SenderEntry = { label: string; from: string; refreshToken: string };
+
+// Tous les comptes d'envoi/lecture configurés (pour lire toutes les boîtes).
+export function allSenders(): SenderEntry[] {
+  const raw = process.env.GOOGLE_SENDERS;
+  if (raw) {
+    try {
+      const list = JSON.parse(raw) as {
+        login: string;
+        from: string;
+        refreshToken: string;
+      }[];
+      return list
+        .filter((s) => s.from && s.refreshToken)
+        .map((s) => ({ label: s.login ?? s.from, from: s.from, refreshToken: s.refreshToken }));
+    } catch {
+      // JSON invalide → repli ci-dessous.
+    }
+  }
+  const from = process.env.GOOGLE_SENDER;
+  const refreshToken = process.env.GOOGLE_REFRESH_TOKEN;
+  if (from && refreshToken) return [{ label: from, from, refreshToken }];
+  return [];
+}
