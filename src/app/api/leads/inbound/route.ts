@@ -28,6 +28,13 @@ function flattenFieldData(obj: Record<string, unknown>): Record<string, unknown>
   return flat;
 }
 
+// Parse une date de soumission (ISO Meta « 2026-06-07T10:15:22.000Z »).
+function parseDate(s: string | null): Date | null {
+  if (!s) return null;
+  const d = new Date(s);
+  return Number.isNaN(d.getTime()) ? null : d;
+}
+
 // Déduit la source lisible depuis la plateforme Meta.
 function sourceFromPlatform(p: string | null): string | null {
   if (!p) return null;
@@ -70,6 +77,11 @@ export async function POST(req: Request) {
     sourceFromPlatform(pick(data, ["platform", "plateforme"])) ??
     "Meta Lead Ads";
 
+  // Date de réception = date de soumission Meta si fournie, sinon « maintenant ».
+  const recuLe = parseDate(
+    pick(data, ["created_time", "created_at", "date_created", "sheet_date", "date_creation"]),
+  );
+
   // 4) Étape d'entrée : « À traiter » (sinon 1ère étape du cycle 1).
   const [parNom] = await db
     .select()
@@ -92,6 +104,7 @@ export async function POST(req: Request) {
     .values({
       stageId: stage?.id ?? null,
       statut: "en_cours",
+      ...(recuLe ? { createdAt: recuLe } : {}),
       nom,
       email: pick(data, ["email", "email_address", "mail"]),
       telephone: pick(data, ["telephone", "téléphone", "phone", "phone_number", "tel"]),

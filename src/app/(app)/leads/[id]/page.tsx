@@ -226,6 +226,13 @@ export default async function LeadPage({
             <Field label="Source" value={lead.source} />
             <Field label="Campagne" value={lead.campagne} />
             <Field
+              label="Reçu le"
+              value={new Date(lead.createdAt).toLocaleString("fr-FR", {
+                dateStyle: "short",
+                timeStyle: "short",
+              })}
+            />
+            <Field
               label="Responsable"
               value={lead.responsable?.nom ?? lead.responsable?.email ?? "Non assigné"}
             />
