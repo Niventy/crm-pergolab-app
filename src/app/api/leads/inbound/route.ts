@@ -98,6 +98,8 @@ export async function POST(req: Request) {
       source,
       campagne: pick(data, ["campagne", "campaign_name", "campaign", "ad_name", "adset_name"]),
       typeProjet: pick(data, ["typeProjet", "type_projet", "type de projet", "type_de_projet", "projet"]),
+      dimensions: pick(data, ["dimensions", "dimension", "taille"]),
+      gamme: pick(data, ["gamme"]),
       codePostal: pick(data, ["codePostal", "code_postal", "code postal", "zip", "postal_code", "cp"]),
       dateSouhaiteeAppel: pick(data, [
         "dateSouhaiteeAppel",
