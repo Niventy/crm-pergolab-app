@@ -1,8 +1,11 @@
 "use client";
 
-import { useState } from "react";
+import { useState, useTransition } from "react";
 import { useRouter } from "next/navigation";
+import { Trash2 } from "lucide-react";
+import { toast } from "sonner";
 import { cn } from "@/lib/utils";
+import { deleteLead } from "./actions";
 import {
   formatEuros,
   formatHorodatage,
@@ -57,6 +60,7 @@ const COLS = [
   "RDV",
   "Relances",
   "Reçu",
+  "",
 ];
 
 const FILTERS = [
@@ -81,6 +85,21 @@ export function ListeTable({
   const [resp, setResp] = useState("all");
   const [mois, setMois] = useState("all");
   const [dept, setDept] = useState("all");
+  const [, startDelete] = useTransition();
+
+  function onDelete(e: React.MouseEvent, lead: Row) {
+    e.stopPropagation();
+    if (!confirm(`Supprimer définitivement « ${lead.nom} » ? Cette action est irréversible.`))
+      return;
+    startDelete(async () => {
+      try {
+        await deleteLead(lead.id);
+        toast.success("Lead supprimé");
+      } catch {
+        toast.error("Échec de la suppression");
+      }
+    });
+  }
 
   // Responsables présents dans les leads.
   const respMap = new Map<string, string>();
@@ -338,6 +357,17 @@ export function ListeTable({
                     title={formatHorodatage(lead.createdAt)}
                   >
                     {tempsRelatif(lead.createdAt)}
+                  </Td>
+                  <Td className="w-10 text-center">
+                    <button
+                      type="button"
+                      onClick={(e) => onDelete(e, lead)}
+                      title="Supprimer"
+                      aria-label="Supprimer"
+                      className="inline-flex size-7 items-center justify-center rounded-md text-muted-foreground transition-colors hover:bg-red-50 hover:text-red-600"
+                    >
+                      <Trash2 className="size-4" />
+                    </button>
                   </Td>
                 </tr>
               );

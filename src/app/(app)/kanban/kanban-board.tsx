@@ -100,16 +100,21 @@ function LeadCard({ lead, dragging }: { lead: LeadWithRel; dragging?: boolean })
         </span>
       </div>
 
-      {/* Type de projet + date d'appel souhaitée */}
+      {/* Projet (type ou dimensions) + créneaux souhaités */}
       <div className="mt-2.5 space-y-0.5">
-        {lead.typeProjet ? (
+        {humanise(lead.typeProjet) || humanise(lead.dimensions) ? (
           <div className="truncate text-sm font-medium text-foreground">
-            {humanise(lead.typeProjet)}
+            {humanise(lead.typeProjet) || humanise(lead.dimensions)}
           </div>
         ) : null}
         {lead.dateSouhaiteeAppel ? (
           <div className="text-xs text-muted-foreground">
             Appel souhaité : {humanise(lead.dateSouhaiteeAppel)}
+          </div>
+        ) : null}
+        {lead.dateInstallation ? (
+          <div className="text-xs text-muted-foreground">
+            Installation : {humanise(lead.dateInstallation)}
           </div>
         ) : null}
       </div>
