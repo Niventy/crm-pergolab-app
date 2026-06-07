@@ -40,9 +40,42 @@ function buildRawMessage(
   return Buffer.from(lines.join("\r\n"), "utf-8").toString("base64url");
 }
 
-// Envoie un email via l'API Gmail en OAuth (compte d'envoi autorisé via refresh
-// token). From = compte d'envoi (GOOGLE_SENDER) ; Reply-To = l'ADV connecté
-// (les réponses arrivent dans SA boîte). Journalise un `echange` type=email.
+type SenderAccount = { from: string; refreshToken: string };
+
+// Choisit l'expéditeur selon l'utilisateur connecté :
+// - GOOGLE_SENDERS (JSON [{login, from, refreshToken}]) → multi-expéditeurs ;
+// - sinon GOOGLE_SENDER + GOOGLE_REFRESH_TOKEN → expéditeur unique.
+function resolveSender(userEmail?: string): SenderAccount | null {
+  const raw = process.env.GOOGLE_SENDERS;
+  if (raw) {
+    try {
+      const list = JSON.parse(raw) as {
+        login: string;
+        from: string;
+        refreshToken: string;
+      }[];
+      if (userEmail) {
+        const m = list.find(
+          (s) => s.login?.toLowerCase() === userEmail.toLowerCase(),
+        );
+        if (m?.from && m?.refreshToken)
+          return { from: m.from, refreshToken: m.refreshToken };
+      }
+      const first = list[0];
+      if (first?.from && first?.refreshToken)
+        return { from: first.from, refreshToken: first.refreshToken };
+    } catch {
+      // JSON invalide → on tombe sur l'expéditeur unique ci-dessous.
+    }
+  }
+  const from = process.env.GOOGLE_SENDER;
+  const refreshToken = process.env.GOOGLE_REFRESH_TOKEN;
+  if (from && refreshToken) return { from, refreshToken };
+  return null;
+}
+
+// Envoie un email via l'API Gmail en OAuth. From = expéditeur résolu selon
+// l'ADV connecté ; Reply-To = l'ADV connecté. Journalise un `echange` type=email.
 export async function sendLeadEmail(
   leadId: string,
   data: { to: string; subject: string; body: string },
@@ -55,17 +88,21 @@ export async function sendLeadEmail(
 
   const clientId = process.env.GOOGLE_CLIENT_ID;
   const clientSecret = process.env.GOOGLE_CLIENT_SECRET;
-  const refreshToken = process.env.GOOGLE_REFRESH_TOKEN;
-  const sender = process.env.GOOGLE_SENDER; // ex. "Pergolab <adv@pergolab.fr>"
-  if (!clientId || !clientSecret || !refreshToken || !sender)
+  if (!clientId || !clientSecret)
     return { ok: false, error: "Envoi Gmail non configuré (OAuth manquant)." };
 
-  // Reply-to = adresse de l'ADV connecté.
+  // Reply-to = adresse de l'ADV connecté ; sert aussi à choisir l'expéditeur.
   const supabase = await createClient();
   const {
     data: { user },
   } = await supabase.auth.getUser();
   const replyTo = user?.email ?? undefined;
+
+  const account = resolveSender(user?.email);
+  if (!account)
+    return { ok: false, error: "Aucun expéditeur Gmail configuré." };
+  const sender = account.from;
+  const refreshToken = account.refreshToken;
 
   const html = body
     .split("\n")
