@@ -82,7 +82,8 @@ export async function sendLeadEmail(
     client.setCredentials({ refresh_token: refreshToken });
     const at = await client.getAccessToken();
     const token = typeof at === "string" ? at : at?.token;
-    if (!token) return { ok: false, error: "Authentification Gmail échouée." };
+    if (!token)
+      return { ok: false, error: "Auth Gmail échouée (refresh token invalide ?)." };
 
     const res = await fetch(
       "https://gmail.googleapis.com/gmail/v1/users/me/messages/send",
@@ -96,12 +97,14 @@ export async function sendLeadEmail(
       },
     );
     if (!res.ok) {
-      console.error("Gmail send error:", res.status, await res.text());
-      return { ok: false, error: "Échec de l'envoi de l'email." };
+      const detail = await res.text();
+      console.error("Gmail send error:", res.status, detail);
+      return { ok: false, error: `Gmail ${res.status} — ${detail.slice(0, 300)}` };
     }
   } catch (e) {
     console.error("Gmail send exception:", e);
-    return { ok: false, error: "Échec de l'envoi de l'email." };
+    const msg = e instanceof Error ? e.message : String(e);
+    return { ok: false, error: `Échec envoi : ${msg.slice(0, 300)}` };
   }
 
   await db.insert(echanges).values({
