@@ -14,11 +14,15 @@ export function EmailCompose({
   nom,
   email,
   configured,
+  connectedEmail,
+  senderFrom,
 }: {
   leadId: string;
   nom: string;
   email: string | null;
   configured: boolean;
+  connectedEmail?: string | null;
+  senderFrom?: string | null;
 }) {
   const [open, setOpen] = useState(false);
   const [to, setTo] = useState(email ?? "");
@@ -78,14 +82,22 @@ export function EmailCompose({
 
   if (!open) {
     return (
-      <Button
-        type="button"
-        variant="outline"
-        size="sm"
-        onClick={() => setOpen(true)}
-      >
-        <Mail className="size-3.5" /> Envoyer un email
-      </Button>
+      <div className="space-y-1.5">
+        <Button
+          type="button"
+          variant="outline"
+          size="sm"
+          onClick={() => setOpen(true)}
+        >
+          <Mail className="size-3.5" /> Envoyer un email
+        </Button>
+        {senderFrom ? (
+          <p className="text-[11px] text-muted-foreground">
+            Connecté : <span className="font-medium">{connectedEmail}</span> →
+            envoi depuis <span className="font-medium text-primary">{senderFrom}</span>
+          </p>
+        ) : null}
+      </div>
     );
   }
 
@@ -129,8 +141,8 @@ export function EmailCompose({
       </div>
 
       <p className="text-[11px] text-muted-foreground">
-        Envoyé depuis votre adresse Gmail — visible dans vos « Envoyés », réponses
-        dans le même fil.
+        Envoi depuis <span className="font-medium text-primary">{senderFrom}</span>
+        {connectedEmail ? ` · réponses → ${connectedEmail}` : ""}
       </p>
 
       <div className="flex justify-end gap-2">

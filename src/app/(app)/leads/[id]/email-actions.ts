@@ -6,6 +6,7 @@ import { db } from "@/db";
 import { echanges } from "@/db/schema";
 import { createClient } from "@/lib/supabase/server";
 import { currentUserId } from "@/lib/current-user";
+import { resolveSender } from "@/lib/email-sender";
 
 export type EmailState = { ok: boolean; error: string | null };
 
@@ -38,40 +39,6 @@ function buildRawMessage(
     Buffer.from(html, "utf-8").toString("base64"),
   ];
   return Buffer.from(lines.join("\r\n"), "utf-8").toString("base64url");
-}
-
-type SenderAccount = { from: string; refreshToken: string };
-
-// Choisit l'expéditeur selon l'utilisateur connecté :
-// - GOOGLE_SENDERS (JSON [{login, from, refreshToken}]) → multi-expéditeurs ;
-// - sinon GOOGLE_SENDER + GOOGLE_REFRESH_TOKEN → expéditeur unique.
-function resolveSender(userEmail?: string): SenderAccount | null {
-  const raw = process.env.GOOGLE_SENDERS;
-  if (raw) {
-    try {
-      const list = JSON.parse(raw) as {
-        login: string;
-        from: string;
-        refreshToken: string;
-      }[];
-      if (userEmail) {
-        const m = list.find(
-          (s) => s.login?.toLowerCase() === userEmail.toLowerCase(),
-        );
-        if (m?.from && m?.refreshToken)
-          return { from: m.from, refreshToken: m.refreshToken };
-      }
-      const first = list[0];
-      if (first?.from && first?.refreshToken)
-        return { from: first.from, refreshToken: first.refreshToken };
-    } catch {
-      // JSON invalide → on tombe sur l'expéditeur unique ci-dessous.
-    }
-  }
-  const from = process.env.GOOGLE_SENDER;
-  const refreshToken = process.env.GOOGLE_REFRESH_TOKEN;
-  if (from && refreshToken) return { from, refreshToken };
-  return null;
 }
 
 // Envoie un email via l'API Gmail en OAuth. From = expéditeur résolu selon

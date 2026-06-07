@@ -3,6 +3,8 @@ import { notFound } from "next/navigation";
 import { eq } from "drizzle-orm";
 import { db } from "@/db";
 import { leads as leadsTable } from "@/db/schema";
+import { createClient } from "@/lib/supabase/server";
+import { resolveSender } from "@/lib/email-sender";
 import { Button, buttonVariants } from "@/components/ui/button";
 import { Card, CardContent, CardHeader, CardTitle } from "@/components/ui/card";
 import { Separator } from "@/components/ui/separator";
@@ -129,11 +131,16 @@ export default async function LeadPage({
 
   const cycle = lead.stage?.cycle ?? 1;
   const hasRelance = lead.relanceCount > 0 || !!lead.nextRelanceDate;
+
+  // Email : qui est connecté + depuis quelle adresse il enverra (diagnostic + UX).
+  const supabase = await createClient();
+  const {
+    data: { user },
+  } = await supabase.auth.getUser();
+  const connectedEmail = user?.email ?? null;
+  const senderFrom = resolveSender(connectedEmail)?.from ?? null;
   const emailConfigured =
-    !!process.env.GOOGLE_CLIENT_ID &&
-    !!process.env.GOOGLE_CLIENT_SECRET &&
-    (!!process.env.GOOGLE_SENDERS ||
-      (!!process.env.GOOGLE_REFRESH_TOKEN && !!process.env.GOOGLE_SENDER));
+    !!process.env.GOOGLE_CLIENT_ID && !!process.env.GOOGLE_CLIENT_SECRET && !!senderFrom;
 
   return (
     <main className="mx-auto w-full max-w-4xl flex-1 space-y-4 px-6 py-6">
@@ -291,6 +298,8 @@ export default async function LeadPage({
             nom={lead.nom}
             email={lead.email}
             configured={emailConfigured}
+            connectedEmail={connectedEmail}
+            senderFrom={senderFrom}
           />
         </CardContent>
       </Card>
