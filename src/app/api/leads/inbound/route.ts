@@ -1,0 +1,121 @@
+import { asc, eq } from "drizzle-orm";
+import { revalidatePath } from "next/cache";
+import { db } from "@/db";
+import { leads, stages } from "@/db/schema";
+
+export const dynamic = "force-dynamic";
+
+// Récupère la 1ère valeur non vide parmi plusieurs clés possibles du payload.
+function pick(obj: Record<string, unknown>, keys: string[]): string | null {
+  for (const k of keys) {
+    const v = obj[k];
+    if (typeof v === "string" && v.trim()) return v.trim();
+    if (typeof v === "number") return String(v);
+  }
+  return null;
+}
+
+// Meta envoie parfois les réponses sous forme [{ name, values: [...] }].
+function flattenFieldData(obj: Record<string, unknown>): Record<string, unknown> {
+  const fd = obj.field_data ?? obj.fields ?? obj.form_response;
+  if (!Array.isArray(fd)) return obj;
+  const flat: Record<string, unknown> = { ...obj };
+  for (const f of fd as Array<Record<string, unknown>>) {
+    const name = typeof f.name === "string" ? f.name : undefined;
+    const values = f.values ?? f.value;
+    if (name) flat[name] = Array.isArray(values) ? values[0] : values;
+  }
+  return flat;
+}
+
+// Déduit la source lisible depuis la plateforme Meta.
+function sourceFromPlatform(p: string | null): string | null {
+  if (!p) return null;
+  const v = p.toLowerCase();
+  if (v.includes("insta") || v === "ig") return "Instagram Lead Ads";
+  if (v.includes("face") || v === "fb") return "Facebook Lead Ads";
+  return null;
+}
+
+export async function POST(req: Request) {
+  // 1) Authentification par secret partagé.
+  const secret = process.env.INBOUND_WEBHOOK_SECRET;
+  const auth = req.headers.get("authorization") ?? "";
+  const token = auth.replace(/^Bearer\s+/i, "").trim();
+  if (!secret || token !== secret) {
+    return Response.json({ error: "Non autorisé" }, { status: 401 });
+  }
+
+  // 2) Lecture du corps JSON.
+  let body: Record<string, unknown>;
+  try {
+    body = (await req.json()) as Record<string, unknown>;
+  } catch {
+    return Response.json({ error: "JSON invalide" }, { status: 400 });
+  }
+  const data = flattenFieldData(body);
+
+  // 3) Normalisation des champs.
+  const prenom = pick(data, ["first_name", "prenom", "prénom"]);
+  const nomFamille = pick(data, ["last_name", "nom_famille"]);
+  const nomComplet = [prenom, nomFamille].filter(Boolean).join(" ").trim();
+  const nom =
+    pick(data, ["nom", "full_name", "name", "full name"]) ??
+    (nomComplet || null) ??
+    pick(data, ["email", "email_address"]) ??
+    "Nouveau lead";
+
+  const source =
+    pick(data, ["source"]) ??
+    sourceFromPlatform(pick(data, ["platform", "plateforme"])) ??
+    "Meta Lead Ads";
+
+  // 4) Étape d'entrée : « À traiter » (sinon 1ère étape du cycle 1).
+  const [parNom] = await db
+    .select()
+    .from(stages)
+    .where(eq(stages.nom, "À traiter"))
+    .limit(1);
+  const [parCycle] = parNom
+    ? [parNom]
+    : await db
+        .select()
+        .from(stages)
+        .where(eq(stages.cycle, 1))
+        .orderBy(asc(stages.position))
+        .limit(1);
+  const stage = parCycle;
+
+  // 5) Insertion (non assigné, statut en_cours, payload brut conservé).
+  const [created] = await db
+    .insert(leads)
+    .values({
+      stageId: stage?.id ?? null,
+      statut: "en_cours",
+      nom,
+      email: pick(data, ["email", "email_address", "mail"]),
+      telephone: pick(data, ["telephone", "téléphone", "phone", "phone_number", "tel"]),
+      source,
+      campagne: pick(data, ["campagne", "campaign_name", "campaign", "ad_name", "adset_name"]),
+      typeProjet: pick(data, ["typeProjet", "type_projet", "type de projet", "type_de_projet", "projet"]),
+      codePostal: pick(data, ["codePostal", "code_postal", "code postal", "zip", "postal_code", "cp"]),
+      dateSouhaiteeAppel: pick(data, [
+        "dateSouhaiteeAppel",
+        "date_souhaitee_appel",
+        "creneau",
+        "créneau",
+        "horaire",
+        "disponibilite",
+      ]),
+      dateInstallation: pick(data, ["dateInstallation", "date_installation", "installation", "delai", "délai"]),
+      rawPayload: body,
+    })
+    .returning({ id: leads.id });
+
+  // 6) Rafraîchit les vues.
+  revalidatePath("/kanban");
+  revalidatePath("/liste");
+  revalidatePath("/dashboard");
+
+  return Response.json({ ok: true, id: created?.id, nom }, { status: 201 });
+}
