@@ -144,6 +144,22 @@ export async function addMessage(
   return { ok: true, error: null };
 }
 
+// Attribue / réassigne le lead à un responsable (ou null pour désassigner).
+export async function assignLead(leadId: string, assignedTo: string | null) {
+  await db
+    .update(leads)
+    .set({
+      assignedTo: assignedTo || null,
+      updatedAt: new Date(),
+      updatedBy: await currentUserId(),
+    })
+    .where(eq(leads.id, leadId));
+  revalidatePath(`/leads/${leadId}`);
+  revalidatePath("/kanban");
+  revalidatePath("/liste");
+  revalidatePath("/dashboard");
+}
+
 export type NoteState = { error: string | null };
 
 export async function addNote(

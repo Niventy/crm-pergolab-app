@@ -8,8 +8,9 @@ import { resolveSender } from "@/lib/email-sender";
 import { Button, buttonVariants } from "@/components/ui/button";
 import { Card, CardContent, CardHeader, CardTitle } from "@/components/ui/card";
 import { Separator } from "@/components/ui/separator";
-import { formatEuros, formatDate, initiales, tempsRelatif, humanise } from "@/lib/format";
-import { markGagnee, markPerdue, passerAuCycle } from "./actions";
+import { formatEuros, formatDate, tempsRelatif, humanise } from "@/lib/format";
+import { markGagnee, markPerdue, passerAuCycle, assignLead } from "./actions";
+import { AssignSelect } from "./assign-select";
 import { ActivitePills } from "./activite-pills";
 import { EmailCompose } from "./email-compose";
 import { EmailThread } from "./email-thread";
@@ -60,27 +61,21 @@ function Field({
   );
 }
 
-function AssignationBadge({
-  profil,
+// Champ mis en avant pour la prise d'info pendant l'appel (gros, lisible).
+function BigField({
+  label,
+  value,
 }: {
-  profil: { nom: string | null; email: string } | null;
+  label: string;
+  value: React.ReactNode;
 }) {
-  const nom = profil?.nom ?? profil?.email ?? null;
-  if (nom) {
-    return (
-      <span className="inline-flex items-center gap-1.5 rounded-full bg-primary/10 py-0.5 pr-2.5 pl-0.5 text-xs font-semibold text-primary">
-        <span className="flex size-5 items-center justify-center rounded-full bg-primary text-[10px] font-bold text-primary-foreground">
-          {initiales(nom)}
-        </span>
-        {nom}
-      </span>
-    );
-  }
   return (
-    <span className="inline-flex items-center gap-1.5 rounded-full bg-amber-100 px-2.5 py-1 text-xs font-semibold text-amber-700">
-      <span className="size-1.5 rounded-full bg-amber-500" />
-      Non assigné
-    </span>
+    <div className="rounded-lg bg-muted/40 px-3 py-2">
+      <div className="text-eyebrow text-muted-foreground">{label}</div>
+      <div className="mt-0.5 text-lg font-semibold break-words text-foreground">
+        {value || "—"}
+      </div>
+    </div>
   );
 }
 
@@ -160,6 +155,29 @@ export default async function LeadPage({
         </Link>
       </div>
 
+      {/* Alerte : lead non attribué */}
+      {!lead.assignedTo ? (
+        <div className="flex flex-wrap items-center gap-3 rounded-xl border border-amber-300 bg-amber-50 px-4 py-3">
+          <span className="text-sm font-semibold text-amber-800">
+            ⚠ Ce lead n&apos;est pas attribué.
+          </span>
+          {user?.id ? (
+            <form action={assignLead.bind(null, lead.id, user.id)}>
+              <Button
+                type="submit"
+                size="sm"
+                className="bg-amber-600 text-white hover:bg-amber-700"
+              >
+                M&apos;attribuer
+              </Button>
+            </form>
+          ) : null}
+          <span className="text-xs text-amber-700">
+            ou choisis un responsable en haut de la fiche.
+          </span>
+        </div>
+      ) : null}
+
       {/* Bandeau informations principales */}
       <Card>
         <CardHeader>
@@ -168,7 +186,12 @@ export default async function LeadPage({
               <div className="flex flex-wrap items-center gap-2">
                 <CardTitle className="text-display text-2xl">{lead.nom}</CardTitle>
                 <StatutBadge statut={lead.statut} />
-                <AssignationBadge profil={lead.responsable} />
+                <AssignSelect
+                  leadId={lead.id}
+                  profiles={profiles}
+                  assignedTo={lead.assignedTo}
+                  currentUserId={user?.id ?? null}
+                />
               </div>
               {lead.entreprise ? (
                 <div className="text-sm text-muted-foreground">
@@ -223,15 +246,36 @@ export default async function LeadPage({
           </div>
         </CardHeader>
         <CardContent className="space-y-4">
-          {/* Indicateurs clés */}
-          <div className="grid grid-cols-2 gap-4 sm:grid-cols-4">
-            <Field label="Montant" value={formatEuros(lead.montant)} />
-            <Field
-              label="Probabilité"
-              value={lead.probabilite !== null ? `${lead.probabilite} %` : "—"}
+          {/* PRISE D'INFO — essentiels mis en avant (appel) */}
+          <div className="grid grid-cols-1 gap-4 sm:grid-cols-2 lg:grid-cols-4">
+            <BigField
+              label="Téléphone"
+              value={
+                lead.telephone ? (
+                  <a
+                    href={`tel:${lead.telephone.replace(/[^+\d]/g, "")}`}
+                    className="text-primary hover:underline"
+                  >
+                    {lead.telephone}
+                  </a>
+                ) : null
+              }
             />
-            <Field label="Objectif" value={formatDate(lead.objectifDate)} />
-            <Field
+            <BigField
+              label="Email"
+              value={
+                lead.email ? (
+                  <a href={`mailto:${lead.email}`} className="text-primary hover:underline">
+                    {lead.email}
+                  </a>
+                ) : null
+              }
+            />
+            <BigField
+              label="Type de projet"
+              value={humanise(lead.typeProjet) || humanise(lead.dimensions)}
+            />
+            <BigField
               label="Étape actuelle"
               value={
                 lead.stage ? (
@@ -242,28 +286,29 @@ export default async function LeadPage({
                     />
                     {lead.stage.nom}
                   </span>
-                ) : (
-                  "—"
-                )
+                ) : null
               }
             />
           </div>
 
           <Separator />
 
-          {/* Informations client */}
+          {/* Infos complémentaires */}
           <div className="grid grid-cols-2 gap-4 sm:grid-cols-4">
-            <Field label="Type de projet" value={humanise(lead.typeProjet)} />
             <Field label="Code postal" value={lead.codePostal} />
             <Field
               label="Appel souhaité (créneau)"
               value={humanise(lead.dateSouhaiteeAppel)}
             />
             <Field label="Installation souhaitée" value={humanise(lead.dateInstallation)} />
-            <Field label="Email" value={lead.email} />
-            <Field label="Téléphone" value={lead.telephone} />
             <Field label="Source" value={lead.source} />
             <Field label="Campagne" value={lead.campagne} />
+            <Field label="Montant" value={formatEuros(lead.montant)} />
+            <Field
+              label="Probabilité"
+              value={lead.probabilite !== null ? `${lead.probabilite} %` : "—"}
+            />
+            <Field label="Objectif" value={formatDate(lead.objectifDate)} />
             <Field
               label="Reçu le"
               value={new Date(lead.createdAt).toLocaleString("fr-FR", {
