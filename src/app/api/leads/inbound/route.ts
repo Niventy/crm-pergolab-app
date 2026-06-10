@@ -1,7 +1,7 @@
-import { asc, eq, and, or } from "drizzle-orm";
+import { asc, desc, eq, or } from "drizzle-orm";
 import { revalidatePath } from "next/cache";
 import { db } from "@/db";
-import { leads, stages } from "@/db/schema";
+import { leads, stages, notes } from "@/db/schema";
 
 export const dynamic = "force-dynamic";
 
@@ -101,20 +101,53 @@ export async function POST(req: Request) {
   const emailVal = pick(data, ["email", "email_address", "mail"]);
   const telVal = pick(data, ["telephone", "téléphone", "phone", "phone_number", "tel"]);
 
-  // 4 bis) Dédoublonnage : même date de réception + même email/téléphone = déjà reçu.
-  if (recuLe && (emailVal || telVal)) {
-    const ident = [
-      ...(emailVal ? [eq(leads.email, emailVal)] : []),
-      ...(telVal ? [eq(leads.telephone, telVal)] : []),
-    ];
-    const [dup] = await db
-      .select({ id: leads.id })
+  // 4 bis) Même contact (email/téléphone) déjà présent ?
+  const ident = [
+    ...(emailVal ? [eq(leads.email, emailVal)] : []),
+    ...(telVal ? [eq(leads.telephone, telVal)] : []),
+  ];
+  if (ident.length > 0) {
+    const [existing] = await db
+      .select({ id: leads.id, createdAt: leads.createdAt })
       .from(leads)
-      .where(and(eq(leads.createdAt, recuLe), or(...ident)))
+      .where(or(...ident))
+      .orderBy(desc(leads.createdAt))
       .limit(1);
-    if (dup) {
+
+    if (existing) {
+      const sameSubmission =
+        recuLe &&
+        existing.createdAt &&
+        new Date(existing.createdAt).getTime() === recuLe.getTime();
+
+      if (sameSubmission) {
+        // Doublon technique (même soumission postée 2×) → ignoré silencieusement.
+        return Response.json(
+          { ok: true, duplicate: true, id: existing.id },
+          { status: 200 },
+        );
+      }
+
+      // RE-SOUMISSION : même contact, autre moment → pas de 2e lead, on FLAGUE.
+      const quand = (recuLe ?? new Date()).toLocaleString("fr-FR", {
+        dateStyle: "short",
+        timeStyle: "short",
+        timeZone: "Europe/Paris",
+      });
+      await db.insert(notes).values({
+        leadId: existing.id,
+        userId: null,
+        contenu: `📩 Ce contact a re-rempli le formulaire le ${quand} (re-soumission).`,
+      });
+      await db
+        .update(leads)
+        .set({ updatedAt: new Date() })
+        .where(eq(leads.id, existing.id));
+      revalidatePath(`/leads/${existing.id}`);
+      revalidatePath("/kanban");
+      revalidatePath("/liste");
       return Response.json(
-        { ok: true, duplicate: true, id: dup.id },
+        { ok: true, resubmission: true, id: existing.id },
         { status: 200 },
       );
     }
