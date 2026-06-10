@@ -1,4 +1,4 @@
-import { asc, eq } from "drizzle-orm";
+import { asc, eq, and, or } from "drizzle-orm";
 import { revalidatePath } from "next/cache";
 import { db } from "@/db";
 import { leads, stages } from "@/db/schema";
@@ -98,6 +98,28 @@ export async function POST(req: Request) {
         .limit(1);
   const stage = parCycle;
 
+  const emailVal = pick(data, ["email", "email_address", "mail"]);
+  const telVal = pick(data, ["telephone", "téléphone", "phone", "phone_number", "tel"]);
+
+  // 4 bis) Dédoublonnage : même date de réception + même email/téléphone = déjà reçu.
+  if (recuLe && (emailVal || telVal)) {
+    const ident = [
+      ...(emailVal ? [eq(leads.email, emailVal)] : []),
+      ...(telVal ? [eq(leads.telephone, telVal)] : []),
+    ];
+    const [dup] = await db
+      .select({ id: leads.id })
+      .from(leads)
+      .where(and(eq(leads.createdAt, recuLe), or(...ident)))
+      .limit(1);
+    if (dup) {
+      return Response.json(
+        { ok: true, duplicate: true, id: dup.id },
+        { status: 200 },
+      );
+    }
+  }
+
   // 5) Insertion (non assigné, statut en_cours, payload brut conservé).
   const [created] = await db
     .insert(leads)
@@ -106,8 +128,8 @@ export async function POST(req: Request) {
       statut: "en_cours",
       ...(recuLe ? { createdAt: recuLe } : {}),
       nom,
-      email: pick(data, ["email", "email_address", "mail"]),
-      telephone: pick(data, ["telephone", "téléphone", "phone", "phone_number", "tel"]),
+      email: emailVal,
+      telephone: telVal,
       source,
       campagne: pick(data, ["campagne", "campaign_name", "campaign", "ad_name", "adset_name"]),
       typeProjet: pick(data, ["typeProjet", "type_projet", "type de projet", "type_de_projet", "projet"]),
