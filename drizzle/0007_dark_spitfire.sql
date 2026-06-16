@@ -1,0 +1,1 @@
+ALTER TABLE "leads" ADD COLUMN "resoumission" boolean DEFAULT false NOT NULL;

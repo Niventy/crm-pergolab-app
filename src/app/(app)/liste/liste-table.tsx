@@ -48,6 +48,7 @@ const STATUT: Record<string, { label: string; cls: string }> = {
 // En-têtes de colonnes (libellé + alignement éventuel).
 const COLS = [
   "Nom",
+  "Reçu",
   "Responsable",
   "Étape",
   "Statut",
@@ -59,8 +60,13 @@ const COLS = [
   "Proba",
   "RDV",
   "Relances",
-  "Reçu",
 ];
+
+// « 3 j » → « il y a 3 j » (mais pas pour « à l'instant » ni une date courte).
+function recuIlYA(value: Date | string): string {
+  const rel = tempsRelatif(value);
+  return /(min|h|j)$/.test(rel) ? `il y a ${rel}` : rel;
+}
 
 const FILTERS = [
   { id: 0, label: "Tous" },
@@ -410,6 +416,12 @@ export function ListeTable({
                     </Td>
                   ) : null}
                   <Td className="font-medium text-foreground">{lead.nom}</Td>
+                  <Td
+                    className="whitespace-nowrap text-muted-foreground"
+                    title={formatHorodatage(lead.createdAt)}
+                  >
+                    {recuIlYA(lead.createdAt)}
+                  </Td>
                   <Td>
                     {lead.responsable?.nom ??
                       lead.responsable?.email ?? (
@@ -468,12 +480,6 @@ export function ListeTable({
                     ) : (
                       "—"
                     )}
-                  </Td>
-                  <Td
-                    className="whitespace-nowrap text-muted-foreground"
-                    title={formatHorodatage(lead.createdAt)}
-                  >
-                    {tempsRelatif(lead.createdAt)}
                   </Td>
                   {!selectMode ? (
                     <Td className="w-10 text-center">

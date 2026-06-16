@@ -3,7 +3,7 @@
 import { eq, asc, sql } from "drizzle-orm";
 import { revalidatePath } from "next/cache";
 import { db } from "@/db";
-import { leads, stages, notes, echanges } from "@/db/schema";
+import { leads, stages, notes, echanges, profiles } from "@/db/schema";
 import { createClient } from "@/lib/supabase/server";
 import { currentUserId } from "@/lib/current-user";
 
@@ -144,16 +144,87 @@ export async function addMessage(
   return { ok: true, error: null };
 }
 
+// Déplace le lead vers une étape précise (depuis le rail de la fiche).
+// Commentaire OBLIGATOIRE, sauf si l'étape cible est « Pas de réponse ».
+// Journalise le déplacement (avec horodatage) dans l'activité.
+export async function changerEtape(
+  leadId: string,
+  stageId: string,
+  commentaire: string,
+) {
+  const userId = await currentUserId();
+  const [stage] = await db
+    .select()
+    .from(stages)
+    .where(eq(stages.id, stageId))
+    .limit(1);
+  if (!stage) return { ok: false as const, error: "Étape inconnue." };
+
+  const c = (commentaire ?? "").trim();
+  if (!c && stage.nom !== "Pas de réponse") {
+    return { ok: false as const, error: "Commentaire obligatoire." };
+  }
+
+  const statut = stage.isPerdue
+    ? "perdue"
+    : stage.isGagnee || stage.cycle === 3
+      ? "gagnee"
+      : "en_cours";
+
+  await db
+    .update(leads)
+    .set({
+      stageId: stage.id,
+      statut,
+      ...(statut === "gagnee"
+        ? { dateSignature: sql`COALESCE(${leads.dateSignature}, CURRENT_DATE)` }
+        : {}),
+      updatedAt: new Date(),
+      updatedBy: userId,
+    })
+    .where(eq(leads.id, leadId));
+
+  await db.insert(echanges).values({
+    leadId,
+    userId,
+    type: "etape",
+    contenu: `Déplacé en « ${stage.nom} »${c ? ` : ${c}` : ""}`,
+  });
+
+  revalidatePath(`/leads/${leadId}`);
+  revalidatePath("/kanban");
+  revalidatePath("/liste");
+  return { ok: true as const, error: null };
+}
+
 // Attribue / réassigne le lead à un responsable (ou null pour désassigner).
+// Journalise QUI a attribué le lead (et à qui) dans l'activité.
 export async function assignLead(leadId: string, assignedTo: string | null) {
+  const userId = await currentUserId();
   await db
     .update(leads)
     .set({
       assignedTo: assignedTo || null,
       updatedAt: new Date(),
-      updatedBy: await currentUserId(),
+      updatedBy: userId,
     })
     .where(eq(leads.id, leadId));
+
+  let contenu: string;
+  if (!assignedTo) {
+    contenu = "Attribution retirée";
+  } else if (assignedTo === userId) {
+    contenu = "S'est attribué le lead";
+  } else {
+    const [p] = await db
+      .select({ nom: profiles.nom, email: profiles.email })
+      .from(profiles)
+      .where(eq(profiles.id, assignedTo))
+      .limit(1);
+    contenu = `Attribué à ${p?.nom ?? p?.email ?? "un membre"}`;
+  }
+  await db.insert(echanges).values({ leadId, userId, type: "attribution", contenu });
+
   revalidatePath(`/leads/${leadId}`);
   revalidatePath("/kanban");
   revalidatePath("/liste");

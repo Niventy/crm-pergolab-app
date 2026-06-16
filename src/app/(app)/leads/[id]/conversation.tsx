@@ -28,15 +28,26 @@ export function Conversation({
   leadId,
   profiles,
   messages,
+  currentUserId,
 }: {
   leadId: string;
   profiles: Profil[];
   messages: Message[];
+  currentUserId?: string | null;
 }) {
   const [text, setText] = useState("");
   const [query, setQuery] = useState<string | null>(null);
   const [pending, start] = useTransition();
   const ref = useRef<HTMLTextAreaElement>(null);
+
+  const notifiables = profiles.filter((p) => p.id !== currentUserId);
+
+  // Insère une @mention prête à notifier (pilule « Notifier … »).
+  function notifier(p: Profil) {
+    const token = `@${handleOf(p)} `;
+    setText((t) => (t === "" || t.endsWith(" ") ? t : t + " ") + token);
+    requestAnimationFrame(() => ref.current?.focus());
+  }
 
   const handleSet = useMemo(
     () => new Set(profiles.map((p) => handleOf(p).toLowerCase())),
@@ -113,6 +124,24 @@ export function Conversation({
 
   return (
     <div className="space-y-4">
+      {notifiables.length > 0 ? (
+        <div className="flex flex-wrap items-center gap-1.5">
+          <span className="text-xs text-muted-foreground">Notifier&nbsp;:</span>
+          {notifiables.map((p) => (
+            <button
+              key={p.id}
+              type="button"
+              onClick={() => notifier(p)}
+              className="inline-flex items-center gap-1.5 rounded-full border border-border bg-white px-2.5 py-1 text-xs font-medium text-foreground transition-colors hover:border-primary/40 hover:bg-primary/5"
+            >
+              <span className="flex size-4 items-center justify-center rounded-full bg-primary text-[9px] font-bold text-primary-foreground">
+                {initiales(p.nom ?? p.email)}
+              </span>
+              {(p.nom ?? p.email).split(/[\s(]/)[0]}
+            </button>
+          ))}
+        </div>
+      ) : null}
       <div className="relative">
         <Textarea
           ref={ref}

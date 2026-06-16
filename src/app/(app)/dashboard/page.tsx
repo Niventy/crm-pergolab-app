@@ -5,6 +5,8 @@ import { cn } from "@/lib/utils";
 import { formatEuros } from "@/lib/format";
 import { createClient } from "@/lib/supabase/server";
 import { BarParMois } from "./dashboard-charts";
+import { CarteFrance } from "./carte-france";
+import { DEPT_TO_REGION } from "./france-geo";
 import { PeriodSelect } from "./period-select";
 
 export const dynamic = "force-dynamic";
@@ -26,6 +28,20 @@ function compact(n: number): string {
 function ym(d: Date | string): string {
   return (d instanceof Date ? d : new Date(d)).toISOString().slice(0, 7);
 }
+
+// [année, mois (0-11), jour] d'un horodatage, dans le fuseau de Paris.
+function parisYMD(d: Date | string): [number, number, number] {
+  const s = new Intl.DateTimeFormat("en-CA", {
+    timeZone: "Europe/Paris",
+    year: "numeric",
+    month: "2-digit",
+    day: "2-digit",
+  }).format(d instanceof Date ? d : new Date(d));
+  const [y, m, day] = s.split("-").map(Number);
+  return [y, m - 1, day];
+}
+
+const JOURS_SEM = ["Lun", "Mar", "Mer", "Jeu", "Ven", "Sam", "Dim"];
 
 export default async function DashboardPage({
   searchParams,
@@ -129,6 +145,35 @@ export default async function DashboardPage({
       valeur: scoped.filter((l) => ym(l.createdAt) === key).length,
     };
   });
+
+  // Agenda : leads reçus par JOUR pour le mois affiché (mois choisi, ou
+  // mois courant si « Année »). Respecte le périmètre (ADV).
+  const calMonth = moisActif ?? month;
+  const calCounts = new Map<number, number>();
+  for (const l of scoped) {
+    const [yy, mm, dd] = parisYMD(l.createdAt);
+    if (yy === year && mm === calMonth)
+      calCounts.set(dd, (calCounts.get(dd) ?? 0) + 1);
+  }
+  const calMax = Math.max(1, ...calCounts.values());
+
+  // Leads par région (cohorte) : code postal → département → région.
+  const regionCounts: Record<string, number> = {};
+  let horsMetropole = 0;
+  for (const l of leads) {
+    const cp = (l.codePostal ?? "").replace(/\D/g, "");
+    if (cp.length < 2) {
+      horsMetropole++;
+      continue;
+    }
+    let dept = cp.slice(0, 2);
+    if (dept === "20")
+      dept = "2A"; // Corse → région 94 (2A et 2B = même région)
+    else if (cp.startsWith("97") || cp.startsWith("98")) dept = cp.slice(0, 3); // DOM-TOM
+    const region = DEPT_TO_REGION[dept];
+    if (region) regionCounts[region] = (regionCounts[region] ?? 0) + 1;
+    else horsMetropole++;
+  }
 
   // Entonnoir (cohorte).
   const recus = leads.length;
@@ -284,6 +329,14 @@ export default async function DashboardPage({
         </Panel>
       </div>
 
+      <Panel title={`Leads reçus par jour — ${MOIS[calMonth]} ${year}`}>
+        <AgendaLeads year={year} month={calMonth} counts={calCounts} max={calMax} />
+      </Panel>
+
+      <Panel title={`Leads par région — ${periodeLabel}`}>
+        <CarteFrance counts={regionCounts} horsMetropole={horsMetropole} />
+      </Panel>
+
       <div className="grid grid-cols-1 gap-4 lg:grid-cols-2">
         <Panel title="Leads par source">
           {sources.length === 0 ? (
@@ -336,6 +389,75 @@ export default async function DashboardPage({
         </Panel>
       </div>
     </main>
+  );
+}
+
+function AgendaLeads({
+  year,
+  month,
+  counts,
+  max,
+}: {
+  year: number;
+  month: number; // 0-11
+  counts: Map<number, number>;
+  max: number;
+}) {
+  const nbJours = new Date(year, month + 1, 0).getDate();
+  const offset = (new Date(year, month, 1).getDay() + 6) % 7; // lundi = 0
+  const total = [...counts.values()].reduce((a, b) => a + b, 0);
+  const cells: (number | null)[] = [
+    ...Array.from({ length: offset }, () => null),
+    ...Array.from({ length: nbJours }, (_, i) => i + 1),
+  ];
+
+  return (
+    <div>
+      <div className="mb-1.5 grid grid-cols-7 gap-1.5 text-center text-[0.65rem] font-semibold uppercase tracking-wide text-muted-foreground">
+        {JOURS_SEM.map((j) => (
+          <div key={j}>{j}</div>
+        ))}
+      </div>
+      <div className="grid grid-cols-7 gap-1.5">
+        {cells.map((d, i) => {
+          if (d === null) return <div key={`e${i}`} />;
+          const c = counts.get(d) ?? 0;
+          const alpha = c === 0 ? 0 : 0.18 + 0.72 * (c / max);
+          const white = alpha > 0.5;
+          return (
+            <div
+              key={d}
+              className="relative flex aspect-square flex-col items-center justify-center rounded-lg border border-border/60 text-sm"
+              style={c ? { backgroundColor: `rgba(47,107,79,${alpha})` } : undefined}
+            >
+              <span
+                className={cn(
+                  "absolute left-1 top-0.5 text-[0.6rem] tabular-nums",
+                  white ? "text-white/80" : "text-muted-foreground",
+                )}
+              >
+                {d}
+              </span>
+              {c > 0 ? (
+                <span
+                  className={cn(
+                    "text-base font-bold tabular-nums",
+                    white ? "text-white" : "text-foreground",
+                  )}
+                >
+                  {c}
+                </span>
+              ) : null}
+            </div>
+          );
+        })}
+      </div>
+      <p className="mt-3 text-xs text-muted-foreground">
+        {total === 0
+          ? "Aucun lead reçu ce mois."
+          : `${total} lead${total > 1 ? "s" : ""} ce mois · jour le plus chargé : ${max}`}
+      </p>
+    </div>
   );
 }
 

@@ -50,6 +50,27 @@
       "when": 1780836138544,
       "tag": "0006_flat_colossus",
       "breakpoints": true
+    },
+    {
+      "idx": 7,
+      "version": "7",
+      "when": 1781085325817,
+      "tag": "0007_dark_spitfire",
+      "breakpoints": true
+    },
+    {
+      "idx": 8,
+      "version": "7",
+      "when": 1781604532919,
+      "tag": "0008_furry_korath",
+      "breakpoints": true
+    },
+    {
+      "idx": 9,
+      "version": "7",
+      "when": 1781605209638,
+      "tag": "0009_unique_vivisector",
+      "breakpoints": true
     }
   ]
 }

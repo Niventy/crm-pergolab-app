@@ -11,6 +11,7 @@ const TABS = [
   { href: "/dashboard", label: "Dashboard" },
   { href: "/kanban", label: "Kanban" },
   { href: "/liste", label: "Liste" },
+  { href: "/emploi-du-temps", label: "Planning" },
 ];
 
 export function AppNav({ email }: { email: string | null }) {

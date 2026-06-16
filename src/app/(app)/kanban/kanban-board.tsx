@@ -106,6 +106,14 @@ function LeadCard({ lead, dragging }: { lead: LeadWithRel; dragging?: boolean })
         {lead.nom}
       </div>
 
+      {lead.resoumission ? (
+        <div className="mt-1">
+          <span className="inline-flex items-center gap-1 rounded-full bg-violet-100 px-2 py-0.5 text-[10px] font-bold uppercase tracking-wide text-violet-700">
+            📩 2ᵉ formulaire
+          </span>
+        </div>
+      ) : null}
+
       {/* Assignation — mise en avant */}
       <div className="mt-1.5">
         <Assignation profil={lead.responsable} />
@@ -260,10 +268,16 @@ export function KanbanBoard({
   const cycleCount = (c: number) =>
     leads.filter((l) => l.stageId && stageCycle.get(l.stageId) === c).length;
 
-  const visibleStages = useMemo(
-    () => stages.filter((s) => s.cycle === cycle),
-    [stages, cycle],
-  );
+  const visibleStages = useMemo(() => {
+    const inCycle = stages.filter((s) => s.cycle === cycle);
+    // KO (perdue) accessible aussi depuis la Prospection : un lead peut être
+    // perdu dès le début (injoignable, non qualifié…), sans passer par le devis.
+    if (cycle === 1) {
+      const ko = stages.find((s) => s.isPerdue);
+      if (ko && !inCycle.some((s) => s.id === ko.id)) inCycle.push(ko);
+    }
+    return inCycle;
+  }, [stages, cycle]);
 
   const leadsByStage = useMemo(() => {
     const map = new Map<string, LeadWithRel[]>();
@@ -321,8 +335,11 @@ export function KanbanBoard({
           : l,
       ),
     );
-    // Suivre la carte si elle change de cycle.
-    if (targetStage.cycle !== cycle) setCycle(targetStage.cycle);
+    // Suivre la carte seulement si l'étape cible n'est pas déjà visible
+    // (évite de quitter la Prospection quand on dépose dans la colonne KO).
+    if (!visibleStages.some((s) => s.id === targetStageId)) {
+      setCycle(targetStage.cycle);
+    }
 
     const res = await updateLeadStage(leadId, targetStageId);
     if (res?.error) {

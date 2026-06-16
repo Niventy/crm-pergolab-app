@@ -118,6 +118,9 @@ export const leads = pgTable("leads", {
   nextRelanceDate: date("next_relance_date"),
   relanceCount: integer("relance_count").notNull().default(0),
 
+  // Le contact a déjà rempli le formulaire auparavant (re-soumission).
+  resoumission: boolean("resoumission").notNull().default(false),
+
   // --- Métriques commerciales ---
   // Date du 1er contact (pour mesurer le délai de rappel / speed-to-lead).
   datePremierContact: timestamp("date_premier_contact", { withTimezone: true }),
@@ -217,6 +220,25 @@ export const devis = pgTable("devis", {
 });
 
 // ---------------------------------------------------------------------------
+// taches — todolist personnelle (chaque personne ne voit que les siennes)
+// ---------------------------------------------------------------------------
+export const taches = pgTable("taches", {
+  id: uuid("id").primaryKey().defaultRandom(),
+  userId: uuid("user_id")
+    .notNull()
+    .references(() => profiles.id, { onDelete: "cascade" }),
+  titre: text("titre").notNull(),
+  echeance: date("echeance"),
+  fait: boolean("fait").notNull().default(false),
+  faitAt: timestamp("fait_at", { withTimezone: true }),
+  // Lien optionnel vers un lead (« Rappeler M. Dupont »).
+  leadId: uuid("lead_id").references(() => leads.id, { onDelete: "set null" }),
+  createdAt: timestamp("created_at", { withTimezone: true })
+    .notNull()
+    .defaultNow(),
+});
+
+// ---------------------------------------------------------------------------
 // Relations
 // ---------------------------------------------------------------------------
 export const profilesRelations = relations(profiles, ({ many }) => ({
@@ -268,6 +290,14 @@ export const devisRelations = relations(devis, ({ one }) => ({
   lead: one(leads, { fields: [devis.leadId], references: [leads.id] }),
 }));
 
+export const tachesRelations = relations(taches, ({ one }) => ({
+  lead: one(leads, { fields: [taches.leadId], references: [leads.id] }),
+  proprietaire: one(profiles, {
+    fields: [taches.userId],
+    references: [profiles.id],
+  }),
+}));
+
 // ---------------------------------------------------------------------------
 // Types inférés
 // ---------------------------------------------------------------------------
@@ -278,3 +308,4 @@ export type NewLead = typeof leads.$inferInsert;
 export type Note = typeof notes.$inferSelect;
 export type Echange = typeof echanges.$inferSelect;
 export type Devis = typeof devis.$inferSelect;
+export type Tache = typeof taches.$inferSelect;

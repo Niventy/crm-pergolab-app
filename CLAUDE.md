@@ -53,9 +53,9 @@ CYCLE 1 — Prospection :
 1. À traiter
 2. Pas de réponse
 3. Rappeler
-4. Rendez-vous
-5. Devis à envoyer
+4. Devis à envoyer
 CYCLE 2 — Devis & closing :
+- Rendez-vous (déplacé en cycle 2 : un RDV fait partie du closing)
 6. Devis envoyé
 7. Signée  → marque la fiche « Gagnée » (is_gagnee)
 8. KO      → marque la fiche « Perdue » (is_perdue)
@@ -134,9 +134,26 @@ devis
   id (uuid, PK), lead_id (FK -> leads), numero, montant (numeric),
   statut, lien_externe, created_at (timestamptz)
 
+taches  (= todolist personnelle, chacun ne voit QUE les siennes)
+  id (uuid, PK), user_id (FK -> profiles, propriétaire), titre (text),
+  echeance (date, optionnelle), fait (bool), fait_at (timestamptz),
+  lead_id (FK -> leads, optionnel, set null), created_at (timestamptz)
+
 Relations : un profile a plusieurs leads (responsable) ; un stage a plusieurs
 leads ; un lead a plusieurs notes, échanges et devis ; notes et échanges
-rattachés à leur auteur (user_id).
+rattachés à leur auteur (user_id) ; une tâche appartient à un profil et peut
+pointer un lead.
+
+## Gestion d'emploi du temps (menu « Planning », /emploi-du-temps)
+Espace de travail QUOTIDIEN par ADV, alimenté par SES leads (assigned_to = moi).
+Chaque lead est rangé dans UNE seule file (la plus urgente), calculée à la volée :
+RDV du jour / à reprogrammer · Relances du jour (next_relance_date ≤ auj.) ·
+Rappels (étapes « Rappeler »/« Pas de réponse ») · Devis à envoyer ·
+Devis sans réponse (« Devis envoyé » figé +3 j) · Leads en sommeil (en cours,
+updated_at +48 h, hors RDV/relance à venir). Chaque ligne → fiche du lead.
++ Tâches manuelles (table `taches`) avec échéance et lien lead optionnel.
+Actions serveur : addTache / toggleTache / deleteTache (toutes filtrées sur
+l'utilisateur connecté). Page server-rendue (files) + `todo-list.tsx` (client).
 
 ## Kanban
 - Une colonne par étape, drag-drop pour changer d'étape.

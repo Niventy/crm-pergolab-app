@@ -13,7 +13,7 @@ const DEFAULT_STAGES = [
   { nom: "À traiter", position: 1, couleur: "#3b82f6", cycle: 1, isGagnee: false, isPerdue: false },
   { nom: "Pas de réponse", position: 2, couleur: "#94a3b8", cycle: 1, isGagnee: false, isPerdue: false },
   { nom: "Rappeler", position: 3, couleur: "#f59e0b", cycle: 1, isGagnee: false, isPerdue: false },
-  { nom: "Rendez-vous", position: 4, couleur: "#8b5cf6", cycle: 1, isGagnee: false, isPerdue: false },
+  { nom: "Rendez-vous", position: 4, couleur: "#8b5cf6", cycle: 2, isGagnee: false, isPerdue: false },
   { nom: "Devis à envoyer", position: 5, couleur: "#06b6d4", cycle: 1, isGagnee: false, isPerdue: false },
   { nom: "Devis envoyé", position: 6, couleur: "#0ea5e9", cycle: 2, isGagnee: false, isPerdue: false },
   { nom: "Signée", position: 7, couleur: "#22c55e", cycle: 2, isGagnee: true, isPerdue: false },

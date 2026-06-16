@@ -9,8 +9,9 @@ import { Button, buttonVariants } from "@/components/ui/button";
 import { Card, CardContent, CardHeader, CardTitle } from "@/components/ui/card";
 import { Separator } from "@/components/ui/separator";
 import { formatEuros, formatDate, tempsRelatif, humanise } from "@/lib/format";
-import { markGagnee, markPerdue, passerAuCycle, assignLead } from "./actions";
+import { assignLead } from "./actions";
 import { AssignSelect } from "./assign-select";
+import { StageMover } from "./stage-mover";
 import { ActivitePills } from "./activite-pills";
 import { EmailCompose } from "./email-compose";
 import { EmailThread } from "./email-thread";
@@ -123,6 +124,10 @@ export default async function LeadPage({
     db.query.profiles.findMany({ orderBy: (p, { asc }) => [asc(p.nom)] }),
   ]);
 
+  const stages = await db.query.stages.findMany({
+    orderBy: (s, { asc }) => [asc(s.position)],
+  });
+
   if (!lead) notFound();
 
   const cycle = lead.stage?.cycle ?? 1;
@@ -186,12 +191,11 @@ export default async function LeadPage({
               <div className="flex flex-wrap items-center gap-2">
                 <CardTitle className="text-display text-2xl">{lead.nom}</CardTitle>
                 <StatutBadge statut={lead.statut} />
-                <AssignSelect
-                  leadId={lead.id}
-                  profiles={profiles}
-                  assignedTo={lead.assignedTo}
-                  currentUserId={user?.id ?? null}
-                />
+                {lead.resoumission ? (
+                  <span className="inline-flex items-center gap-1 rounded-full bg-violet-100 px-2.5 py-1 text-[11px] font-bold uppercase tracking-wide text-violet-700">
+                    📩 2ᵉ formulaire
+                  </span>
+                ) : null}
               </div>
               {lead.entreprise ? (
                 <div className="text-sm text-muted-foreground">
@@ -199,55 +203,21 @@ export default async function LeadPage({
                 </div>
               ) : null}
             </div>
-            <div className="flex flex-wrap items-center gap-2">
-              {lead.stage?.cycle === 1 ? (
-                <form action={passerAuCycle.bind(null, lead.id, 2)}>
-                  <Button
-                    type="submit"
-                    size="lg"
-                    className="bg-brand text-brand-foreground hover:bg-brand/90"
-                  >
-                    Devis envoyé →
-                  </Button>
-                </form>
-              ) : null}
-              {lead.statut === "gagnee" && (lead.stage?.cycle ?? 0) < 3 ? (
-                <form action={passerAuCycle.bind(null, lead.id, 3)}>
-                  <Button
-                    type="submit"
-                    size="lg"
-                    className="bg-brand text-brand-foreground hover:bg-brand/90"
-                  >
-                    Démarrer la pose →
-                  </Button>
-                </form>
-              ) : null}
-              <form action={markGagnee.bind(null, lead.id)}>
-                <Button
-                  type="submit"
-                  size="sm"
-                  variant="outline"
-                  className="border-green-300 text-green-700 hover:bg-green-50"
-                >
-                  Gagnée
-                </Button>
-              </form>
-              <form action={markPerdue.bind(null, lead.id)}>
-                <Button
-                  type="submit"
-                  size="sm"
-                  variant="outline"
-                  className="border-red-300 text-red-700 hover:bg-red-50"
-                >
-                  Perdue
-                </Button>
-              </form>
+            {/* Attribution — bien visible */}
+            <div className="flex items-center gap-2 rounded-lg border border-border bg-muted/40 px-3 py-1.5">
+              <span className="text-eyebrow text-muted-foreground">Géré par</span>
+              <AssignSelect
+                leadId={lead.id}
+                profiles={profiles}
+                assignedTo={lead.assignedTo}
+                currentUserId={user?.id ?? null}
+              />
             </div>
           </div>
         </CardHeader>
         <CardContent className="space-y-4">
-          {/* PRISE D'INFO — essentiels mis en avant (appel) */}
-          <div className="grid grid-cols-1 gap-4 sm:grid-cols-2 lg:grid-cols-4">
+          {/* PRISE D'INFO — essentiels de l'appel, bien en évidence */}
+          <div className="grid grid-cols-1 gap-3 sm:grid-cols-3">
             <BigField
               label="Téléphone"
               value={
@@ -275,69 +245,51 @@ export default async function LeadPage({
               label="Type de projet"
               value={humanise(lead.typeProjet) || humanise(lead.dimensions)}
             />
-            <BigField
-              label="Étape actuelle"
-              value={
-                lead.stage ? (
-                  <span className="inline-flex items-center gap-1.5">
-                    <span
-                      className="size-2.5 rounded-full"
-                      style={{ backgroundColor: lead.stage.couleur }}
-                    />
-                    {lead.stage.nom}
-                  </span>
-                ) : null
-              }
-            />
           </div>
 
-          <Separator />
-
-          {/* Infos complémentaires */}
-          <div className="grid grid-cols-2 gap-4 sm:grid-cols-4">
-            <Field label="Code postal" value={lead.codePostal} />
-            <Field
-              label="Appel souhaité (créneau)"
-              value={humanise(lead.dateSouhaiteeAppel)}
-            />
-            <Field label="Installation souhaitée" value={humanise(lead.dateInstallation)} />
-            <Field label="Source" value={lead.source} />
-            <Field label="Campagne" value={lead.campagne} />
-            <Field label="Montant" value={formatEuros(lead.montant)} />
-            <Field
-              label="Probabilité"
-              value={lead.probabilite !== null ? `${lead.probabilite} %` : "—"}
-            />
-            <Field label="Objectif" value={formatDate(lead.objectifDate)} />
-            <Field
-              label="Reçu le"
-              value={new Date(lead.createdAt).toLocaleString("fr-FR", {
-                dateStyle: "short",
-                timeStyle: "short",
-                timeZone: "Europe/Paris",
-              })}
-            />
-            <Field
-              label="Dernière modification"
-              value={
-                lead.modifiePar
-                  ? `${lead.modifiePar.nom ?? lead.modifiePar.email} · ${tempsRelatif(lead.updatedAt)}`
-                  : tempsRelatif(lead.updatedAt) || "—"
-              }
-            />
+          {/* BESOIN CLIENT — groupé */}
+          <div className="rounded-lg border border-border bg-muted/30 p-3">
+            <div className="text-eyebrow mb-2 text-muted-foreground">
+              Besoin client
+            </div>
+            <div className="grid grid-cols-1 gap-3 sm:grid-cols-3">
+              <Field label="Code postal" value={lead.codePostal} />
+              <Field
+                label="Appel souhaité (créneau)"
+                value={humanise(lead.dateSouhaiteeAppel)}
+              />
+              <Field
+                label="Installation souhaitée"
+                value={humanise(lead.dateInstallation)}
+              />
+            </div>
           </div>
         </CardContent>
       </Card>
 
-      {/* Activité — actions rapides (mis en avant) */}
+      {/* Suivi — pipeline + activité regroupés (le cœur du travail) */}
       <Card className="border-l-4 border-l-primary">
         <CardHeader>
           <CardTitle className="text-base font-semibold text-foreground">
-            Activité
+            Suivi
           </CardTitle>
         </CardHeader>
         <CardContent className="space-y-4">
-          <ActivitePills leadId={lead.id} cycle={cycle} activites={lead.echanges} />
+          <div>
+            <div className="text-eyebrow mb-2 text-muted-foreground">
+              Pipeline — déplacer la fiche
+            </div>
+            <StageMover
+              leadId={lead.id}
+              stages={stages}
+              currentStageId={lead.stageId}
+            />
+          </div>
+          <Separator />
+          <div>
+            <div className="text-eyebrow mb-2 text-muted-foreground">Activité</div>
+            <ActivitePills leadId={lead.id} cycle={cycle} activites={lead.echanges} />
+          </div>
           <Separator />
           <EmailCompose
             leadId={lead.id}
@@ -370,7 +322,12 @@ export default async function LeadPage({
           </CardTitle>
         </CardHeader>
         <CardContent>
-          <Conversation leadId={lead.id} profiles={profiles} messages={lead.notes} />
+          <Conversation
+            leadId={lead.id}
+            profiles={profiles}
+            messages={lead.notes}
+            currentUserId={user?.id ?? null}
+          />
         </CardContent>
       </Card>
 
@@ -508,6 +465,41 @@ export default async function LeadPage({
         </CardContent>
       </Card>
       ) : null}
+
+      {/* Autres informations — secondaire, en bas */}
+      <Card>
+        <CardHeader>
+          <CardTitle className="text-eyebrow text-muted-foreground">
+            Autres informations
+          </CardTitle>
+        </CardHeader>
+        <CardContent className="grid grid-cols-2 gap-4 sm:grid-cols-4">
+          <Field label="Source" value={lead.source} />
+          <Field label="Campagne" value={lead.campagne} />
+          <Field label="Montant" value={formatEuros(lead.montant)} />
+          <Field
+            label="Probabilité"
+            value={lead.probabilite !== null ? `${lead.probabilite} %` : "—"}
+          />
+          <Field label="Objectif" value={formatDate(lead.objectifDate)} />
+          <Field
+            label="Reçu le"
+            value={new Date(lead.createdAt).toLocaleString("fr-FR", {
+              dateStyle: "short",
+              timeStyle: "short",
+              timeZone: "Europe/Paris",
+            })}
+          />
+          <Field
+            label="Dernière modification"
+            value={
+              lead.modifiePar
+                ? `${lead.modifiePar.nom ?? lead.modifiePar.email} · ${tempsRelatif(lead.updatedAt)}`
+                : tempsRelatif(lead.updatedAt) || "—"
+            }
+          />
+        </CardContent>
+      </Card>
 
       <div className="flex justify-center pt-2">
         <Link

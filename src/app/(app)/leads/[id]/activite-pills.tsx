@@ -11,6 +11,8 @@ import {
   ShoppingCart,
   Truck,
   Wrench,
+  ArrowRight,
+  UserCheck,
   Plus,
   Check,
   X,
@@ -60,6 +62,12 @@ const META: Record<
   },
   livre: { label: "Livré", Icon: Truck, cls: "bg-sky-100 text-sky-700" },
   pose: { label: "Posé", Icon: Wrench, cls: "bg-emerald-100 text-emerald-700" },
+  etape: { label: "Étape", Icon: ArrowRight, cls: "bg-slate-100 text-slate-700" },
+  attribution: {
+    label: "Attribution",
+    Icon: UserCheck,
+    cls: "bg-amber-100 text-amber-700",
+  },
 };
 
 // Pilules proposées selon le cycle de la fiche (1=prospection, 2=devis, 3=pose).
@@ -220,7 +228,8 @@ export function ActivitePills({
           {activites.map((a) => {
             const meta = META[a.type];
             const Icon = meta?.Icon ?? Plus;
-            const label = meta?.label ?? a.contenu ?? a.type;
+            // Pour les types « libres » (étape, autre), on montre le texte saisi.
+            const label = a.contenu ?? meta?.label ?? a.type;
             const auteur = a.auteur?.nom ?? a.auteur?.email ?? "Inconnu";
             return (
               <li key={a.id} className="flex items-center gap-2 text-xs">

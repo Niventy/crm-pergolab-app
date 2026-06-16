@@ -1,7 +1,7 @@
 import { asc, desc, eq, or } from "drizzle-orm";
 import { revalidatePath } from "next/cache";
 import { db } from "@/db";
-import { leads, stages, notes } from "@/db/schema";
+import { leads, stages } from "@/db/schema";
 
 export const dynamic = "force-dynamic";
 
@@ -102,6 +102,7 @@ export async function POST(req: Request) {
   const telVal = pick(data, ["telephone", "téléphone", "phone", "phone_number", "tel"]);
 
   // 4 bis) Même contact (email/téléphone) déjà présent ?
+  let resoumission = false;
   const ident = [
     ...(emailVal ? [eq(leads.email, emailVal)] : []),
     ...(telVal ? [eq(leads.telephone, telVal)] : []),
@@ -127,29 +128,8 @@ export async function POST(req: Request) {
           { status: 200 },
         );
       }
-
-      // RE-SOUMISSION : même contact, autre moment → pas de 2e lead, on FLAGUE.
-      const quand = (recuLe ?? new Date()).toLocaleString("fr-FR", {
-        dateStyle: "short",
-        timeStyle: "short",
-        timeZone: "Europe/Paris",
-      });
-      await db.insert(notes).values({
-        leadId: existing.id,
-        userId: null,
-        contenu: `📩 Ce contact a re-rempli le formulaire le ${quand} (re-soumission).`,
-      });
-      await db
-        .update(leads)
-        .set({ updatedAt: new Date() })
-        .where(eq(leads.id, existing.id));
-      revalidatePath(`/leads/${existing.id}`);
-      revalidatePath("/kanban");
-      revalidatePath("/liste");
-      return Response.json(
-        { ok: true, resubmission: true, id: existing.id },
-        { status: 200 },
-      );
+      // Re-soumission : même contact, autre moment → on crée le lead, flaggé.
+      resoumission = true;
     }
   }
 
@@ -159,6 +139,7 @@ export async function POST(req: Request) {
     .values({
       stageId: stage?.id ?? null,
       statut: "en_cours",
+      resoumission,
       ...(recuLe ? { createdAt: recuLe } : {}),
       nom,
       email: emailVal,
