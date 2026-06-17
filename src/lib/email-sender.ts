@@ -18,6 +18,9 @@ export function resolveSender(userEmail?: string | null): SenderAccount | null {
         );
         if (m?.from && m?.refreshToken)
           return { from: m.from, refreshToken: m.refreshToken };
+        // Adresse connectée connue mais SANS expéditeur dédié : on NE retombe
+        // PAS sur un autre compte (jamais envoyer au nom de quelqu'un d'autre).
+        return null;
       }
       const first = list[0];
       if (first?.from && first?.refreshToken)
