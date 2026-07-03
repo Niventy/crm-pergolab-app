@@ -12,6 +12,7 @@ import { formatEuros, formatDate, tempsRelatif, humanise } from "@/lib/format";
 import { assignLead } from "./actions";
 import { AssignSelect } from "./assign-select";
 import { StageMover } from "./stage-mover";
+import { DevisEditor } from "./devis-editor";
 import { ActivitePills } from "./activite-pills";
 import { EmailCompose } from "./email-compose";
 import { EmailThread } from "./email-thread";
@@ -482,43 +483,19 @@ export default async function LeadPage({
       </Card>
       ) : null}
 
-      {/* Devis (Pennylane) */}
-      {lead.devis.length > 0 ? (
-        <Card>
-          <CardHeader>
-            <CardTitle className="text-eyebrow text-muted-foreground">Devis</CardTitle>
-          </CardHeader>
-          <CardContent>
-            <ul className="divide-y divide-border">
-              {lead.devis.map((d) => (
-                <li key={d.id} className="flex items-center gap-3 py-2 text-sm">
-                  <span className="font-medium text-foreground">
-                    {d.numero ?? "Devis"}
-                  </span>
-                  <span className="tabular-nums text-muted-foreground">
-                    {formatEuros(d.montant)}
-                  </span>
-                  {d.statut ? (
-                    <span className="rounded-full bg-muted px-2 py-0.5 text-xs text-muted-foreground">
-                      {d.statut}
-                    </span>
-                  ) : null}
-                  {d.lienExterne ? (
-                    <a
-                      href={d.lienExterne}
-                      target="_blank"
-                      rel="noreferrer"
-                      className="ml-auto text-xs font-medium text-primary hover:underline"
-                    >
-                      Ouvrir ↗
-                    </a>
-                  ) : null}
-                </li>
-              ))}
-            </ul>
-          </CardContent>
-        </Card>
-      ) : null}
+      {/* Devis — composés dans le CRM puis créés dans Pennylane */}
+      <Card>
+        <CardHeader>
+          <CardTitle className="text-eyebrow text-muted-foreground">Devis</CardTitle>
+        </CardHeader>
+        <CardContent>
+          <DevisEditor
+            leadId={lead.id}
+            devisExistants={lead.devis}
+            pennylaneConfigured={!!process.env.PENNYLANE_API_KEY}
+          />
+        </CardContent>
+      </Card>
 
       {/* Autres informations — secondaire, en bas */}
       <Card>

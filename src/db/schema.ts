@@ -222,6 +222,7 @@ export const devis = pgTable("devis", {
   montant: numeric("montant", { precision: 12, scale: 2 }),
   statut: text("statut"),
   lienExterne: text("lien_externe"),
+  externalId: text("external_id"), // id du devis Pennylane (pour récupérer le PDF)
   createdAt: timestamp("created_at", { withTimezone: true })
     .notNull()
     .defaultNow(),

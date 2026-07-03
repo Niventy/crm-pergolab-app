@@ -6,7 +6,11 @@ import { db } from "@/db";
 import { leads, stages, notes, echanges, profiles } from "@/db/schema";
 import { createClient } from "@/lib/supabase/server";
 import { currentUserId } from "@/lib/current-user";
-import { syncDevisPennylane } from "@/lib/pennylane";
+import {
+  creerDevisPennylane,
+  getQuotePdfUrl,
+  buildQuoteAppUrl,
+} from "@/lib/pennylane";
 
 // Marque un lead comme gagné : le place dans l'étape is_gagnee et fixe le statut.
 export async function markGagnee(leadId: string) {
@@ -21,12 +25,6 @@ export async function markGagnee(leadId: string) {
       ...(stage ? { stageId: stage.id } : {}),
     })
     .where(eq(leads.id, leadId));
-  // Devis Pennylane à la signature (échec silencieux si non configuré).
-  try {
-    await syncDevisPennylane(leadId);
-  } catch (e) {
-    console.error("Pennylane sync échouée:", e);
-  }
   revalidatePath(`/leads/${leadId}`);
   revalidatePath("/kanban");
 }
@@ -198,19 +196,29 @@ export async function changerEtape(
     contenu: `Déplacé en « ${stage.nom} »${c ? ` : ${c}` : ""}`,
   });
 
-  // Signature (étape gagnée) → devis Pennylane (silencieux si non configuré).
-  if (stage.isGagnee) {
-    try {
-      await syncDevisPennylane(leadId);
-    } catch (e) {
-      console.error("Pennylane sync échouée:", e);
-    }
-  }
-
   revalidatePath(`/leads/${leadId}`);
   revalidatePath("/kanban");
   revalidatePath("/liste");
   return { ok: true as const, error: null };
+}
+
+// Crée un devis Pennylane (client + 1 ligne de départ) et renvoie l'URL éditeur.
+export async function creerDevis(leadId: string) {
+  const r = await creerDevisPennylane(leadId);
+  if (!r.ok) return { ...r, appUrl: null as string | null };
+  revalidatePath(`/leads/${leadId}`);
+  const appUrl = r.quoteId ? await buildQuoteAppUrl(r.quoteId) : null;
+  return { ...r, appUrl };
+}
+
+// URL de l'éditeur Pennylane pour un devis déjà créé.
+export async function devisAppUrl(quoteId: string) {
+  return buildQuoteAppUrl(quoteId);
+}
+
+// URL fraîche du PDF d'un devis Pennylane (le lien expire ~30 min).
+export async function devisPdfUrl(quoteId: string) {
+  return getQuotePdfUrl(quoteId);
 }
 
 // Attribue / réassigne le lead à un responsable (ou null pour désassigner).
