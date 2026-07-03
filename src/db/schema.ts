@@ -103,6 +103,8 @@ export const leads = pgTable("leads", {
   objectifDate: date("objectif_date"),
 
   typeProjet: text("type_projet"),
+  adresse: text("adresse"), // rue (facturation client)
+  ville: text("ville"),
   codePostal: text("code_postal"),
   // Texte libre (ex. « le plus rapidement possible », « après-midi 14h-18h »)
   // car Meta envoie souvent des créneaux, pas des dates.
@@ -114,6 +116,12 @@ export const leads = pgTable("leads", {
   rdvDate: date("rdv_date"),
   rdvType: rdvTypeEnum("rdv_type"),
   rdvStatut: rdvStatutEnum("rdv_statut"),
+  rdvHeure: text("rdv_heure"), // « HH:MM » (optionnel) → évènement Google Agenda horaire
+  rdvEventId: text("rdv_event_id"), // id de l'évènement Google Agenda lié
+
+  // Pennylane : ids du client + devis créés à la signature (évite les doublons).
+  pennylaneCustomerId: text("pennylane_customer_id"),
+  pennylaneQuoteId: text("pennylane_quote_id"),
 
   nextRelanceDate: date("next_relance_date"),
   relanceCount: integer("relance_count").notNull().default(0),

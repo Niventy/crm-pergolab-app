@@ -119,6 +119,9 @@ export default async function LeadPage({
           with: { auteur: true },
           orderBy: (e, { desc }) => [desc(e.date)],
         },
+        devis: {
+          orderBy: (d, { desc }) => [desc(d.createdAt)],
+        },
       },
     }),
     db.query.profiles.findMany({ orderBy: (p, { asc }) => [asc(p.nom)] }),
@@ -338,8 +341,9 @@ export default async function LeadPage({
           <CardHeader>
             <CardTitle className="text-eyebrow text-muted-foreground">Rendez-vous</CardTitle>
           </CardHeader>
-          <CardContent className="grid grid-cols-3 gap-4">
+          <CardContent className="grid grid-cols-2 gap-4 sm:grid-cols-4">
             <Field label="Date" value={formatDate(lead.rdvDate)} />
+            <Field label="Heure" value={lead.rdvHeure} />
             <Field
               label="Type"
               value={lead.rdvType ? RDV_TYPE_LABEL[lead.rdvType] : "—"}
@@ -348,6 +352,18 @@ export default async function LeadPage({
               label="Statut"
               value={lead.rdvStatut ? RDV_STATUT_LABEL[lead.rdvStatut] : "—"}
             />
+            {lead.rdvDate ? (
+              <Field
+                label="Google Agenda"
+                value={
+                  lead.rdvEventId ? (
+                    <span className="text-green-700">✓ synchronisé</span>
+                  ) : (
+                    <span className="text-muted-foreground">non synchronisé</span>
+                  )
+                }
+              />
+            ) : null}
           </CardContent>
         </Card>
 
@@ -464,6 +480,44 @@ export default async function LeadPage({
           <Field label="Adresse de pose" value={lead.adressePose} />
         </CardContent>
       </Card>
+      ) : null}
+
+      {/* Devis (Pennylane) */}
+      {lead.devis.length > 0 ? (
+        <Card>
+          <CardHeader>
+            <CardTitle className="text-eyebrow text-muted-foreground">Devis</CardTitle>
+          </CardHeader>
+          <CardContent>
+            <ul className="divide-y divide-border">
+              {lead.devis.map((d) => (
+                <li key={d.id} className="flex items-center gap-3 py-2 text-sm">
+                  <span className="font-medium text-foreground">
+                    {d.numero ?? "Devis"}
+                  </span>
+                  <span className="tabular-nums text-muted-foreground">
+                    {formatEuros(d.montant)}
+                  </span>
+                  {d.statut ? (
+                    <span className="rounded-full bg-muted px-2 py-0.5 text-xs text-muted-foreground">
+                      {d.statut}
+                    </span>
+                  ) : null}
+                  {d.lienExterne ? (
+                    <a
+                      href={d.lienExterne}
+                      target="_blank"
+                      rel="noreferrer"
+                      className="ml-auto text-xs font-medium text-primary hover:underline"
+                    >
+                      Ouvrir ↗
+                    </a>
+                  ) : null}
+                </li>
+              ))}
+            </ul>
+          </CardContent>
+        </Card>
       ) : null}
 
       {/* Autres informations — secondaire, en bas */}

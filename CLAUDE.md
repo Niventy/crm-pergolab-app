@@ -217,6 +217,26 @@ La fiche ÉVOLUE selon le cycle de l'étape (`lead.stage.cycle`) :
   La fiche affiche aussi « Connecté : X → envoi depuis Y » (diagnostic expéditeur).
 - Évolutions : refresh token PAR ADV (envoi perso depuis chaque boîte), niveau 2
   (relances auto via cron), niveau 3 (réception des réponses).
+- ⚠️ L'API Gmail/Agenda agit sur la boîte PROPRIÉTAIRE du refresh token, pas sur
+  l'en-tête `From`. Si le token d'une entrée GOOGLE_SENDERS appartient à adv@,
+  l'envoi part d'adv@ même si `from`=sofiane (seul Reply-To est respecté).
+  `resolveSender` renvoie null si l'email connecté ne matche aucun `login`
+  (plus d'usurpation silencieuse). Chaque token doit être généré CONNECTÉ avec
+  l'adresse correspondante.
+
+## Google Agenda (Calendar API, OAuth — scope `calendar.events`)
+- `lib/google-calendar.ts` : `upsertCalendarEvent` / `deleteCalendarEvent` /
+  `listUpcomingEvents` (OAuth2Client + refresh token par ADV via `resolveSender`).
+- RDV → Agenda : à l'enregistrement de la fiche (`modifier/actions.ts`), si
+  `rdv_date` est présent, crée/maj un évènement dans l'agenda de l'ADV connecté
+  (id stocké dans `leads.rdv_event_id`) ; champ `rdv_heure` (« HH:MM ») → évènement
+  horaire (1 h) sinon journée entière ; **invite le client** (attendee = email du
+  lead, `sendUpdates=all`). RDV effacé → évènement supprimé. Échec silencieux
+  (try/catch) si scope absent.
+- Agenda → CRM : action `fetchAgenda()` + `agenda-google.tsx` affichent les
+  prochains évènements de l'ADV dans le Planning (/emploi-du-temps).
+- Prérequis : régénérer les refresh tokens OAuth en ajoutant le scope
+  `calendar.events` (sinon l'intégration échoue en silence / affiche « scope »).
 
 ## Sécurité
 - Supabase Auth (email + mot de passe), 2FA TOTP activable.

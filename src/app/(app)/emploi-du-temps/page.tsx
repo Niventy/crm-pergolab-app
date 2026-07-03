@@ -15,6 +15,7 @@ import { cn } from "@/lib/utils";
 import { formatDateCourte, tempsRelatif } from "@/lib/format";
 import { currentUserId } from "@/lib/current-user";
 import { TodoList } from "./todo-list";
+import { AgendaGoogle } from "./agenda-google";
 
 export const dynamic = "force-dynamic";
 
@@ -149,6 +150,10 @@ export default async function EmploiDuTempsPage() {
           </p>
         </div>
       </div>
+
+      <section className="rounded-xl border border-border bg-white p-4">
+        <AgendaGoogle />
+      </section>
 
       {mesLeads.length === 0 ? (
         <p className="rounded-xl border border-dashed border-border bg-muted/30 px-4 py-8 text-center text-sm text-muted-foreground">

@@ -6,6 +6,7 @@ import { db } from "@/db";
 import { leads, stages, notes, echanges, profiles } from "@/db/schema";
 import { createClient } from "@/lib/supabase/server";
 import { currentUserId } from "@/lib/current-user";
+import { syncDevisPennylane } from "@/lib/pennylane";
 
 // Marque un lead comme gagné : le place dans l'étape is_gagnee et fixe le statut.
 export async function markGagnee(leadId: string) {
@@ -20,6 +21,12 @@ export async function markGagnee(leadId: string) {
       ...(stage ? { stageId: stage.id } : {}),
     })
     .where(eq(leads.id, leadId));
+  // Devis Pennylane à la signature (échec silencieux si non configuré).
+  try {
+    await syncDevisPennylane(leadId);
+  } catch (e) {
+    console.error("Pennylane sync échouée:", e);
+  }
   revalidatePath(`/leads/${leadId}`);
   revalidatePath("/kanban");
 }
@@ -190,6 +197,15 @@ export async function changerEtape(
     type: "etape",
     contenu: `Déplacé en « ${stage.nom} »${c ? ` : ${c}` : ""}`,
   });
+
+  // Signature (étape gagnée) → devis Pennylane (silencieux si non configuré).
+  if (stage.isGagnee) {
+    try {
+      await syncDevisPennylane(leadId);
+    } catch (e) {
+      console.error("Pennylane sync échouée:", e);
+    }
+  }
 
   revalidatePath(`/leads/${leadId}`);
   revalidatePath("/kanban");

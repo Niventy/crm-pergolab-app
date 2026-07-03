@@ -5,6 +5,26 @@ import { revalidatePath } from "next/cache";
 import { db } from "@/db";
 import { taches } from "@/db/schema";
 import { currentUserId } from "@/lib/current-user";
+import { createClient } from "@/lib/supabase/server";
+import { resolveSender } from "@/lib/email-sender";
+import { listUpcomingEvents, type UpcomingEvent } from "@/lib/google-calendar";
+
+// Prochains évènements Google Agenda de l'ADV connecté (pour le Planning).
+export async function fetchAgenda(): Promise<{
+  ok: boolean;
+  events?: UpcomingEvent[];
+  error?: string;
+}> {
+  if (!process.env.GOOGLE_CLIENT_ID || !process.env.GOOGLE_CLIENT_SECRET)
+    return { ok: false, error: "Google non configuré." };
+  const supabase = await createClient();
+  const {
+    data: { user },
+  } = await supabase.auth.getUser();
+  const account = resolveSender(user?.email);
+  if (!account) return { ok: false, error: "Aucun compte Google pour ce profil." };
+  return listUpcomingEvents(account.refreshToken, new Date().toISOString(), 15);
+}
 
 // Ajoute une tâche pour la personne connectée (rattachable à un lead).
 export async function addTache(

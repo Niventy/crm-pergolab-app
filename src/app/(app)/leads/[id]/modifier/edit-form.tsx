@@ -52,12 +52,15 @@ export function EditForm({
     probabilite: lead.probabilite?.toString() ?? "",
     objectifDate: lead.objectifDate ?? "",
     typeProjet: lead.typeProjet ?? "",
+    adresse: lead.adresse ?? "",
+    ville: lead.ville ?? "",
     codePostal: lead.codePostal ?? "",
     dateInstallation: lead.dateInstallation ?? "",
     dateSouhaiteeAppel: lead.dateSouhaiteeAppel ?? "",
     stageId: lead.stageId ?? "",
     assignedTo: lead.assignedTo ?? "",
     rdvDate: lead.rdvDate ?? "",
+    rdvHeure: lead.rdvHeure ?? "",
     rdvType: lead.rdvType ?? "",
     rdvStatut: lead.rdvStatut ?? "",
     nextRelanceDate: lead.nextRelanceDate ?? "",
@@ -161,6 +164,8 @@ export function EditForm({
 
       <Section title="Projet">
         <FieldText label="Type de projet" value={form.typeProjet} onChange={set("typeProjet")} />
+        <FieldText label="Adresse (facturation)" value={form.adresse} onChange={set("adresse")} />
+        <FieldText label="Ville" value={form.ville} onChange={set("ville")} />
         <FieldText label="Code postal" value={form.codePostal} onChange={set("codePostal")} />
         <FieldText
           label="Installation souhaitée"
@@ -182,6 +187,7 @@ export function EditForm({
       <>
       <Section title="Rendez-vous">
         <FieldText label="Date du RDV" type="date" value={form.rdvDate} onChange={set("rdvDate")} />
+        <FieldText label="Heure du RDV" type="time" value={form.rdvHeure} onChange={set("rdvHeure")} />
         <FieldSelect
           label="Type"
           value={form.rdvType || NONE}
