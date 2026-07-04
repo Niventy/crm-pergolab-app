@@ -8,8 +8,10 @@ import { createClient } from "@/lib/supabase/server";
 import { currentUserId } from "@/lib/current-user";
 import {
   creerDevisPennylane,
+  listProduitsPennylane,
   getQuotePdfUrl,
   buildQuoteAppUrl,
+  type DevisLine,
 } from "@/lib/pennylane";
 
 // Marque un lead comme gagné : le place dans l'étape is_gagnee et fixe le statut.
@@ -202,13 +204,18 @@ export async function changerEtape(
   return { ok: true as const, error: null };
 }
 
-// Crée un devis Pennylane (client + 1 ligne de départ) et renvoie l'URL éditeur.
-export async function creerDevis(leadId: string) {
-  const r = await creerDevisPennylane(leadId);
+// Crée un devis Pennylane à partir des lignes composées dans le CRM.
+export async function creerDevis(leadId: string, lines: DevisLine[]) {
+  const r = await creerDevisPennylane(leadId, lines);
   if (!r.ok) return { ...r, appUrl: null as string | null };
   revalidatePath(`/leads/${leadId}`);
   const appUrl = r.quoteId ? await buildQuoteAppUrl(r.quoteId) : null;
   return { ...r, appUrl };
+}
+
+// Catalogue de présélections (produits Pennylane) pour l'éditeur de devis.
+export async function fetchProduits() {
+  return listProduitsPennylane();
 }
 
 // URL de l'éditeur Pennylane pour un devis déjà créé.
