@@ -26,18 +26,15 @@ export default async function DevisEditPage({
   if (!isNew && !devisRow) notFound();
 
   return (
-    <main className="mx-auto w-full max-w-7xl flex-1 space-y-4 px-6 py-6 pb-28">
-      <div className="flex flex-wrap items-center justify-between gap-3">
+    <main className="flex w-full flex-1 flex-col gap-3 px-4 py-4">
+      <div className="flex flex-wrap items-baseline gap-x-4 gap-y-1">
         <Link
           href={`/leads/${id}`}
           className="text-sm text-muted-foreground hover:text-foreground"
         >
           ← Retour à la fiche
         </Link>
-      </div>
-
-      <div>
-        <h1 className="text-display text-2xl">
+        <h1 className="text-display text-xl">
           {isNew ? "Nouveau devis" : `Devis ${devisRow?.numero ?? ""}`}
         </h1>
         <p className="text-sm text-muted-foreground">{lead.nom}</p>

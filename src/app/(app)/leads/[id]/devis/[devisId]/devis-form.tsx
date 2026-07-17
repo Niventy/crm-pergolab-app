@@ -155,7 +155,7 @@ export function DevisForm({
   }
 
   return (
-    <div className="grid grid-cols-1 gap-4 lg:grid-cols-2">
+    <div className="grid flex-1 grid-cols-1 items-start gap-4 lg:grid-cols-[minmax(360px,26rem)_1fr]">
       {/* --- Éditeur --- */}
       <div className="space-y-3 rounded-xl border border-border bg-white p-4">
         {!pennylaneConfigured ? (
@@ -339,13 +339,14 @@ export function DevisForm({
         </div>
 
         {pdfUrl ? (
+          // #navpanes=0 masque les vignettes, #view=FitH ajuste à la largeur.
           <iframe
-            src={pdfUrl}
+            src={`${pdfUrl}#navpanes=0&toolbar=1&view=FitH`}
             title="Aperçu du devis"
-            className="h-[78vh] w-full rounded-xl border border-border bg-white"
+            className="h-[calc(100vh-11rem)] min-h-[600px] w-full rounded-xl border border-border bg-white"
           />
         ) : (
-          <div className="flex h-[78vh] items-center justify-center rounded-xl border border-dashed border-border bg-muted/30 px-6 text-center text-sm text-muted-foreground">
+          <div className="flex h-[calc(100vh-11rem)] min-h-[600px] items-center justify-center rounded-xl border border-dashed border-border bg-muted/30 px-6 text-center text-sm text-muted-foreground">
             {quoteId
               ? "Chargement de l'aperçu…"
               : "L'aperçu PDF apparaîtra ici dès que le devis sera créé (c'est Pennylane qui le génère)."}
