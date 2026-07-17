@@ -1,0 +1,1 @@
+ALTER TABLE "profiles" ADD COLUMN "objectif_mensuel" numeric(12, 2);

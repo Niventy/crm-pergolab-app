@@ -5,7 +5,7 @@ import { revalidatePath } from "next/cache";
 import { redirect } from "next/navigation";
 import { db } from "@/db";
 import { leads, stages } from "@/db/schema";
-import { currentUserId } from "@/lib/current-user";
+import { currentUserId, isAdmin } from "@/lib/current-user";
 import { createClient } from "@/lib/supabase/server";
 import { resolveSender } from "@/lib/email-sender";
 import {
@@ -76,6 +76,10 @@ export async function updateLead(leadId: string, data: LeadEditInput) {
     throw new Error("Le nom est requis.");
   }
 
+  // Le coût fournisseur est un secret business : un ADV ne peut ni le voir ni
+  // l'écraser (le champ n'est pas dans son formulaire → il enverrait du vide).
+  const admin = await isAdmin();
+
   const stageId = orNull(data.stageId);
 
   // Statut déduit de l'étape sélectionnée.
@@ -139,7 +143,7 @@ export async function updateLead(leadId: string, data: LeadEditInput) {
         | "financement_120"
         | null,
       acompte: orNull(data.acompte),
-      montantAchat: orNull(data.montantAchat),
+      ...(admin ? { montantAchat: orNull(data.montantAchat) } : {}),
       // Produit
       gamme: orNull(data.gamme),
       dimensions: orNull(data.dimensions),

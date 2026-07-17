@@ -207,10 +207,64 @@ export async function changerEtape(
 }
 
 // Crée un devis Pennylane à partir des lignes composées dans le CRM.
+// Effet de bord : le lead avance en « Devis envoyé », on trace l'activité et on
+// programme un rappel de relance (+3 j). N'écrase jamais une étape plus avancée.
 export async function creerDevis(leadId: string, lines: DevisLine[]) {
   const r = await creerDevisPennylane(leadId, lines);
   if (!r.ok) return { ...r, appUrl: null as string | null };
+
+  try {
+    const userId = await currentUserId();
+    const [lead] = await db
+      .select({ stageId: leads.stageId, statut: leads.statut })
+      .from(leads)
+      .where(eq(leads.id, leadId))
+      .limit(1);
+    const [cible] = await db
+      .select()
+      .from(stages)
+      .where(eq(stages.nom, "Devis envoyé"))
+      .limit(1);
+    const [actuelle] = lead?.stageId
+      ? await db.select().from(stages).where(eq(stages.id, lead.stageId)).limit(1)
+      : [undefined];
+
+    // On n'avance que si l'étape cible est bien devant l'étape actuelle.
+    const avance =
+      cible && lead?.statut === "en_cours" &&
+      (!actuelle || cible.position > actuelle.position);
+
+    const rappel = new Date(new Date().getTime() + 3 * 86400000)
+      .toISOString()
+      .slice(0, 10);
+
+    await db
+      .update(leads)
+      .set({
+        ...(avance ? { stageId: cible.id } : {}),
+        nextRelanceDate: rappel,
+        updatedAt: new Date(),
+        updatedBy: userId,
+      })
+      .where(eq(leads.id, leadId));
+
+    await db.insert(echanges).values({
+      leadId,
+      userId,
+      type: "devis_envoye",
+      contenu: `Devis ${r.numero ?? ""} envoyé — relance prévue le ${rappel
+        .split("-")
+        .reverse()
+        .join("/")}`,
+    });
+  } catch (e) {
+    console.error("Suivi devis envoyé échoué:", e);
+  }
+
   revalidatePath(`/leads/${leadId}`);
+  revalidatePath("/kanban");
+  revalidatePath("/liste");
+  revalidatePath("/devis");
   const appUrl = r.quoteId ? await buildQuoteAppUrl(r.quoteId) : null;
   return { ...r, appUrl };
 }

@@ -1,13 +1,17 @@
 import Link from "next/link";
 import { LineChart } from "lucide-react";
+import { eq } from "drizzle-orm";
 import { db } from "@/db";
+import { profiles as profilesTable } from "@/db/schema";
 import { cn } from "@/lib/utils";
 import { formatEuros } from "@/lib/format";
 import { createClient } from "@/lib/supabase/server";
+import { isAdmin } from "@/lib/current-user";
 import { BarParMois } from "./dashboard-charts";
 import { CarteFrance } from "./carte-france";
 import { DEPT_TO_REGION } from "./france-geo";
 import { PeriodSelect } from "./period-select";
+import { ObjectifsAdmin } from "./objectifs-admin";
 
 export const dynamic = "force-dynamic";
 
@@ -127,6 +131,39 @@ export default async function DashboardPage({
       ? Math.round((won.length / (won.length + perdu.length)) * 100)
       : 0;
   const panierMoyen = won.length ? ca / won.length : 0;
+
+  // --- Cloisonnement : l'ADV ne voit pas les chiffres globaux sensibles ---
+  const admin = await isAdmin();
+
+  // Stats PERSONNELLES du connecté (toujours les siennes, quel que soit le
+  // périmètre affiché) — c'est ce que l'ADV a le droit de voir en €.
+  const mesLeads = allLeads.filter(
+    (l) => l.assignedTo === user?.id && inPeriode(l),
+  );
+  const mesWon = mesLeads.filter((l) => l.statut === "gagnee");
+  const mesPerdu = mesLeads.filter((l) => l.statut === "perdue");
+  const monCa = mesWon.reduce((a, l) => a + num(l.montant), 0);
+  const monClosing =
+    mesWon.length + mesPerdu.length > 0
+      ? Math.round((mesWon.length / (mesWon.length + mesPerdu.length)) * 100)
+      : 0;
+
+  // Objectif de CA du connecté (fixé par l'admin) → barre de progression.
+  const monProfil = user?.id
+    ? await db.query.profiles.findFirst({
+        where: eq(profilesTable.id, user.id),
+        columns: { objectifMensuel: true },
+      })
+    : null;
+  const monObjectif = num(monProfil?.objectifMensuel ?? null);
+  const monPct = monObjectif > 0 ? Math.round((monCa / monObjectif) * 100) : 0;
+
+  // Panneau admin : fixer les objectifs mensuels de l'équipe.
+  const tousProfils = admin
+    ? await db.query.profiles.findMany({
+        orderBy: (p, { asc }) => [asc(p.nom)],
+      })
+    : [];
 
   const today = now.toISOString().slice(0, 10);
   const in7 = new Date(now.getTime() + 7 * 86400000).toISOString().slice(0, 10);
@@ -262,16 +299,63 @@ export default async function DashboardPage({
         </div>
       </div>
 
-      {/* KPI cohorte */}
+      {/* --- Mes stats (ADV) : ses chiffres + son objectif du mois --- */}
+      {!admin ? (
+        <div className="rounded-xl border border-primary/30 bg-primary/[0.04] p-4">
+          <h2 className="text-eyebrow mb-3 text-primary">
+            Mes stats · {periodeLabel}
+          </h2>
+          <div className="grid grid-cols-2 gap-3 lg:grid-cols-4">
+            <Kpi label="Mes leads reçus" value={String(mesLeads.length)} />
+            <Kpi label="Mes signés" value={String(mesWon.length)} />
+            <Kpi label="Mon CA (HT)" value={compact(monCa)} color="text-green-700" />
+            <Kpi
+              label="Mon taux de closing"
+              value={`${monClosing} %`}
+              sub="signés / (signés + perdus)"
+            />
+          </div>
+          {monObjectif > 0 ? (
+            <div className="mt-3">
+              <div className="mb-1 flex items-baseline justify-between text-xs">
+                <span className="font-medium text-foreground">
+                  Objectif du mois : {compact(monCa)} / {compact(monObjectif)}
+                </span>
+                <span className="text-muted-foreground">{monPct} %</span>
+              </div>
+              <div className="h-2.5 overflow-hidden rounded-full bg-muted">
+                <div
+                  className={cn(
+                    "h-full rounded-full",
+                    monPct >= 100 ? "bg-green-600" : "bg-primary",
+                  )}
+                  style={{ width: `${Math.min(100, monPct)}%` }}
+                />
+              </div>
+            </div>
+          ) : null}
+        </div>
+      ) : null}
+
+      {/* KPI cohorte — seule la MARGE est réservée aux admins */}
       <div className="grid grid-cols-2 gap-3 lg:grid-cols-4">
         <Kpi label="Leads reçus" value={String(recus)} />
         <Kpi label="CA généré (HT)" value={compact(ca)} color="text-green-700" />
-        <Kpi
-          label="Marge générée"
-          value={compact(marge)}
-          sub={`${margePct} % du CA`}
-          color="text-green-700"
-        />
+        {admin ? (
+          <Kpi
+            label="Marge générée"
+            value={compact(marge)}
+            sub={`${margePct} % du CA`}
+            color="text-green-700"
+          />
+        ) : (
+          <Kpi
+            label="Signés"
+            value={String(won.length)}
+            sub={`${perdu.length} perdu${perdu.length > 1 ? "s" : ""}`}
+            color="text-green-700"
+          />
+        )}
         <Kpi label="Taux de closing" value={`${closing} %`} sub="signés / (signés + perdus)" />
       </div>
 
@@ -359,6 +443,7 @@ export default async function DashboardPage({
           )}
         </Panel>
 
+        {admin ? (
         <Panel title="Performance par ADV">
           <table className="w-full text-sm">
             <thead>
@@ -387,7 +472,18 @@ export default async function DashboardPage({
             </tbody>
           </table>
         </Panel>
+        ) : null}
       </div>
+
+      {/* Objectifs mensuels — admin uniquement */}
+      {admin ? (
+        <Panel title="Objectifs mensuels de l'équipe">
+          <p className="mb-3 text-xs text-muted-foreground">
+            Chaque ADV voit sa progression (CA / objectif) sur son dashboard.
+          </p>
+          <ObjectifsAdmin profils={tousProfils} />
+        </Panel>
+      ) : null}
     </main>
   );
 }

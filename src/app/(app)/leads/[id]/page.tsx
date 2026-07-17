@@ -4,6 +4,7 @@ import { eq } from "drizzle-orm";
 import { db } from "@/db";
 import { leads as leadsTable } from "@/db/schema";
 import { createClient } from "@/lib/supabase/server";
+import { isAdmin } from "@/lib/current-user";
 import { resolveSender } from "@/lib/email-sender";
 import { Button, buttonVariants } from "@/components/ui/button";
 import { Card, CardContent, CardHeader, CardTitle } from "@/components/ui/card";
@@ -136,6 +137,7 @@ export default async function LeadPage({
 
   const cycle = lead.stage?.cycle ?? 1;
   const hasRelance = lead.relanceCount > 0 || !!lead.nextRelanceDate;
+  const admin = await isAdmin(); // masque coût fournisseur + marge aux ADV
 
   // Email : qui est connecté + depuis quelle adresse il enverra (diagnostic + UX).
   const supabase = await createClient();
@@ -440,19 +442,24 @@ export default async function LeadPage({
             value={lead.typePose ? TYPE_POSE_LABEL[lead.typePose] : "—"}
           />
           <Field label="Options" value={humanise(lead.options)} />
-          <Field label="Coût fournisseur" value={formatEuros(lead.montantAchat)} />
-          <Field
-            label="Marge"
-            value={
-              lead.montant && lead.montantAchat ? (
-                <span className="font-medium text-green-700">
-                  {formatEuros(Number(lead.montant) - Number(lead.montantAchat))}
-                </span>
-              ) : (
-                "—"
-              )
-            }
-          />
+          {/* Coût fournisseur + marge = secrets business → admin uniquement. */}
+          {admin ? (
+            <>
+              <Field label="Coût fournisseur" value={formatEuros(lead.montantAchat)} />
+              <Field
+                label="Marge"
+                value={
+                  lead.montant && lead.montantAchat ? (
+                    <span className="font-medium text-green-700">
+                      {formatEuros(Number(lead.montant) - Number(lead.montantAchat))}
+                    </span>
+                  ) : (
+                    "—"
+                  )
+                }
+              />
+            </>
+          ) : null}
         </CardContent>
       </Card>
       ) : null}

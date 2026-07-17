@@ -33,10 +33,12 @@ export function EditForm({
   lead,
   stages,
   profiles,
+  admin = false,
 }: {
   lead: Lead;
   stages: Stage[];
   profiles: Profile[];
+  admin?: boolean;
 }) {
   const router = useRouter();
   const [pending, startTransition] = useTransition();
@@ -298,12 +300,15 @@ export function EditForm({
           ]}
         />
         <FieldText label="Options" value={form.options} onChange={set("options")} />
-        <FieldText
-          label="Coût d'achat fournisseur (€)"
-          type="number"
-          value={form.montantAchat}
-          onChange={set("montantAchat")}
-        />
+        {/* Coût fournisseur = secret business → admin uniquement. */}
+        {admin ? (
+          <FieldText
+            label="Coût d'achat fournisseur (€)"
+            type="number"
+            value={form.montantAchat}
+            onChange={set("montantAchat")}
+          />
+        ) : null}
       </Section>
       ) : null}
 

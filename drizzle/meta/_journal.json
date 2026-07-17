@@ -92,6 +92,13 @@
       "when": 1783088871373,
       "tag": "0012_talented_squirrel_girl",
       "breakpoints": true
+    },
+    {
+      "idx": 13,
+      "version": "7",
+      "when": 1784284682043,
+      "tag": "0013_pale_vulcan",
+      "breakpoints": true
     }
   ]
 }

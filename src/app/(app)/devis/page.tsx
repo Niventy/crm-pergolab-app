@@ -1,3 +1,4 @@
+import Link from "next/link";
 import { FileText } from "lucide-react";
 import { db } from "@/db";
 import { formatEuros, formatHorodatage } from "@/lib/format";
@@ -7,7 +8,11 @@ export const dynamic = "force-dynamic";
 
 export default async function DevisPage() {
   const devisList = await db.query.devis.findMany({
-    with: { lead: { columns: { id: true, nom: true } } },
+    with: {
+      lead: {
+        columns: { id: true, nom: true, codePostal: true, email: true },
+      },
+    },
     orderBy: (d, { desc }) => [desc(d.createdAt)],
   });
 
@@ -39,6 +44,8 @@ export default async function DevisPage() {
               <tr className="bg-muted text-left text-[0.7rem] font-semibold uppercase tracking-wide text-muted-foreground">
                 <th className="border-b border-border px-3 py-2">Numéro</th>
                 <th className="border-b border-border px-3 py-2">Client</th>
+                <th className="border-b border-border px-3 py-2">Code postal</th>
+                <th className="border-b border-border px-3 py-2">Email</th>
                 <th className="border-b border-border px-3 py-2 text-right">Montant HT</th>
                 <th className="border-b border-border px-3 py-2">Statut</th>
                 <th className="border-b border-border px-3 py-2">Créé le</th>
@@ -47,12 +54,48 @@ export default async function DevisPage() {
             </thead>
             <tbody>
               {devisList.map((d) => (
-                <tr key={d.id} className="border-t border-border bg-white">
+                <tr
+                  key={d.id}
+                  className="border-t border-border bg-white transition-colors hover:bg-primary/[0.04]"
+                >
                   <td className="px-3 py-2 font-medium text-foreground">
-                    {d.numero ?? "Devis"}
+                    {d.lead ? (
+                      <Link
+                        href={`/leads/${d.lead.id}/devis/${d.id}`}
+                        className="hover:underline"
+                      >
+                        {d.numero ?? "Devis"}
+                      </Link>
+                    ) : (
+                      (d.numero ?? "Devis")
+                    )}
                   </td>
                   <td className="px-3 py-2 text-foreground">
-                    {d.lead?.nom ?? "—"}
+                    {d.lead ? (
+                      <Link
+                        href={`/leads/${d.lead.id}/devis/${d.id}`}
+                        className="font-medium hover:underline"
+                      >
+                        {d.lead.nom}
+                      </Link>
+                    ) : (
+                      "—"
+                    )}
+                  </td>
+                  <td className="px-3 py-2 tabular-nums text-muted-foreground">
+                    {d.lead?.codePostal ?? "—"}
+                  </td>
+                  <td className="px-3 py-2 text-muted-foreground">
+                    {d.lead?.email ? (
+                      <a
+                        href={`mailto:${d.lead.email}`}
+                        className="hover:text-primary hover:underline"
+                      >
+                        {d.lead.email}
+                      </a>
+                    ) : (
+                      "—"
+                    )}
                   </td>
                   <td className="px-3 py-2 text-right tabular-nums">
                     {formatEuros(d.montant)}

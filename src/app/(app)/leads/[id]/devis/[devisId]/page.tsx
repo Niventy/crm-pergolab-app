@@ -16,6 +16,7 @@ export default async function DevisEditPage({
 
   const lead = await db.query.leads.findFirst({
     where: eq(leadsTable.id, id),
+    with: { stage: true, responsable: true },
   });
   if (!lead) notFound();
 
@@ -60,6 +61,17 @@ export default async function DevisEditPage({
           adresse: lead.adresse,
           ville: lead.ville,
           codePostal: lead.codePostal,
+        }}
+        infos={{
+          typeProjet: lead.typeProjet,
+          dimensions: lead.dimensions,
+          gamme: lead.gamme,
+          dateSouhaiteeAppel: lead.dateSouhaiteeAppel,
+          dateInstallation: lead.dateInstallation,
+          etape: lead.stage?.nom ?? null,
+          responsable: lead.responsable?.nom ?? lead.responsable?.email ?? null,
+          rdvDate: lead.rdvDate,
+          rdvHeure: lead.rdvHeure,
         }}
       />
     </main>

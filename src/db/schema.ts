@@ -57,7 +57,11 @@ export const profiles = pgTable("profiles", {
   id: uuid("id").primaryKey(), // = auth.users.id
   email: text("email").notNull(),
   nom: text("nom"),
+  // "admin" = voit les secrets (marge, coût fournisseur, trésorerie) ;
+  // "membre" (ADV) = ses outils de vente uniquement.
   role: text("role").notNull().default("membre"),
+  // Objectif de CA mensuel (HT) fixé par l'admin → barre de progression.
+  objectifMensuel: numeric("objectif_mensuel", { precision: 12, scale: 2 }),
 });
 
 // ---------------------------------------------------------------------------

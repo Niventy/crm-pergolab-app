@@ -1,6 +1,7 @@
 "use client";
 
 import { useEffect, useState, useTransition } from "react";
+import Link from "next/link";
 import { useRouter } from "next/navigation";
 import { Plus, Trash2, FileText, Download, ExternalLink, RefreshCw } from "lucide-react";
 import { toast } from "sonner";
@@ -48,6 +49,30 @@ function ouvrirDans(
   });
 }
 
+type Infos = {
+  typeProjet: string | null;
+  dimensions: string | null;
+  gamme: string | null;
+  dateSouhaiteeAppel: string | null;
+  dateInstallation: string | null;
+  etape: string | null;
+  responsable: string | null;
+  rdvDate: string | null;
+  rdvHeure: string | null;
+};
+
+function Info({ label, value }: { label: string; value: string | null }) {
+  if (!value) return null;
+  return (
+    <div>
+      <div className="text-[0.65rem] uppercase tracking-wide text-muted-foreground">
+        {label}
+      </div>
+      <div className="text-sm text-foreground">{value.replace(/_/g, " ")}</div>
+    </div>
+  );
+}
+
 export function DevisForm({
   leadId,
   devisId,
@@ -56,6 +81,7 @@ export function DevisForm({
   pennylaneConfigured,
   prefill,
   client,
+  infos,
 }: {
   leadId: string;
   devisId: string | null;
@@ -71,6 +97,7 @@ export function DevisForm({
     ville: string | null;
     codePostal: string | null;
   };
+  infos: Infos;
 }) {
   const router = useRouter();
   const [pending, start] = useTransition();
@@ -164,27 +191,14 @@ export function DevisForm({
 
   return (
     <div className="grid flex-1 grid-cols-1 items-start gap-4 lg:grid-cols-[2fr_3fr]">
-      {/* --- Éditeur --- */}
+      {/* --- Colonne gauche : éditeur + fiche simplifiée --- */}
+      <div className="space-y-4">
       <div className="space-y-3 rounded-xl border border-border bg-white p-4">
         {!pennylaneConfigured ? (
           <p className="rounded-md bg-amber-50 px-3 py-2 text-xs text-amber-800">
             Pennylane n&apos;est pas configuré (<code>PENNYLANE_API_KEY</code>).
           </p>
         ) : null}
-
-        {/* Client */}
-        <div className="rounded-lg bg-muted/40 px-3 py-2 text-sm">
-          <div className="text-eyebrow text-muted-foreground">Client</div>
-          <div className="font-medium text-foreground">{client.nom}</div>
-          <div className="text-xs text-muted-foreground">
-            {[client.adresse, [client.codePostal, client.ville].filter(Boolean).join(" ")]
-              .filter(Boolean)
-              .join(" · ") || "Adresse à compléter"}
-          </div>
-          <div className="text-xs text-muted-foreground">
-            {[client.email, client.telephone].filter(Boolean).join(" · ")}
-          </div>
-        </div>
 
         {/* Présélections */}
         <select
@@ -325,6 +339,94 @@ export function DevisForm({
             </>
           ) : null}
         </div>
+      </div>
+
+      {/* Le prospect : contacter + localiser (l'essentiel pendant la rédaction) */}
+      <div className="space-y-3 rounded-xl border border-border bg-white p-4">
+        <div className="flex items-center justify-between">
+          <span className="text-eyebrow text-muted-foreground">Le prospect</span>
+          <Link
+            href={`/leads/${leadId}`}
+            className="text-xs font-medium text-primary hover:underline"
+          >
+            Ouvrir la fiche ↗
+          </Link>
+        </div>
+
+        {/* Contacter — cliquable */}
+        <div className="grid grid-cols-1 gap-3 sm:grid-cols-2">
+          <div className="rounded-lg bg-muted/40 px-3 py-2">
+            <div className="text-[0.65rem] uppercase tracking-wide text-muted-foreground">
+              Téléphone
+            </div>
+            {client.telephone ? (
+              <a
+                href={`tel:${client.telephone.replace(/[^+\d]/g, "")}`}
+                className="text-base font-semibold text-primary hover:underline"
+              >
+                {client.telephone}
+              </a>
+            ) : (
+              <div className="text-sm text-muted-foreground">—</div>
+            )}
+          </div>
+          <div className="rounded-lg bg-muted/40 px-3 py-2">
+            <div className="text-[0.65rem] uppercase tracking-wide text-muted-foreground">
+              Email
+            </div>
+            {client.email ? (
+              <a
+                href={`mailto:${client.email}`}
+                className="text-sm font-medium break-all text-primary hover:underline"
+              >
+                {client.email}
+              </a>
+            ) : (
+              <div className="text-sm text-muted-foreground">—</div>
+            )}
+          </div>
+        </div>
+
+        {/* Localisation */}
+        <div className="rounded-lg bg-muted/40 px-3 py-2">
+          <div className="text-[0.65rem] uppercase tracking-wide text-muted-foreground">
+            Localisation
+          </div>
+          <div className="text-sm font-medium text-foreground">
+            {[
+              client.adresse,
+              [client.codePostal, client.ville].filter(Boolean).join(" "),
+            ]
+              .filter(Boolean)
+              .join(", ") || (
+              <span className="text-amber-700">Adresse à compléter</span>
+            )}
+          </div>
+        </div>
+
+        {/* Contexte utile */}
+        <div className="grid grid-cols-2 gap-3 sm:grid-cols-3">
+          <Info label="Appel souhaité" value={infos.dateSouhaiteeAppel} />
+          <Info
+            label="RDV"
+            value={
+              infos.rdvDate
+                ? `${infos.rdvDate.split("-").reverse().join("/")}${
+                    infos.rdvHeure ? ` · ${infos.rdvHeure}` : ""
+                  }`
+                : null
+            }
+          />
+          <Info label="Installation" value={infos.dateInstallation} />
+          <Info
+            label="Type de projet"
+            value={infos.typeProjet ?? infos.dimensions}
+          />
+          <Info label="Gamme" value={infos.gamme} />
+          <Info label="Étape" value={infos.etape} />
+          <Info label="Responsable" value={infos.responsable} />
+        </div>
+      </div>
       </div>
 
       {/* --- Prévisualisation PDF --- */}

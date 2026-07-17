@@ -3,6 +3,7 @@ import { notFound } from "next/navigation";
 import { eq } from "drizzle-orm";
 import { db } from "@/db";
 import { leads as leadsTable } from "@/db/schema";
+import { isAdmin } from "@/lib/current-user";
 import { EditForm } from "./edit-form";
 
 export const dynamic = "force-dynamic";
@@ -14,10 +15,11 @@ export default async function EditLeadPage({
 }) {
   const { id } = await params;
 
-  const [lead, stages, profiles] = await Promise.all([
+  const [lead, stages, profiles, admin] = await Promise.all([
     db.query.leads.findFirst({ where: eq(leadsTable.id, id) }),
     db.query.stages.findMany({ orderBy: (s, { asc }) => [asc(s.position)] }),
     db.query.profiles.findMany({ orderBy: (p, { asc }) => [asc(p.nom)] }),
+    isAdmin(),
   ]);
 
   if (!lead) notFound();
@@ -34,7 +36,13 @@ export default async function EditLeadPage({
         <h1 className="text-display mt-2 text-2xl">Modifier {lead.nom}</h1>
       </div>
 
-      <EditForm lead={lead} stages={stages} profiles={profiles} />
+      {/* Le coût fournisseur ne doit pas partir dans le payload client d'un ADV. */}
+      <EditForm
+        lead={admin ? lead : { ...lead, montantAchat: null }}
+        stages={stages}
+        profiles={profiles}
+        admin={admin}
+      />
     </main>
   );
 }
