@@ -48,6 +48,29 @@ function vatCode(tva: number): string {
   return `FR_${String(Math.round((tva || 0) * 10)).padStart(3, "0")}`;
 }
 
+// Lignes du CRM → format invoice_lines de Pennylane (création et mise à jour).
+// Une ligne issue d'une présélection reste liée au produit (product_id).
+function toInvoiceLines(lines: DevisLine[]) {
+  return lines.map((l) =>
+    l.productId
+      ? {
+          product_id: l.productId,
+          quantity: l.quantite || 1,
+          label: l.designation || undefined,
+          raw_currency_unit_price: String(l.prixHt ?? 0),
+          unit: "pièce",
+          vat_rate: vatCode(l.tva),
+        }
+      : {
+          label: l.designation || "Prestation",
+          quantity: l.quantite || 1,
+          raw_currency_unit_price: String(l.prixHt ?? 0),
+          unit: "pièce",
+          vat_rate: vatCode(l.tva),
+        },
+  );
+}
+
 // POST /individual_customers → id du client créé.
 async function createCustomer(
   lead: Lead,
@@ -101,24 +124,7 @@ async function createQuote(
     deadline: ymd(deadline),
     customer_id: customerId,
     currency: "EUR",
-    invoice_lines: lines.map((l) =>
-      l.productId
-        ? {
-            product_id: l.productId,
-            quantity: l.quantite || 1,
-            label: l.designation || undefined,
-            raw_currency_unit_price: String(l.prixHt ?? 0),
-            unit: "pièce",
-            vat_rate: vatCode(l.tva),
-          }
-        : {
-            label: l.designation || "Prestation",
-            quantity: l.quantite || 1,
-            raw_currency_unit_price: String(l.prixHt ?? 0),
-            unit: "pièce",
-            vat_rate: vatCode(l.tva),
-          },
-    ),
+    invoice_lines: toInvoiceLines(lines),
   };
 
   const res = await fetch(`${BASE}/quotes`, {
@@ -219,6 +225,62 @@ export async function creerDevisPennylane(
     lien: q.link,
     quoteId: String(q.id),
   };
+}
+
+// GET /quotes/{id}/invoice_lines → lignes existantes, pour rééditer dans le CRM.
+export async function getQuoteLines(
+  quoteId: string,
+): Promise<{ ok: boolean; lines?: DevisLine[]; error?: string }> {
+  if (!process.env.PENNYLANE_API_KEY)
+    return { ok: false, error: "Pennylane non configuré." };
+  const res = await fetch(`${BASE}/quotes/${quoteId}/invoice_lines`, {
+    headers: plHeaders(),
+  });
+  if (!res.ok) {
+    const t = await res.text();
+    return { ok: false, error: `Lignes ${res.status} — ${t.slice(0, 150)}` };
+  }
+  const j = (await res.json()) as unknown[] | { items?: unknown[] };
+  const items = (Array.isArray(j) ? j : (j.items ?? [])) as Record<
+    string,
+    unknown
+  >[];
+  const lines: DevisLine[] = items.map((l) => ({
+    designation: String(l.label ?? l.description ?? ""),
+    quantite: Number(l.quantity ?? 1) || 1,
+    prixHt:
+      Number(
+        l.raw_currency_unit_price ?? l.unit_price ?? l.currency_amount ?? 0,
+      ) || 0,
+    tva: vatToNumber(l.vat_rate as string),
+    productId: l.product_id ? Number(l.product_id) : null,
+  }));
+  return { ok: true, lines };
+}
+
+// PUT /quotes/{id} → remplace les lignes du devis (édition depuis le CRM).
+export async function updateQuotePennylane(
+  quoteId: string,
+  lines: DevisLine[],
+): Promise<{ ok: boolean; totalHt?: number; error?: string }> {
+  if (!process.env.PENNYLANE_API_KEY)
+    return { ok: false, error: "Pennylane non configuré." };
+  if (!lines.length) return { ok: false, error: "Ajoute au moins une ligne." };
+
+  const res = await fetch(`${BASE}/quotes/${quoteId}`, {
+    method: "PUT",
+    headers: plHeaders(),
+    body: JSON.stringify({ invoice_lines: toInvoiceLines(lines) }),
+  });
+  if (!res.ok) {
+    const t = await res.text();
+    return { ok: false, error: `Maj devis ${res.status} — ${t.slice(0, 200)}` };
+  }
+  const totalHt = lines.reduce(
+    (a, l) => a + (l.quantite || 0) * (l.prixHt || 0),
+    0,
+  );
+  return { ok: true, totalHt };
 }
 
 // GET /products → catalogue de présélections pour l'éditeur de devis.

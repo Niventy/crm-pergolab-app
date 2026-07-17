@@ -3,12 +3,14 @@
 import { eq, asc, sql } from "drizzle-orm";
 import { revalidatePath } from "next/cache";
 import { db } from "@/db";
-import { leads, stages, notes, echanges, profiles } from "@/db/schema";
+import { leads, stages, notes, echanges, profiles, devis } from "@/db/schema";
 import { createClient } from "@/lib/supabase/server";
 import { currentUserId } from "@/lib/current-user";
 import {
   creerDevisPennylane,
   listProduitsPennylane,
+  getQuoteLines,
+  updateQuotePennylane,
   getQuotePdfUrl,
   buildQuoteAppUrl,
   type DevisLine,
@@ -216,6 +218,29 @@ export async function creerDevis(leadId: string, lines: DevisLine[]) {
 // Catalogue de présélections (produits Pennylane) pour l'éditeur de devis.
 export async function fetchProduits() {
   return listProduitsPennylane();
+}
+
+// Charge les lignes d'un devis existant (pour le rééditer dans le CRM).
+export async function getDevisLines(quoteId: string) {
+  return getQuoteLines(quoteId);
+}
+
+// Enregistre les modifications d'un devis existant (lignes éditées dans le CRM).
+export async function modifierDevis(
+  leadId: string,
+  devisId: string,
+  quoteId: string,
+  lines: DevisLine[],
+) {
+  const r = await updateQuotePennylane(quoteId, lines);
+  if (!r.ok) return r;
+  await db
+    .update(devis)
+    .set({ montant: String(r.totalHt ?? 0) })
+    .where(eq(devis.id, devisId));
+  revalidatePath(`/leads/${leadId}`);
+  revalidatePath("/devis");
+  return r;
 }
 
 // URL de l'éditeur Pennylane pour un devis déjà créé.

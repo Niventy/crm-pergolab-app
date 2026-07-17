@@ -2,10 +2,17 @@
 
 import { useEffect, useState, useTransition } from "react";
 import { useRouter } from "next/navigation";
-import { Plus, Trash2, FileText, Download, ExternalLink } from "lucide-react";
+import { Plus, Trash2, FileText, Download, ExternalLink, Pencil } from "lucide-react";
 import { toast } from "sonner";
 import { formatEuros } from "@/lib/format";
-import { creerDevis, fetchProduits, devisAppUrl, devisPdfUrl } from "./actions";
+import {
+  creerDevis,
+  fetchProduits,
+  getDevisLines,
+  modifierDevis,
+  devisAppUrl,
+  devisPdfUrl,
+} from "./actions";
 
 type Line = {
   designation: string;
@@ -65,9 +72,63 @@ export function DevisEditor({
   const [pending, start] = useTransition();
   const [produits, setProduits] = useState<Produit[] | null>(null);
   const [produitsErr, setProduitsErr] = useState<string | null>(null);
+  // Devis en cours d'édition (null = création d'un nouveau devis).
+  const [editing, setEditing] = useState<{
+    devisId: string;
+    quoteId: string;
+    numero: string;
+  } | null>(null);
   const [lines, setLines] = useState<Line[]>([
     { designation: prefill.designation, quantite: 1, prixHt: prefill.prixHt, tva: 20 },
   ]);
+
+  const lignesDefaut = (): Line[] => [
+    { designation: prefill.designation, quantite: 1, prixHt: prefill.prixHt, tva: 20 },
+  ];
+
+  // Ouvre l'éditeur sur un devis existant en chargeant ses lignes depuis Pennylane.
+  function editer(d: DevisRow) {
+    if (!d.externalId) return;
+    start(async () => {
+      const r = await getDevisLines(d.externalId!);
+      if (!r.ok || !r.lines?.length) {
+        toast.error(r.error ?? "Impossible de charger les lignes du devis");
+        return;
+      }
+      setLines(r.lines as Line[]);
+      setEditing({
+        devisId: d.id,
+        quoteId: d.externalId!,
+        numero: d.numero ?? "Devis",
+      });
+      setOpen(true);
+    });
+  }
+
+  function fermer() {
+    setOpen(false);
+    setEditing(null);
+    setLines(lignesDefaut());
+  }
+
+  // Enregistre les modifications d'un devis existant.
+  function enregistrer() {
+    if (!editing) return;
+    if (!lines.some((l) => l.designation.trim())) {
+      toast.error("Ajoute au moins une désignation.");
+      return;
+    }
+    start(async () => {
+      const r = await modifierDevis(leadId, editing.devisId, editing.quoteId, lines);
+      if (r.ok) {
+        toast.success(`Devis ${editing.numero} mis à jour`);
+        fermer();
+        router.refresh();
+      } else {
+        toast.error(r.error ?? "Échec de la mise à jour");
+      }
+    });
+  }
 
   useEffect(() => {
     if (!open || produits !== null) return;
@@ -149,10 +210,18 @@ export function DevisEditor({
                   <>
                     <button
                       type="button"
-                      onClick={() => ouvrirDans(() => devisAppUrl(d.externalId!))}
-                      className="inline-flex items-center gap-1 text-xs font-medium text-primary hover:underline"
+                      onClick={() => editer(d)}
+                      disabled={pending}
+                      className="inline-flex items-center gap-1 text-xs font-medium text-primary hover:underline disabled:opacity-50"
                     >
-                      <ExternalLink className="size-3.5" /> Éditer dans Pennylane
+                      <Pencil className="size-3.5" /> Éditer
+                    </button>
+                    <button
+                      type="button"
+                      onClick={() => ouvrirDans(() => devisAppUrl(d.externalId!))}
+                      className="inline-flex items-center gap-1 text-xs font-medium text-muted-foreground hover:text-foreground"
+                    >
+                      <ExternalLink className="size-3.5" /> Pennylane
                     </button>
                     <button
                       type="button"
@@ -190,6 +259,9 @@ export function DevisEditor({
         </button>
       ) : (
         <div className="space-y-3 rounded-lg border border-border bg-muted/20 p-3">
+          <div className="text-eyebrow text-muted-foreground">
+            {editing ? `Modifier le devis ${editing.numero}` : "Nouveau devis"}
+          </div>
           {!pennylaneConfigured ? (
             <p className="rounded-md bg-amber-50 px-3 py-2 text-xs text-amber-800">
               Pennylane n&apos;est pas encore configuré (<code>PENNYLANE_API_KEY</code>).
@@ -310,18 +382,40 @@ export function DevisEditor({
           </div>
 
           <div className="flex items-center gap-2">
+            {editing ? (
+              <button
+                type="button"
+                onClick={enregistrer}
+                disabled={pending}
+                className="inline-flex items-center gap-1.5 rounded-md bg-primary px-3 py-1.5 text-sm font-semibold text-primary-foreground hover:bg-primary/90 disabled:opacity-50"
+              >
+                <FileText className="size-4" />
+                {pending ? "Enregistrement…" : "Enregistrer les modifications"}
+              </button>
+            ) : (
+              <button
+                type="button"
+                onClick={creer}
+                disabled={pending}
+                className="inline-flex items-center gap-1.5 rounded-md bg-primary px-3 py-1.5 text-sm font-semibold text-primary-foreground hover:bg-primary/90 disabled:opacity-50"
+              >
+                <FileText className="size-4" />
+                {pending ? "Création…" : "Créer le devis + PDF"}
+              </button>
+            )}
+            {editing ? (
+              <button
+                type="button"
+                onClick={() => ouvrirDans(() => devisPdfUrl(editing.quoteId))}
+                disabled={pending}
+                className="inline-flex items-center gap-1 text-sm font-medium text-primary hover:underline disabled:opacity-50"
+              >
+                <Download className="size-3.5" /> Voir le PDF
+              </button>
+            ) : null}
             <button
               type="button"
-              onClick={creer}
-              disabled={pending}
-              className="inline-flex items-center gap-1.5 rounded-md bg-primary px-3 py-1.5 text-sm font-semibold text-primary-foreground hover:bg-primary/90 disabled:opacity-50"
-            >
-              <FileText className="size-4" />
-              {pending ? "Création…" : "Créer le devis + PDF"}
-            </button>
-            <button
-              type="button"
-              onClick={() => setOpen(false)}
+              onClick={fermer}
               disabled={pending}
               className="text-sm text-muted-foreground hover:text-foreground"
             >
