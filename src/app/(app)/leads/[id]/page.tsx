@@ -493,13 +493,6 @@ export default async function LeadPage({
             leadId={lead.id}
             devisExistants={lead.devis}
             pennylaneConfigured={!!process.env.PENNYLANE_API_KEY}
-            prefill={{
-              designation:
-                `Pergola${lead.gamme ? ` ${lead.gamme}` : ""}${
-                  lead.dimensions ? ` ${lead.dimensions}` : ""
-                }`.trim() || "Pergola sur mesure",
-              prixHt: Number(lead.montant ?? 0) || 0,
-            }}
           />
         </CardContent>
       </Card>

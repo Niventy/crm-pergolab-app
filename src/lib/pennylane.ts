@@ -162,6 +162,7 @@ export async function creerDevisPennylane(
   lien?: string | null;
   error?: string;
   quoteId?: string;
+  devisId?: string;
 }> {
   if (!process.env.PENNYLANE_API_KEY)
     return { ok: false, error: "Pennylane non configuré (clé API manquante)." };
@@ -210,20 +211,24 @@ export async function creerDevisPennylane(
     .update(leads)
     .set({ pennylaneQuoteId: String(q.id) })
     .where(eq(leads.id, leadId));
-  await db.insert(devis).values({
-    leadId,
-    numero: q.number ?? `PL-${q.id}`,
-    montant: String(totalHt),
-    statut: "Devis Pennylane",
-    lienExterne: q.link ?? null,
-    externalId: String(q.id),
-  });
+  const [row] = await db
+    .insert(devis)
+    .values({
+      leadId,
+      numero: q.number ?? `PL-${q.id}`,
+      montant: String(totalHt),
+      statut: "Devis Pennylane",
+      lienExterne: q.link ?? null,
+      externalId: String(q.id),
+    })
+    .returning({ id: devis.id });
 
   return {
     ok: true,
     numero: q.number ?? `PL-${q.id}`,
     lien: q.link,
     quoteId: String(q.id),
+    devisId: row?.id,
   };
 }
 

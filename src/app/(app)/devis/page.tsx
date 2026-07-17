@@ -71,7 +71,11 @@ export default async function DevisPage() {
                   </td>
                   <td className="px-3 py-2">
                     {d.lead ? (
-                      <DevisActions externalId={d.externalId} leadId={d.lead.id} />
+                      <DevisActions
+                        externalId={d.externalId}
+                        leadId={d.lead.id}
+                        devisId={d.id}
+                      />
                     ) : null}
                   </td>
                 </tr>
