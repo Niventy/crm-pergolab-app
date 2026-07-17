@@ -222,9 +222,11 @@ export async function creerDevisPennylane(
     0,
   );
 
+  // Le montant du devis devient le montant du lead : sans ça, le pipeline et
+  // le CA du dashboard resteraient à 0 (ils se calculent sur leads.montant).
   await db
     .update(leads)
-    .set({ pennylaneQuoteId: String(q.id) })
+    .set({ pennylaneQuoteId: String(q.id), montant: String(totalHt) })
     .where(eq(leads.id, leadId));
   const [row] = await db
     .insert(devis)

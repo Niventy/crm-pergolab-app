@@ -292,8 +292,20 @@ export async function modifierDevis(
     .update(devis)
     .set({ montant: String(r.totalHt ?? 0) })
     .where(eq(devis.id, devisId));
+  // Le montant du lead suit celui du devis (sinon pipeline/CA restent à 0).
+  await db
+    .update(leads)
+    .set({
+      montant: String(r.totalHt ?? 0),
+      updatedAt: new Date(),
+      updatedBy: await currentUserId(),
+    })
+    .where(eq(leads.id, leadId));
   revalidatePath(`/leads/${leadId}`);
+  revalidatePath("/kanban");
+  revalidatePath("/liste");
   revalidatePath("/devis");
+  revalidatePath("/dashboard");
   return r;
 }
 

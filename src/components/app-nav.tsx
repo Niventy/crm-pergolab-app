@@ -13,10 +13,22 @@ const TABS = [
   { href: "/liste", label: "Liste" },
   { href: "/devis", label: "Devis" },
   { href: "/emploi-du-temps", label: "Planning" },
+  { href: "/commercial", label: "Commercial" },
+  // Comptabilité : admin uniquement (ajouté plus bas selon le rôle).
 ];
 
-export function AppNav({ email }: { email: string | null }) {
+export function AppNav({
+  email,
+  role,
+}: {
+  email: string | null;
+  role?: string;
+}) {
   const pathname = usePathname();
+  const admin = role === "admin";
+  const tabs = admin
+    ? [...TABS, { href: "/comptabilite", label: "Comptabilité" }]
+    : TABS;
 
   return (
     <header className="flex items-center justify-between border-b bg-white px-6 py-2.5">
@@ -29,8 +41,8 @@ export function AppNav({ email }: { email: string | null }) {
             CRM
           </span>
         </Link>
-        <nav className="flex items-center gap-0.5">
-          {TABS.map((tab) => {
+        <nav className="flex flex-wrap items-center gap-0.5">
+          {tabs.map((tab) => {
             const active = pathname.startsWith(tab.href);
             return (
               <Link
@@ -54,6 +66,21 @@ export function AppNav({ email }: { email: string | null }) {
       </div>
 
       <div className="flex items-center gap-3">
+        <span
+          className={cn(
+            "rounded-full px-2 py-0.5 text-[10px] font-bold uppercase tracking-wide",
+            admin
+              ? "bg-primary text-primary-foreground"
+              : "bg-muted text-muted-foreground",
+          )}
+          title={
+            admin
+              ? "Admin — accès aux marges, coûts et comptabilité"
+              : "ADV — accès commercial"
+          }
+        >
+          {admin ? "Admin" : "ADV"}
+        </span>
         <span
           className="flex size-7 items-center justify-center rounded-full bg-primary/10 text-xs font-medium text-primary"
           title={email ?? undefined}

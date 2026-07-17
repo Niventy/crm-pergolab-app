@@ -9,13 +9,16 @@ import {
   SelectValue,
 } from "@/components/ui/select";
 
-// Sélecteur de période (mois de réception). Conserve le paramètre `adv`.
+// Sélecteur de période (mois de réception). Conserve le paramètre `adv`
+// et reste sur la page courante (dashboard, commercial, comptabilité…).
 export function PeriodSelect({
   value,
   options,
+  basePath = "/dashboard",
 }: {
   value: string;
   options: { value: string; label: string }[];
+  basePath?: string;
 }) {
   const router = useRouter();
   const sp = useSearchParams();
@@ -25,7 +28,7 @@ export function PeriodSelect({
     if (!v || v === "annee") p.delete("mois");
     else p.set("mois", v);
     const qs = p.toString();
-    router.push(qs ? `/dashboard?${qs}` : "/dashboard");
+    router.push(qs ? `${basePath}?${qs}` : basePath);
   }
 
   return (
