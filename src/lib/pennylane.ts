@@ -9,6 +9,7 @@ import { leads, devis, type Lead } from "@/db/schema";
 const BASE = "https://app.pennylane.com/api/external/v2";
 
 export type DevisLine = {
+  id?: number | null; // id de la ligne côté Pennylane (si elle existe déjà)
   designation: string;
   quantite: number;
   prixHt: number;
@@ -48,27 +49,41 @@ function vatCode(tva: number): string {
   return `FR_${String(Math.round((tva || 0) * 10)).padStart(3, "0")}`;
 }
 
-// Lignes du CRM → format invoice_lines de Pennylane (création et mise à jour).
-// Une ligne issue d'une présélection reste liée au produit (product_id).
+// Une ligne du CRM → payload de CRÉATION Pennylane.
+// Issue d'une présélection => reste liée au produit (product_id).
+function toLinePayload(l: DevisLine) {
+  return l.productId
+    ? {
+        product_id: l.productId,
+        quantity: l.quantite || 1,
+        label: l.designation || undefined,
+        raw_currency_unit_price: String(l.prixHt ?? 0),
+        unit: "pièce",
+        vat_rate: vatCode(l.tva),
+      }
+    : {
+        label: l.designation || "Prestation",
+        quantity: l.quantite || 1,
+        raw_currency_unit_price: String(l.prixHt ?? 0),
+        unit: "pièce",
+        vat_rate: vatCode(l.tva),
+      };
+}
+
+// Une ligne existante → payload de MISE À JOUR (id + valeurs éditables).
+function toLineUpdatePayload(l: DevisLine) {
+  return {
+    id: l.id,
+    label: l.designation || "Prestation",
+    quantity: l.quantite || 1,
+    raw_currency_unit_price: String(l.prixHt ?? 0),
+    unit: "pièce",
+    vat_rate: vatCode(l.tva),
+  };
+}
+
 function toInvoiceLines(lines: DevisLine[]) {
-  return lines.map((l) =>
-    l.productId
-      ? {
-          product_id: l.productId,
-          quantity: l.quantite || 1,
-          label: l.designation || undefined,
-          raw_currency_unit_price: String(l.prixHt ?? 0),
-          unit: "pièce",
-          vat_rate: vatCode(l.tva),
-        }
-      : {
-          label: l.designation || "Prestation",
-          quantity: l.quantite || 1,
-          raw_currency_unit_price: String(l.prixHt ?? 0),
-          unit: "pièce",
-          vat_rate: vatCode(l.tva),
-        },
-  );
+  return lines.map(toLinePayload);
 }
 
 // POST /individual_customers → id du client créé.
@@ -251,6 +266,7 @@ export async function getQuoteLines(
     unknown
   >[];
   const lines: DevisLine[] = items.map((l) => ({
+    id: l.id ? Number(l.id) : null,
     designation: String(l.label ?? l.description ?? ""),
     quantite: Number(l.quantity ?? 1) || 1,
     prixHt:
@@ -272,10 +288,31 @@ export async function updateQuotePennylane(
     return { ok: false, error: "Pennylane non configuré." };
   if (!lines.length) return { ok: false, error: "Ajoute au moins une ligne." };
 
+  // Pennylane attend un OBJET { create, update, delete }, pas un tableau.
+  // On diffe contre l'état réel du devis pour savoir quoi supprimer.
+  const actuel = await getQuoteLines(quoteId);
+  const idsActuels = (actuel.lines ?? [])
+    .map((l) => l.id)
+    .filter((id): id is number => typeof id === "number");
+  const idsGardes = new Set(
+    lines.map((l) => l.id).filter((id): id is number => typeof id === "number"),
+  );
+
+  const create = lines.filter((l) => !l.id).map(toLinePayload);
+  const update = lines.filter((l) => l.id).map(toLineUpdatePayload);
+  const supprime = idsActuels
+    .filter((id) => !idsGardes.has(id))
+    .map((id) => ({ id }));
+
+  const invoice_lines: Record<string, unknown> = {};
+  if (create.length) invoice_lines.create = create;
+  if (update.length) invoice_lines.update = update;
+  if (supprime.length) invoice_lines.delete = supprime;
+
   const res = await fetch(`${BASE}/quotes/${quoteId}`, {
     method: "PUT",
     headers: plHeaders(),
-    body: JSON.stringify({ invoice_lines: toInvoiceLines(lines) }),
+    body: JSON.stringify({ invoice_lines }),
   });
   if (!res.ok) {
     const t = await res.text();

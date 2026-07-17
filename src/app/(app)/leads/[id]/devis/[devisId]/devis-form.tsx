@@ -15,6 +15,7 @@ import {
 } from "../../actions";
 
 type Line = {
+  id?: number | null; // id de la ligne côté Pennylane (absent = ligne à créer)
   designation: string;
   quantite: number;
   prixHt: number;
@@ -76,6 +77,7 @@ export function DevisForm({
   const [produits, setProduits] = useState<Produit[] | null>(null);
   const [pdfUrl, setPdfUrl] = useState<string | null>(null);
   const [pdfLoading, setPdfLoading] = useState(false);
+  const [pdfKey, setPdfKey] = useState(0); // force le rechargement de l'iframe
   const [lines, setLines] = useState<Line[]>([
     { designation: prefill.designation, quantite: 1, prixHt: prefill.prixHt, tva: 20 },
   ]);
@@ -100,8 +102,10 @@ export function DevisForm({
     if (!quoteId) return;
     setPdfLoading(true);
     devisPdfUrl(quoteId).then((r) => {
-      if (r.ok && r.url) setPdfUrl(r.url);
-      else toast.error(r.error ?? "PDF indisponible");
+      if (r.ok && r.url) {
+        setPdfUrl(r.url);
+        setPdfKey((k) => k + 1);
+      } else toast.error(r.error ?? "PDF indisponible");
       setPdfLoading(false);
     });
   }
@@ -137,6 +141,10 @@ export function DevisForm({
         const r = await modifierDevis(leadId, devisId, quoteId, utiles);
         if (r.ok) {
           toast.success("Devis mis à jour");
+          // Recharge les lignes : les nouvelles récupèrent leur id Pennylane
+          // (sinon un 2e enregistrement les recréerait en double).
+          const fresh = await getDevisLines(quoteId);
+          if (fresh.ok && fresh.lines?.length) setLines(fresh.lines as Line[]);
           rafraichirPdf();
           router.refresh();
         } else {
@@ -155,7 +163,7 @@ export function DevisForm({
   }
 
   return (
-    <div className="grid flex-1 grid-cols-1 items-start gap-4 lg:grid-cols-[minmax(360px,26rem)_1fr]">
+    <div className="grid flex-1 grid-cols-1 items-start gap-4 lg:grid-cols-[2fr_3fr]">
       {/* --- Éditeur --- */}
       <div className="space-y-3 rounded-xl border border-border bg-white p-4">
         {!pennylaneConfigured ? (
@@ -339,9 +347,10 @@ export function DevisForm({
         </div>
 
         {pdfUrl ? (
-          // #navpanes=0 masque les vignettes, #view=FitH ajuste à la largeur.
+          // #navpanes=0 masque les vignettes, #view=Fit affiche la page entière.
           <iframe
-            src={`${pdfUrl}#navpanes=0&toolbar=1&view=FitH`}
+            key={pdfKey}
+            src={`${pdfUrl}#navpanes=0&toolbar=1&view=Fit`}
             title="Aperçu du devis"
             className="h-[calc(100vh-11rem)] min-h-[600px] w-full rounded-xl border border-border bg-white"
           />
