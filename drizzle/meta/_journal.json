@@ -113,6 +113,13 @@
       "when": 1786979922068,
       "tag": "0015_hard_stellaris",
       "breakpoints": true
+    },
+    {
+      "idx": 16,
+      "version": "7",
+      "when": 1786981918462,
+      "tag": "0016_spotty_northstar",
+      "breakpoints": true
     }
   ]
 }

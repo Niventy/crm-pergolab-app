@@ -15,7 +15,8 @@
     "db:setup-auth": "tsx src/db/setup-auth.ts",
     "db:setup-rls": "tsx src/db/setup-rls.ts",
     "db:seed-leads": "tsx src/db/seed-leads.ts",
-    "db:seed-descriptions": "tsx src/db/seed-descriptions.ts"
+    "db:seed-descriptions": "tsx src/db/seed-descriptions.ts",
+    "db:seed-produits": "tsx src/db/seed-produits.ts"
   },
   "dependencies": {
     "@base-ui/react": "^1.5.0",

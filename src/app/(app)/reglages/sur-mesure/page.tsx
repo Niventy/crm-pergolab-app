@@ -6,6 +6,7 @@ import {
   TOKENS_DESCRIPTION,
 } from "../../leads/[id]/devis/[devisId]/sur-mesure";
 import { getDescriptionsSurMesure } from "../actions";
+import { ReglagesNav } from "../reglages-nav";
 import { DescriptionsSurMesure } from "./mapping-client";
 
 export const dynamic = "force-dynamic";
@@ -17,6 +18,7 @@ export default async function ReglagesSurMesurePage() {
 
   return (
     <main className="mx-auto w-full max-w-3xl flex-1 space-y-5 px-6 py-6 pb-28">
+      <ReglagesNav />
       <div className="flex items-center gap-3">
         <span className="flex size-10 items-center justify-center rounded-xl bg-brand text-brand-foreground">
           <FileText className="size-5" />

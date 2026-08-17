@@ -3,7 +3,10 @@ import { notFound } from "next/navigation";
 import { eq } from "drizzle-orm";
 import { db } from "@/db";
 import { leads as leadsTable, devis as devisTable } from "@/db/schema";
-import { getDescriptionsSurMesure } from "@/app/(app)/reglages/actions";
+import {
+  getDescriptionsSurMesure,
+  getProduitsCatalogue,
+} from "@/app/(app)/reglages/actions";
 import { DevisForm } from "./devis-form";
 
 export const dynamic = "force-dynamic";
@@ -29,6 +32,8 @@ export default async function DevisEditPage({
 
   // Descriptions pré-stockées par composant sur-mesure (injectées sur les lignes).
   const surMesureDescriptions = await getDescriptionsSurMesure();
+  // Catalogue de produits ajoutables directement en ligne de devis.
+  const catalogue = await getProduitsCatalogue();
 
   return (
     <main className="flex w-full flex-1 flex-col gap-3 px-4 py-4">
@@ -52,6 +57,7 @@ export default async function DevisEditPage({
         numero={devisRow?.numero ?? null}
         pennylaneConfigured={!!process.env.PENNYLANE_API_KEY}
         surMesureDescriptions={surMesureDescriptions}
+        catalogue={catalogue}
         prefill={{
           designation:
             `Pergola${lead.gamme ? ` ${lead.gamme}` : ""}${

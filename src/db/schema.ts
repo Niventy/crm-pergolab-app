@@ -262,6 +262,26 @@ export const surMesureMapping = pgTable("sur_mesure_mapping", {
 });
 
 // ---------------------------------------------------------------------------
+// produits_catalogue — catalogue de produits/options géré dans Réglages,
+// ajoutables directement en ligne de devis (nom + prix + description).
+// (Remplace l'ancienne présélection Pennylane par un catalogue interne.)
+// ---------------------------------------------------------------------------
+export const produitsCatalogue = pgTable("produits_catalogue", {
+  id: uuid("id").primaryKey().defaultRandom(),
+  nom: text("nom").notNull(),
+  description: text("description"),
+  prixHt: numeric("prix_ht", { precision: 12, scale: 2 }),
+  tva: numeric("tva", { precision: 5, scale: 2 }).notNull().default("20"),
+  // Regroupement dans le menu (Pergola / Menuiserie / Énergie / Forfait / Clause…).
+  categorie: text("categorie"),
+  position: integer("position").notNull().default(0),
+  actif: boolean("actif").notNull().default(true),
+  createdAt: timestamp("created_at", { withTimezone: true })
+    .notNull()
+    .defaultNow(),
+});
+
+// ---------------------------------------------------------------------------
 // Relations
 // ---------------------------------------------------------------------------
 export const profilesRelations = relations(profiles, ({ many }) => ({
@@ -332,3 +352,4 @@ export type Note = typeof notes.$inferSelect;
 export type Echange = typeof echanges.$inferSelect;
 export type Devis = typeof devis.$inferSelect;
 export type Tache = typeof taches.$inferSelect;
+export type ProduitCatalogue = typeof produitsCatalogue.$inferSelect;

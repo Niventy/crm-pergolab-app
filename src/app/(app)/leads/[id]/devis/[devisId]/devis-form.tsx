@@ -7,6 +7,7 @@ import { Plus, Trash2, FileText, Download, ExternalLink, RefreshCw, Calculator }
 import { toast } from "sonner";
 import { formatEuros } from "@/lib/format";
 import { SurMesureCalc } from "./sur-mesure-calc";
+import type { ProduitCatalogueDTO } from "@/app/(app)/reglages/actions";
 import {
   creerDevis,
   getDevisLines,
@@ -72,6 +73,7 @@ export function DevisForm({
   numero,
   pennylaneConfigured,
   surMesureDescriptions,
+  catalogue,
   prefill,
   client,
   infos,
@@ -82,6 +84,7 @@ export function DevisForm({
   numero: string | null;
   pennylaneConfigured: boolean;
   surMesureDescriptions: Record<string, string>;
+  catalogue: ProduitCatalogueDTO[];
   prefill: { designation: string; prixHt: number };
   client: {
     nom: string;
@@ -132,6 +135,24 @@ export function DevisForm({
     setLines((ls) => [...ls, { designation: "", quantite: 1, prixHt: 0, tva: 20 }]);
   const removeLine = (i: number) =>
     setLines((ls) => (ls.length > 1 ? ls.filter((_, j) => j !== i) : ls));
+
+  // Ajoute une ligne à partir d'un produit du catalogue (nom + prix + description).
+  const addCatalogue = (p: ProduitCatalogueDTO) =>
+    setLines((ls) => {
+      const base = ls.filter(
+        (l) => l.designation.trim() && l.designation !== prefill.designation,
+      );
+      return [
+        ...base,
+        {
+          designation: p.nom,
+          description: p.description ?? null,
+          quantite: 1,
+          prixHt: p.prixHt || 0,
+          tva: p.tva || 20,
+        },
+      ];
+    });
 
   const remplies = () => lines.filter((l) => l.designation.trim());
   const ht = lines.reduce((a, l) => a + (l.quantite || 0) * (l.prixHt || 0), 0);
@@ -184,12 +205,34 @@ export function DevisForm({
           </p>
         ) : null}
 
-        {/* Configurateur sur-mesure (remplace les présélections) */}
+        {/* Catalogue + configurateur sur-mesure (remplacent les présélections) */}
         <div className="flex flex-wrap items-center gap-2">
-          <p className="flex-1 text-sm text-muted-foreground">
-            Configure la pergola sur-mesure : tout est comptabilisé en un seul
-            produit (prix global + description avec les mesures exactes).
-          </p>
+          <select
+            value=""
+            onChange={(e) => {
+              const p = catalogue.find((x) => x.id === e.target.value);
+              if (p) {
+                addCatalogue(p);
+                toast.success(`« ${p.nom} » ajouté`);
+              }
+              e.currentTarget.value = "";
+            }}
+            disabled={catalogue.length === 0}
+            className="h-9 min-w-[14rem] flex-1 rounded-md border border-border bg-white px-2 text-sm outline-none focus:border-primary disabled:opacity-60"
+          >
+            <option value="">
+              {catalogue.length === 0
+                ? "Catalogue vide (à remplir dans Réglages)"
+                : "+ Ajouter un produit du catalogue"}
+            </option>
+            {catalogue.map((p) => (
+              <option key={p.id} value={p.id}>
+                {p.categorie ? `[${p.categorie}] ` : ""}
+                {p.nom}
+                {p.prixHt ? ` — ${eur(p.prixHt)} HT` : ""}
+              </option>
+            ))}
+          </select>
           <button
             type="button"
             onClick={() => setSmOpen((v) => !v)}
