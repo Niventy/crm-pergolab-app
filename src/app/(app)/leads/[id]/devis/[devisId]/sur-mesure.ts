@@ -186,6 +186,45 @@ export function construireLignes(
 // Nombre « à la française » (virgule décimale, sans zéros inutiles).
 const fr = (n: number) => String(r2(n)).replace(".", ",");
 
+// Tokens que l'on peut écrire dans une description pré-stockée : ils sont
+// remplacés par les valeurs du configurateur (utile pour la fiche produit).
+// Ex. « Largeur {largeur} mm » → « Largeur 6000 mm » pour une pergola de 6 m.
+export const TOKENS_DESCRIPTION: { token: string; libelle: string }[] = [
+  { token: "{largeur}", libelle: "Largeur en mm" },
+  { token: "{profondeur}", libelle: "Profondeur / avancée en mm" },
+  { token: "{largeur_m}", libelle: "Largeur en m" },
+  { token: "{profondeur_m}", libelle: "Profondeur / avancée en m" },
+  { token: "{poteaux}", libelle: "Nombre de poteaux" },
+  { token: "{surface}", libelle: "Surface au sol en m²" },
+  { token: "{perimetre}", libelle: "Périmètre en m" },
+  { token: "{gamme}", libelle: "Gamme (ESSENTIA / HORIZON / SIGNATURE)" },
+];
+
+// Remplace les tokens {…} d'un texte par les valeurs de la config.
+// Les tokens inconnus sont laissés tels quels.
+function injecterTokens(texte: string, cfg: ConfigSM): string {
+  const m = MODELES.find((x) => x.code === cfg.modele) ?? MODELES[0];
+  const L = cfg.toitL || 0;
+  const W = cfg.toitW || 0;
+  const map: Record<string, string> = {
+    largeur: String(Math.round(L * 1000)),
+    profondeur: String(Math.round(W * 1000)),
+    avancee: String(Math.round(W * 1000)),
+    largeur_m: fr(L),
+    profondeur_m: fr(W),
+    avancee_m: fr(W),
+    poteaux: String(cfg.poteaux || 0),
+    surface: fr(r2(L * W)),
+    perimetre: fr(r2((L + W) * 2)),
+    gamme: m.code,
+    modele: m.code,
+  };
+  return texte.replace(/\{(\w+)\}/g, (whole, key: string) => {
+    const k = key.toLowerCase();
+    return k in map ? map[k] : whole;
+  });
+}
+
 // Description UNIFIÉE d'une pergola sur-mesure : reprend toujours les mesures
 // exactes + la config, puis les descriptions pré-stockées de chaque composant.
 // Sert de base éditable sur la ligne unique du devis.
@@ -198,30 +237,38 @@ export function construireDescription(
   const W = cfg.toitW || 0;
   const surface = r2(L * W);
   const perimetre = r2((L + W) * 2);
+  const sub = (t: string) => injecterTokens(t, cfg);
   const blocs: string[] = [];
 
-  // En-tête : gamme + dimensions exactes.
-  const dims =
-    L > 0 && W > 0
-      ? ` — ${fr(L)} × ${fr(W)} m${surface > 0 ? ` (${fr(surface)} m²)` : ""}`
-      : "";
-  const modules = (cfg.toitQte || 0) > 1 ? ` · ${cfg.toitQte} modules` : "";
-  blocs.push(`Pergola bioclimatique ${m.code}${dims}${modules}`);
-  if (descriptions[`toit_${m.code}`]) blocs.push(descriptions[`toit_${m.code}`]);
+  // Toit : si une fiche produit est pré-stockée, elle sert de bloc principal
+  // (tokens remplacés). Sinon, en-tête auto + résumé de structure.
+  const toitDesc = descriptions[`toit_${m.code}`];
+  if (toitDesc) {
+    blocs.push(sub(toitDesc));
+  } else {
+    const dims =
+      L > 0 && W > 0
+        ? ` — ${fr(L)} × ${fr(W)} m${surface > 0 ? ` (${fr(surface)} m²)` : ""}`
+        : "";
+    const modules = (cfg.toitQte || 0) > 1 ? ` · ${cfg.toitQte} modules` : "";
+    blocs.push(`Pergola bioclimatique ${m.code}${dims}${modules}`);
 
-  // Structure (poteaux, LED, éclairage).
-  const struct: string[] = [];
-  if ((cfg.poteaux || 0) > 0)
-    struct.push(`${cfg.poteaux} poteau${cfg.poteaux > 1 ? "x" : ""}`);
-  if (perimetre > 0) struct.push(`bandeau LED périmétrique (${fr(perimetre)} m)`);
-  if ((cfg.eclairage || 0) > 0)
-    struct.push(`système d'éclairage ×${cfg.eclairage}`);
-  if (struct.length) blocs.push(`Structure : ${struct.join(" · ")}`);
+    const struct: string[] = [];
+    if ((cfg.poteaux || 0) > 0)
+      struct.push(`${cfg.poteaux} poteau${cfg.poteaux > 1 ? "x" : ""}`);
+    if (perimetre > 0)
+      struct.push(`bandeau LED périmétrique (${fr(perimetre)} m)`);
+    if ((cfg.eclairage || 0) > 0)
+      struct.push(`système d'éclairage ×${cfg.eclairage}`);
+    if (struct.length) blocs.push(`Structure : ${struct.join(" · ")}`);
+  }
+
+  // Descriptions de composants (poteaux / LED / éclairage) si renseignées.
   if ((cfg.poteaux || 0) > 0 && descriptions[`poteau_${m.code}`])
-    blocs.push(descriptions[`poteau_${m.code}`]);
-  if (perimetre > 0 && descriptions["led"]) blocs.push(descriptions["led"]);
+    blocs.push(sub(descriptions[`poteau_${m.code}`]));
+  if (perimetre > 0 && descriptions["led"]) blocs.push(sub(descriptions["led"]));
   if ((cfg.eclairage || 0) > 0 && descriptions["eclairage"])
-    blocs.push(descriptions["eclairage"]);
+    blocs.push(sub(descriptions["eclairage"]));
 
   // Options posées, avec face et dimensions exactes + description pré-stockée.
   const opts: string[] = [];
@@ -232,7 +279,7 @@ export function construireDescription(
       o.type === "unite"
         ? `×${el.qte}`
         : `${fr(el.L)} × ${fr(el.H)} m · ×${el.qte}`;
-    const desc = descriptions[o.id] ? ` — ${descriptions[o.id]}` : "";
+    const desc = descriptions[o.id] ? ` — ${sub(descriptions[o.id])}` : "";
     opts.push(`• ${o.label}${el.face ? ` (${el.face})` : ""} · ${d}${desc}`);
   }
   if (opts.length) {
