@@ -92,7 +92,12 @@ export function prixOption(o: OptionSM, c: OptionConfig): number {
 }
 
 // Construit les lignes de devis détaillées à partir de la config.
-export function construireLignes(cfg: ConfigSM): Ligne[] {
+// `mapping` : id d'option du configurateur → id produit Pennylane (pour lier la
+// ligne au catalogue → sa description remonte sur le devis).
+export function construireLignes(
+  cfg: ConfigSM,
+  mapping: Record<string, number | null> = {},
+): Ligne[] {
   const m = MODELES.find((x) => x.code === cfg.modele) ?? MODELES[0];
   const lignes: Ligne[] = [];
   const L = cfg.toitL || 0;
@@ -153,6 +158,7 @@ export function construireLignes(cfg: ConfigSM): Ligne[] {
       quantite: 1,
       prixHt: p,
       tva: 20,
+      productId: mapping[o.id] ?? null, // lie au produit Pennylane → description
     });
   }
 

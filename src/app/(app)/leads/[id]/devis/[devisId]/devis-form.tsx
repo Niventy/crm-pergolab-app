@@ -19,6 +19,7 @@ import {
 type Line = {
   id?: number | null; // id de la ligne côté Pennylane (absent = ligne à créer)
   designation: string;
+  description?: string | null;
   quantite: number;
   prixHt: number;
   tva: number;
@@ -80,6 +81,7 @@ export function DevisForm({
   quoteId,
   numero,
   pennylaneConfigured,
+  surMesureMapping,
   prefill,
   client,
   infos,
@@ -89,6 +91,7 @@ export function DevisForm({
   quoteId: string | null;
   numero: string | null;
   pennylaneConfigured: boolean;
+  surMesureMapping: Record<string, number>;
   prefill: { designation: string; prixHt: number };
   client: {
     nom: string;
@@ -148,7 +151,14 @@ export function DevisForm({
   const addProduit = (p: Produit) =>
     setLines((ls) => [
       ...ls,
-      { designation: p.label, quantite: 1, prixHt: p.prixHt, tva: p.tva, productId: p.id },
+      {
+        designation: p.label,
+        description: p.description,
+        quantite: 1,
+        prixHt: p.prixHt,
+        tva: p.tva,
+        productId: p.id,
+      },
     ]);
 
   const remplies = () => lines.filter((l) => l.designation.trim());
@@ -243,6 +253,7 @@ export function DevisForm({
 
         {smOpen ? (
           <SurMesureCalc
+            mapping={surMesureMapping}
             onAjouter={(ls) => {
               setLines((cur) => {
                 const base = cur.filter((l) => l.designation.trim());
@@ -264,10 +275,8 @@ export function DevisForm({
         </div>
 
         {lines.map((l, i) => (
-          <div
-            key={i}
-            className="grid grid-cols-2 gap-2 sm:grid-cols-[1fr_3.5rem_6rem_5rem_2rem]"
-          >
+          <div key={i} className="space-y-1">
+          <div className="grid grid-cols-2 gap-2 sm:grid-cols-[1fr_3.5rem_6rem_5rem_2rem]">
             <input
               value={l.designation}
               onChange={(e) => setLine(i, { designation: e.target.value })}
@@ -312,6 +321,14 @@ export function DevisForm({
             >
               <Trash2 className="size-4" />
             </button>
+          </div>
+          <textarea
+            value={l.description ?? ""}
+            onChange={(e) => setLine(i, { description: e.target.value })}
+            placeholder="Description (apparaît sur le devis)…"
+            rows={l.description ? 2 : 1}
+            className="w-full resize-y rounded-md border border-border bg-white px-2 py-1.5 text-xs text-muted-foreground outline-none focus:border-primary"
+          />
           </div>
         ))}
 

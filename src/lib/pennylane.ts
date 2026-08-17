@@ -11,6 +11,7 @@ const BASE = "https://app.pennylane.com/api/external/v2";
 export type DevisLine = {
   id?: number | null; // id de la ligne côté Pennylane (si elle existe déjà)
   designation: string;
+  description?: string | null; // description produit (apparaît sur le devis)
   quantite: number;
   prixHt: number;
   tva: number; // en % (20, 10, 5.5, 0…)
@@ -52,17 +53,20 @@ function vatCode(tva: number): string {
 // Une ligne du CRM → payload de CRÉATION Pennylane.
 // Issue d'une présélection => reste liée au produit (product_id).
 function toLinePayload(l: DevisLine) {
+  const desc = l.description?.trim() || undefined;
   return l.productId
     ? {
         product_id: l.productId,
         quantity: l.quantite || 1,
         label: l.designation || undefined,
+        description: desc,
         raw_currency_unit_price: String(l.prixHt ?? 0),
         unit: "pièce",
         vat_rate: vatCode(l.tva),
       }
     : {
         label: l.designation || "Prestation",
+        description: desc,
         quantity: l.quantite || 1,
         raw_currency_unit_price: String(l.prixHt ?? 0),
         unit: "pièce",
@@ -71,10 +75,12 @@ function toLinePayload(l: DevisLine) {
 }
 
 // Une ligne existante → payload de MISE À JOUR (id + valeurs éditables).
+// On renvoie la description pour ne pas l'effacer lors d'une édition.
 function toLineUpdatePayload(l: DevisLine) {
   return {
     id: l.id,
     label: l.designation || "Prestation",
+    description: l.description?.trim() || undefined,
     quantity: l.quantite || 1,
     raw_currency_unit_price: String(l.prixHt ?? 0),
     unit: "pièce",
@@ -269,7 +275,8 @@ export async function getQuoteLines(
   >[];
   const lines: DevisLine[] = items.map((l) => ({
     id: l.id ? Number(l.id) : null,
-    designation: String(l.label ?? l.description ?? ""),
+    designation: String(l.label ?? ""),
+    description: (l.description as string) ?? null,
     quantite: Number(l.quantity ?? 1) || 1,
     prixHt:
       Number(

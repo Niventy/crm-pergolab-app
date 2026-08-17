@@ -252,6 +252,15 @@ export const taches = pgTable("taches", {
 });
 
 // ---------------------------------------------------------------------------
+// sur_mesure_mapping — composant du configurateur → produit Pennylane
+// (pour remonter la description + lier au catalogue sur les lignes sur-mesure)
+// ---------------------------------------------------------------------------
+export const surMesureMapping = pgTable("sur_mesure_mapping", {
+  composant: text("composant").primaryKey(), // ex. "toit_E140U", "led", "chauffage"
+  productId: text("product_id"), // id du produit Pennylane
+});
+
+// ---------------------------------------------------------------------------
 // Relations
 // ---------------------------------------------------------------------------
 export const profilesRelations = relations(profiles, ({ many }) => ({

@@ -27,7 +27,11 @@ export function AppNav({
   const pathname = usePathname();
   const admin = role === "admin";
   const tabs = admin
-    ? [...TABS, { href: "/comptabilite", label: "Comptabilité" }]
+    ? [
+        ...TABS,
+        { href: "/comptabilite", label: "Comptabilité" },
+        { href: "/reglages/sur-mesure", label: "Réglages" },
+      ]
     : TABS;
 
   return (
