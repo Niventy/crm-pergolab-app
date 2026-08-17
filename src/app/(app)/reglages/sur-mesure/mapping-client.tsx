@@ -34,6 +34,8 @@ function Ligne({
   const [savedValue, setSavedValue] = useState(initial);
   const [pending, start] = useTransition();
   const dirty = value !== savedValue;
+  const aCompleter =
+    !savedValue.trim() || savedValue.trim().toLowerCase() === "manquant";
 
   function enregistrer() {
     start(async () => {
@@ -46,8 +48,13 @@ function Ligne({
   return (
     <div className="rounded-xl border border-border bg-white p-3">
       <div className="mb-1.5 flex items-center justify-between">
-        <span className="text-sm font-semibold text-foreground">
+        <span className="flex items-center gap-2 text-sm font-semibold text-foreground">
           {composant.label}
+          {aCompleter && !dirty ? (
+            <span className="rounded bg-amber-100 px-1.5 py-0.5 text-[10px] font-bold uppercase tracking-wide text-amber-700">
+              À compléter
+            </span>
+          ) : null}
         </span>
         <span className="flex items-center gap-2">
           {!dirty && savedValue ? (

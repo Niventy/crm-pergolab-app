@@ -94,11 +94,13 @@ export function prixOption(o: OptionSM, c: OptionConfig): number {
 }
 
 // Liste des composants (pour l'écran de descriptions pré-stockées).
+// Une pergola est vendue comme un KIT (toit + poteaux = un seul produit) : une
+// seule description par gamme, clé = le code de la gamme (ESSENTIA/HORIZON/…).
+// Les extras (LED, éclairage, options) ont leur propre description.
 export const COMPOSANTS: { id: string; label: string }[] = [
-  ...MODELES.map((m) => ({ id: `toit_${m.code}`, label: `Toit ${m.code}` })),
   ...MODELES.map((m) => ({
-    id: `poteau_${m.code}`,
-    label: `Poteaux ${m.code}`,
+    id: m.code,
+    label: `Pergola ${m.code} (kit toit + poteaux)`,
   })),
   { id: "led", label: "Bandeau LED" },
   { id: "eclairage", label: "Système d'éclairage" },
@@ -238,13 +240,19 @@ export function construireDescription(
   const surface = r2(L * W);
   const perimetre = r2((L + W) * 2);
   const sub = (t: string) => injecterTokens(t, cfg);
+  // Une description vide ou marquée « manquant » (placeholder à compléter dans
+  // Réglages) ne doit pas apparaître sur le devis.
+  const reel = (s?: string): string | null => {
+    const t = s?.trim();
+    return t && t.toLowerCase() !== "manquant" ? t : null;
+  };
   const blocs: string[] = [];
 
-  // Toit : si une fiche produit est pré-stockée, elle sert de bloc principal
-  // (tokens remplacés). Sinon, en-tête auto + résumé de structure.
-  const toitDesc = descriptions[`toit_${m.code}`];
-  if (toitDesc) {
-    blocs.push(sub(toitDesc));
+  // Kit pergola (toit + poteaux) : si une fiche gamme est pré-stockée, elle sert
+  // de bloc principal (tokens remplacés). Sinon, en-tête auto + résumé structure.
+  const kitDesc = reel(descriptions[m.code]);
+  if (kitDesc) {
+    blocs.push(sub(kitDesc));
   } else {
     const dims =
       L > 0 && W > 0
@@ -263,12 +271,11 @@ export function construireDescription(
     if (struct.length) blocs.push(`Structure : ${struct.join(" · ")}`);
   }
 
-  // Descriptions de composants (poteaux / LED / éclairage) si renseignées.
-  if ((cfg.poteaux || 0) > 0 && descriptions[`poteau_${m.code}`])
-    blocs.push(sub(descriptions[`poteau_${m.code}`]));
-  if (perimetre > 0 && descriptions["led"]) blocs.push(sub(descriptions["led"]));
-  if ((cfg.eclairage || 0) > 0 && descriptions["eclairage"])
-    blocs.push(sub(descriptions["eclairage"]));
+  // Extras (LED / éclairage) si une description est renseignée.
+  const ledDesc = reel(descriptions["led"]);
+  const eclDesc = reel(descriptions["eclairage"]);
+  if (perimetre > 0 && ledDesc) blocs.push(sub(ledDesc));
+  if ((cfg.eclairage || 0) > 0 && eclDesc) blocs.push(sub(eclDesc));
 
   // Options posées, avec face et dimensions exactes + description pré-stockée.
   const opts: string[] = [];
@@ -279,7 +286,8 @@ export function construireDescription(
       o.type === "unite"
         ? `×${el.qte}`
         : `${fr(el.L)} × ${fr(el.H)} m · ×${el.qte}`;
-    const desc = descriptions[o.id] ? ` — ${sub(descriptions[o.id])}` : "";
+    const od = reel(descriptions[o.id]);
+    const desc = od ? ` — ${sub(od)}` : "";
     opts.push(`• ${o.label}${el.face ? ` (${el.face})` : ""} · ${d}${desc}`);
   }
   if (opts.length) {
@@ -304,12 +312,14 @@ export function construireLigneUnique(
   const m = MODELES.find((x) => x.code === cfg.modele) ?? MODELES[0];
   const L = cfg.toitL || 0;
   const W = cfg.toitW || 0;
-  const dims = L > 0 && W > 0 ? ` ${fr(L)}×${fr(W)} m` : "";
-  const pot = (cfg.poteaux || 0) > 0 ? ` — ${cfg.poteaux} poteaux` : "";
+  // Titre normalisé : « Pergola Signature 5x3 (longueur x largeur) ».
+  const gamme = m.code.charAt(0) + m.code.slice(1).toLowerCase();
+  const dims =
+    L > 0 && W > 0 ? ` ${fr(L)}x${fr(W)} (longueur x largeur)` : "";
 
   return [
     {
-      designation: `Pergola ${m.code}${dims}${pot}`,
+      designation: `Pergola ${gamme}${dims}`,
       description: construireDescription(cfg, descriptions),
       quantite: 1,
       prixHt: total,

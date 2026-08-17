@@ -3,6 +3,7 @@ config({ path: ".env.local" });
 
 import { drizzle } from "drizzle-orm/postgres-js";
 import postgres from "postgres";
+import { like } from "drizzle-orm";
 import * as schema from "./schema";
 import { surMesureMapping } from "./schema";
 
@@ -10,7 +11,7 @@ import { surMesureMapping } from "./schema";
 // Les tokens {largeur} {profondeur} {poteaux} … sont remplacés par les valeurs
 // du configurateur au moment de générer le devis (voir injecterTokens).
 const DESCRIPTIONS: Record<string, string> = {
-  toit_HORIZON: `Pergola bioclimatique en aluminium – L'excellence au service de votre extérieur
+  HORIZON: `Pergola bioclimatique en aluminium – L'excellence au service de votre extérieur
 
 Transformez votre terrasse en un véritable espace de vie haut de gamme, élégant et confortable en toute saison. Grâce à son design contemporain, sa technologie innovante et ses matériaux premium, notre pergola bioclimatique sublime durablement votre extérieur tout en vous offrant une protection optimale face aux variations climatiques.
 
@@ -75,7 +76,7 @@ Applications Idéales
 * Cafés, hôtels & restaurants
 * Espaces professionnels et rooftops`,
 
-  toit_ESSENTIA: `Pergola Bioclimatique Aluminium – Le Luxe Outdoor à Portée de Main
+  ESSENTIA: `Pergola Bioclimatique Aluminium – Le Luxe Outdoor à Portée de Main
 
 Transformez votre terrasse en un espace de vie d'exception, élégant, confortable et résistant toute l'année. Notre pergola bioclimatique allie design contemporain, technologie innovante et matériaux premium pour sublimer votre extérieur.
 
@@ -140,7 +141,7 @@ Applications Idéales
 * Cafés, hôtels & restaurants
 * Espaces professionnels et rooftops`,
 
-  toit_SIGNATURE: `Pergola Bioclimatique Aluminium – Le Luxe Outdoor à Portée de Main
+  SIGNATURE: `Pergola Bioclimatique Aluminium – Le Luxe Outdoor à Portée de Main
 
 Transformez votre terrasse en un espace de vie d'exception, élégant, confortable et résistant toute l'année. Notre pergola bioclimatique allie design contemporain, technologie innovante et matériaux premium pour sublimer votre extérieur.
 
@@ -205,6 +206,21 @@ Applications Idéales
 * Cafés, hôtels & restaurants
 * Espaces professionnels et rooftops`,
 
+  // Options sans description fournie → placeholder « manquant » (à compléter
+  // dans Réglages). Non affiché sur le devis tant que c'est « manquant ».
+  sheer: "manquant",
+  baie: "manquant",
+  volet_fixe: "manquant",
+  volet_coul: "manquant",
+  volet_pliant: "manquant",
+  mur_fixe: "manquant",
+  lames_motor: "manquant",
+  chauffage: "manquant",
+  ventilo: "manquant",
+  ventilo_led: "manquant",
+  capteur: "manquant",
+  coffre: "manquant",
+
   zip: `Optimisez votre espace extérieur avec notre store zip motorisé pour pergola !
 
 Alliez confort, design et technologie grâce à notre store zip spécialement conçu pour pergolas. Facile à manipuler grâce à sa motorisation A-OK compatible 110V ou 220V, il se commande simplement à distance via une télécommande, pour un usage pratique au quotidien.
@@ -238,6 +254,19 @@ async function main() {
       });
     console.log(`  ✓ ${composant} (${description.length} caractères)`);
   }
+
+  // Nettoyage des anciennes clés séparées (le kit remplace toit_/poteau_).
+  const del = await db
+    .delete(surMesureMapping)
+    .where(like(surMesureMapping.composant, "toit\\_%"));
+  const del2 = await db
+    .delete(surMesureMapping)
+    .where(like(surMesureMapping.composant, "poteau\\_%"));
+  console.log(
+    `  ⌫ anciennes clés supprimées (toit_/poteau_) : ${
+      (del.count ?? 0) + (del2.count ?? 0)
+    }`,
+  );
 
   await client.end();
   console.log("Terminé.");

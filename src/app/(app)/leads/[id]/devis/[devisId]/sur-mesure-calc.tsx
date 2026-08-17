@@ -97,7 +97,7 @@ export function SurMesureCalc({
     <div className="space-y-4 rounded-xl border border-primary/30 bg-primary/[0.03] p-4">
       <div className="flex items-center justify-between">
         <span className="text-eyebrow flex items-center gap-1.5 text-primary">
-          <Calculator className="size-4" /> Pergola sur-mesure
+          <Calculator className="size-4" /> Configurer la pergola
         </span>
         <button
           type="button"

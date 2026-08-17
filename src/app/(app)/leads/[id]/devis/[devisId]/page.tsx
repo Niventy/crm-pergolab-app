@@ -58,13 +58,6 @@ export default async function DevisEditPage({
         pennylaneConfigured={!!process.env.PENNYLANE_API_KEY}
         surMesureDescriptions={surMesureDescriptions}
         catalogue={catalogue}
-        prefill={{
-          designation:
-            `Pergola${lead.gamme ? ` ${lead.gamme}` : ""}${
-              lead.dimensions ? ` ${lead.dimensions}` : ""
-            }`.trim() || "Pergola sur mesure",
-          prixHt: Number(lead.montant ?? 0) || 0,
-        }}
         client={{
           nom: lead.nom,
           email: lead.email,

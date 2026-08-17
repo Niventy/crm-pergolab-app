@@ -74,7 +74,6 @@ export function DevisForm({
   pennylaneConfigured,
   surMesureDescriptions,
   catalogue,
-  prefill,
   client,
   infos,
 }: {
@@ -85,7 +84,6 @@ export function DevisForm({
   pennylaneConfigured: boolean;
   surMesureDescriptions: Record<string, string>;
   catalogue: ProduitCatalogueDTO[];
-  prefill: { designation: string; prixHt: number };
   client: {
     nom: string;
     email: string | null;
@@ -102,9 +100,9 @@ export function DevisForm({
   const [pdfUrl, setPdfUrl] = useState<string | null>(null);
   const [pdfLoading, setPdfLoading] = useState(false);
   const [pdfKey, setPdfKey] = useState(0); // force le rechargement de l'iframe
-  const [lines, setLines] = useState<Line[]>([
-    { designation: prefill.designation, quantite: 1, prixHt: prefill.prixHt, tva: 20 },
-  ]);
+  // Le devis démarre VIDE : la pergola vient du configurateur, les extras du
+  // catalogue. Plus de ligne pré-remplie (qui prêtait à confusion).
+  const [lines, setLines] = useState<Line[]>([]);
 
   // Devis existant : charge ses lignes + son PDF.
   useEffect(() => {
@@ -134,25 +132,28 @@ export function DevisForm({
   const addLine = () =>
     setLines((ls) => [...ls, { designation: "", quantite: 1, prixHt: 0, tva: 20 }]);
   const removeLine = (i: number) =>
-    setLines((ls) => (ls.length > 1 ? ls.filter((_, j) => j !== i) : ls));
+    setLines((ls) => ls.filter((_, j) => j !== i));
 
-  // Ajoute une ligne à partir d'un produit du catalogue (nom + prix + description).
+  // Configurateur : la pergola = 1 ligne, toujours en tête du devis. Reconfigurer
+  // REMPLACE la ligne pergola (pas de doublon), en gardant options et lignes libres.
+  const setPergola = (ls: Line[]) =>
+    setLines((cur) => [
+      ...ls,
+      ...cur.filter((l) => !/^Pergola\b/i.test(l.designation.trim())),
+    ]);
+
+  // Ajoute une ligne à partir d'une option du catalogue (nom + prix + description).
   const addCatalogue = (p: ProduitCatalogueDTO) =>
-    setLines((ls) => {
-      const base = ls.filter(
-        (l) => l.designation.trim() && l.designation !== prefill.designation,
-      );
-      return [
-        ...base,
-        {
-          designation: p.nom,
-          description: p.description ?? null,
-          quantite: 1,
-          prixHt: p.prixHt || 0,
-          tva: p.tva || 20,
-        },
-      ];
-    });
+    setLines((ls) => [
+      ...ls,
+      {
+        designation: p.nom,
+        description: p.description ?? null,
+        quantite: 1,
+        prixHt: p.prixHt || 0,
+        tva: p.tva || 20,
+      },
+    ]);
 
   const remplies = () => lines.filter((l) => l.designation.trim());
   const ht = lines.reduce((a, l) => a + (l.quantite || 0) * (l.prixHt || 0), 0);
@@ -205,7 +206,21 @@ export function DevisForm({
           </p>
         ) : null}
 
-        {/* Catalogue + configurateur sur-mesure (remplacent les présélections) */}
+        {/* Action principale : configurer la pergola (le configurateur) */}
+        <button
+          type="button"
+          onClick={() => setSmOpen((v) => !v)}
+          className={`inline-flex h-11 w-full items-center justify-center gap-2 rounded-md px-4 text-sm font-semibold transition-colors ${
+            smOpen
+              ? "border border-primary bg-primary/10 text-primary"
+              : "bg-primary text-primary-foreground hover:bg-primary/90"
+          }`}
+        >
+          <Calculator className="size-4" />
+          {smOpen ? "Fermer le configurateur" : "Configurer la pergola"}
+        </button>
+
+        {/* Secondaire : ajouter une option du catalogue (énergie, menuiserie…) */}
         <div className="flex flex-wrap items-center gap-2">
           <select
             value=""
@@ -223,7 +238,7 @@ export function DevisForm({
             <option value="">
               {catalogue.length === 0
                 ? "Catalogue vide (à remplir dans Réglages)"
-                : "+ Ajouter un produit du catalogue"}
+                : "+ Ajouter une option du catalogue"}
             </option>
             {catalogue.map((p) => (
               <option key={p.id} value={p.id}>
@@ -233,45 +248,42 @@ export function DevisForm({
               </option>
             ))}
           </select>
-          <button
-            type="button"
-            onClick={() => setSmOpen((v) => !v)}
-            className={`inline-flex h-9 items-center gap-1.5 rounded-md border px-3 text-sm font-semibold ${
-              smOpen
-                ? "border-primary bg-primary/10 text-primary"
-                : "border-border bg-white text-foreground hover:border-primary/40"
-            }`}
-          >
-            <Calculator className="size-4" /> Sur-mesure
-          </button>
         </div>
 
         {smOpen ? (
           <SurMesureCalc
             descriptions={surMesureDescriptions}
             onAjouter={(ls) => {
-              // Le sur-mesure = 1 bloc global. On garde les éventuelles lignes
-              // libres déjà saisies (hors ligne pré-remplie par défaut).
-              setLines((cur) => {
-                const gardees = cur.filter(
-                  (l) => l.designation.trim() && l.designation !== prefill.designation,
-                );
-                return [...gardees, ...ls];
-              });
+              setPergola(ls);
               setSmOpen(false);
-              toast.success("Pergola sur-mesure ajoutée (1 ligne globale)");
+              toast.success("Pergola configurée (1 ligne)");
             }}
             onClose={() => setSmOpen(false)}
           />
         ) : null}
 
-        <div className="hidden grid-cols-[1fr_3.5rem_6rem_5rem_2rem] gap-2 text-[0.7rem] font-semibold uppercase tracking-wide text-muted-foreground sm:grid">
-          <span>Désignation</span>
-          <span className="text-right">Qté</span>
-          <span className="text-right">Prix HT</span>
-          <span className="text-right">TVA</span>
-          <span />
-        </div>
+        {lines.length === 0 ? (
+          <div className="rounded-lg border border-dashed border-border px-4 py-6 text-center text-sm text-muted-foreground">
+            Aucune ligne pour l&apos;instant.
+            <br />
+            <span className="text-xs">
+              Clique sur <span className="font-semibold text-foreground">
+                « Configurer la pergola »
+              </span>{" "}
+              pour créer le produit principal, ou ajoute une option du catalogue.
+            </span>
+          </div>
+        ) : null}
+
+        {lines.length > 0 ? (
+          <div className="hidden grid-cols-[1fr_3.5rem_6rem_5rem_2rem] gap-2 text-[0.7rem] font-semibold uppercase tracking-wide text-muted-foreground sm:grid">
+            <span>Désignation</span>
+            <span className="text-right">Qté</span>
+            <span className="text-right">Prix HT</span>
+            <span className="text-right">TVA</span>
+            <span />
+          </div>
+        ) : null}
 
         {lines.map((l, i) => (
           <div key={i} className="space-y-1">
@@ -314,8 +326,7 @@ export function DevisForm({
             <button
               type="button"
               onClick={() => removeLine(i)}
-              disabled={lines.length === 1}
-              className="flex h-9 items-center justify-center text-muted-foreground hover:text-red-600 disabled:opacity-30"
+              className="flex h-9 items-center justify-center text-muted-foreground hover:text-red-600"
               aria-label="Supprimer la ligne"
             >
               <Trash2 className="size-4" />
