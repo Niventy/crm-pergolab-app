@@ -10,6 +10,7 @@ import {
   PRIX_LED,
   PRIX_ECLAIRAGE,
   construireLignes,
+  construireLigneUnique,
   prixOption,
   type ConfigSM,
   type Element,
@@ -74,20 +75,23 @@ export function SurMesureCalc({
     setAddQte(1);
   }
 
-  const lignes = useMemo(() => {
-    const cfg: ConfigSM = {
-      modele,
-      toitL,
-      toitW,
-      toitQte,
-      poteaux,
-      eclairage,
-      elements,
-    };
-    return construireLignes(cfg, descriptions);
-  }, [modele, toitL, toitW, toitQte, poteaux, eclairage, elements, descriptions]);
-  const total = lignes.reduce((a, l) => a + l.prixHt, 0);
+  // Aperçu détaillé (une ligne par composant) — pour vérifier le calcul.
+  // Le devis, lui, ne reçoit qu'UNE seule ligne globale (construireLigneUnique).
+  const cfg: ConfigSM = useMemo(
+    () => ({ modele, toitL, toitW, toitQte, poteaux, eclairage, elements }),
+    [modele, toitL, toitW, toitQte, poteaux, eclairage, elements],
+  );
+  const apercu = useMemo(
+    () => construireLignes(cfg, descriptions),
+    [cfg, descriptions],
+  );
+  const ligneUnique = useMemo(
+    () => construireLigneUnique(cfg, descriptions),
+    [cfg, descriptions],
+  );
+  const total = apercu.reduce((a, l) => a + l.prixHt, 0);
   const perimetre = Math.round((toitL + toitW) * 2 * 100) / 100;
+  const descriptionUnique = ligneUnique[0]?.description ?? "";
 
   return (
     <div className="space-y-4 rounded-xl border border-primary/30 bg-primary/[0.03] p-4">
@@ -244,21 +248,33 @@ export function SurMesureCalc({
         )}
       </div>
 
+      {/* Description unifiée (aperçu de la ligne unique du devis) */}
+      {descriptionUnique ? (
+        <div className="rounded-lg border border-border bg-white p-3">
+          <div className="text-eyebrow mb-1.5 text-muted-foreground">
+            Description du devis (1 seul produit — modifiable ensuite)
+          </div>
+          <pre className="whitespace-pre-wrap font-sans text-xs leading-relaxed text-foreground">
+            {descriptionUnique}
+          </pre>
+        </div>
+      ) : null}
+
       {/* Total + action */}
       <div className="flex flex-wrap items-center justify-between gap-3">
         <div className="text-sm">
-          <span className="text-muted-foreground">Total sur-mesure HT : </span>
+          <span className="text-muted-foreground">Prix global HT : </span>
           <span className="text-lg font-bold tabular-nums text-foreground">
             {eur(total)}
           </span>
           <span className="ml-2 text-xs text-muted-foreground">
-            ({lignes.length} ligne{lignes.length > 1 ? "s" : ""})
+            → 1 ligne de devis
           </span>
         </div>
         <button
           type="button"
-          onClick={() => onAjouter(lignes)}
-          disabled={lignes.length === 0}
+          onClick={() => onAjouter(ligneUnique)}
+          disabled={ligneUnique.length === 0}
           className="inline-flex items-center gap-1.5 rounded-md bg-primary px-3 py-1.5 text-sm font-semibold text-primary-foreground hover:bg-primary/90 disabled:opacity-50"
         >
           Ajouter au devis

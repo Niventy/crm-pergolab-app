@@ -18,10 +18,11 @@ export type Modele = {
 };
 
 // Seuls le toit et les poteaux changent selon le modèle (le reste est identique).
+// Gammes commerciales : ESSENTIA (140U) / HORIZON (175U) / SIGNATURE (220).
 export const MODELES: Modele[] = [
-  { code: "E140U", prixToit: 521.5, prixPoteau: 262.5 },
-  { code: "E175U", prixToit: 588, prixPoteau: 325.5 },
-  { code: "E220", prixToit: 707, prixPoteau: 392 },
+  { code: "ESSENTIA", prixToit: 521.5, prixPoteau: 262.5 },
+  { code: "HORIZON", prixToit: 588, prixPoteau: 325.5 },
+  { code: "SIGNATURE", prixToit: 707, prixPoteau: 392 },
 ];
 
 export const PRIX_LED = 28; // €/m de périmètre
@@ -94,12 +95,11 @@ export function prixOption(o: OptionSM, c: OptionConfig): number {
 
 // Liste des composants (pour l'écran de descriptions pré-stockées).
 export const COMPOSANTS: { id: string; label: string }[] = [
-  { id: "toit_E140U", label: "Toit E140U" },
-  { id: "toit_E175U", label: "Toit E175U" },
-  { id: "toit_E220", label: "Toit E220" },
-  { id: "poteau_E140U", label: "Poteaux E140U" },
-  { id: "poteau_E175U", label: "Poteaux E175U" },
-  { id: "poteau_E220", label: "Poteaux E220" },
+  ...MODELES.map((m) => ({ id: `toit_${m.code}`, label: `Toit ${m.code}` })),
+  ...MODELES.map((m) => ({
+    id: `poteau_${m.code}`,
+    label: `Poteaux ${m.code}`,
+  })),
   { id: "led", label: "Bandeau LED" },
   { id: "eclairage", label: "Système d'éclairage" },
   ...OPTIONS.map((o) => ({ id: o.id, label: o.label })),
@@ -181,4 +181,92 @@ export function construireLignes(
   }
 
   return lignes;
+}
+
+// Nombre « à la française » (virgule décimale, sans zéros inutiles).
+const fr = (n: number) => String(r2(n)).replace(".", ",");
+
+// Description UNIFIÉE d'une pergola sur-mesure : reprend toujours les mesures
+// exactes + la config, puis les descriptions pré-stockées de chaque composant.
+// Sert de base éditable sur la ligne unique du devis.
+export function construireDescription(
+  cfg: ConfigSM,
+  descriptions: Record<string, string> = {},
+): string {
+  const m = MODELES.find((x) => x.code === cfg.modele) ?? MODELES[0];
+  const L = cfg.toitL || 0;
+  const W = cfg.toitW || 0;
+  const surface = r2(L * W);
+  const perimetre = r2((L + W) * 2);
+  const blocs: string[] = [];
+
+  // En-tête : gamme + dimensions exactes.
+  const dims =
+    L > 0 && W > 0
+      ? ` — ${fr(L)} × ${fr(W)} m${surface > 0 ? ` (${fr(surface)} m²)` : ""}`
+      : "";
+  const modules = (cfg.toitQte || 0) > 1 ? ` · ${cfg.toitQte} modules` : "";
+  blocs.push(`Pergola bioclimatique ${m.code}${dims}${modules}`);
+  if (descriptions[`toit_${m.code}`]) blocs.push(descriptions[`toit_${m.code}`]);
+
+  // Structure (poteaux, LED, éclairage).
+  const struct: string[] = [];
+  if ((cfg.poteaux || 0) > 0)
+    struct.push(`${cfg.poteaux} poteau${cfg.poteaux > 1 ? "x" : ""}`);
+  if (perimetre > 0) struct.push(`bandeau LED périmétrique (${fr(perimetre)} m)`);
+  if ((cfg.eclairage || 0) > 0)
+    struct.push(`système d'éclairage ×${cfg.eclairage}`);
+  if (struct.length) blocs.push(`Structure : ${struct.join(" · ")}`);
+  if ((cfg.poteaux || 0) > 0 && descriptions[`poteau_${m.code}`])
+    blocs.push(descriptions[`poteau_${m.code}`]);
+  if (perimetre > 0 && descriptions["led"]) blocs.push(descriptions["led"]);
+  if ((cfg.eclairage || 0) > 0 && descriptions["eclairage"])
+    blocs.push(descriptions["eclairage"]);
+
+  // Options posées, avec face et dimensions exactes + description pré-stockée.
+  const opts: string[] = [];
+  for (const el of cfg.elements) {
+    const o = OPTIONS.find((x) => x.id === el.optionId);
+    if (!o) continue;
+    const d =
+      o.type === "unite"
+        ? `×${el.qte}`
+        : `${fr(el.L)} × ${fr(el.H)} m · ×${el.qte}`;
+    const desc = descriptions[o.id] ? ` — ${descriptions[o.id]}` : "";
+    opts.push(`• ${o.label}${el.face ? ` (${el.face})` : ""} · ${d}${desc}`);
+  }
+  if (opts.length) {
+    blocs.push("Options :");
+    blocs.push(opts.join("\n"));
+  }
+
+  return blocs.join("\n");
+}
+
+// Ligne UNIQUE : toute la config sur-mesure comptabilisée en un seul produit,
+// prix global + description unifiée (mesures exactes incluses). C'est ce qui
+// remplace les anciennes présélections.
+export function construireLigneUnique(
+  cfg: ConfigSM,
+  descriptions: Record<string, string> = {},
+): Ligne[] {
+  const detail = construireLignes(cfg, descriptions);
+  const total = r2(detail.reduce((a, l) => a + l.prixHt, 0));
+  if (total <= 0) return [];
+
+  const m = MODELES.find((x) => x.code === cfg.modele) ?? MODELES[0];
+  const L = cfg.toitL || 0;
+  const W = cfg.toitW || 0;
+  const dims = L > 0 && W > 0 ? ` ${fr(L)}×${fr(W)} m` : "";
+  const pot = (cfg.poteaux || 0) > 0 ? ` — ${cfg.poteaux} poteaux` : "";
+
+  return [
+    {
+      designation: `Pergola ${m.code}${dims}${pot}`,
+      description: construireDescription(cfg, descriptions),
+      quantite: 1,
+      prixHt: total,
+      tva: 20,
+    },
+  ];
 }

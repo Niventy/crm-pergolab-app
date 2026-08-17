@@ -9,7 +9,6 @@ import { formatEuros } from "@/lib/format";
 import { SurMesureCalc } from "./sur-mesure-calc";
 import {
   creerDevis,
-  fetchProduits,
   getDevisLines,
   modifierDevis,
   devisAppUrl,
@@ -25,15 +24,6 @@ type Line = {
   tva: number;
   productId?: number | null;
 };
-type Produit = {
-  id: number;
-  label: string;
-  description: string | null;
-  prixHt: number;
-  tva: number;
-  reference: string | null;
-};
-
 const TVA_OPTIONS = [20, 10, 5.5, 0];
 const eur = (n: number) => formatEuros(String(Math.round(n * 100) / 100));
 
@@ -105,7 +95,6 @@ export function DevisForm({
 }) {
   const router = useRouter();
   const [pending, start] = useTransition();
-  const [produits, setProduits] = useState<Produit[] | null>(null);
   const [smOpen, setSmOpen] = useState(false);
   const [pdfUrl, setPdfUrl] = useState<string | null>(null);
   const [pdfLoading, setPdfLoading] = useState(false);
@@ -113,11 +102,6 @@ export function DevisForm({
   const [lines, setLines] = useState<Line[]>([
     { designation: prefill.designation, quantite: 1, prixHt: prefill.prixHt, tva: 20 },
   ]);
-
-  // Catalogue de présélections.
-  useEffect(() => {
-    fetchProduits().then((r) => setProduits(r.ok ? (r.produits ?? []) : []));
-  }, []);
 
   // Devis existant : charge ses lignes + son PDF.
   useEffect(() => {
@@ -148,18 +132,6 @@ export function DevisForm({
     setLines((ls) => [...ls, { designation: "", quantite: 1, prixHt: 0, tva: 20 }]);
   const removeLine = (i: number) =>
     setLines((ls) => (ls.length > 1 ? ls.filter((_, j) => j !== i) : ls));
-  const addProduit = (p: Produit) =>
-    setLines((ls) => [
-      ...ls,
-      {
-        // Pas de description ici : product_id suffit, Pennylane l'attache.
-        designation: p.label,
-        quantite: 1,
-        prixHt: p.prixHt,
-        tva: p.tva,
-        productId: p.id,
-      },
-    ]);
 
   const remplies = () => lines.filter((l) => l.designation.trim());
   const ht = lines.reduce((a, l) => a + (l.quantite || 0) * (l.prixHt || 0), 0);
@@ -212,32 +184,12 @@ export function DevisForm({
           </p>
         ) : null}
 
-        {/* Présélections + sur-mesure */}
+        {/* Configurateur sur-mesure (remplace les présélections) */}
         <div className="flex flex-wrap items-center gap-2">
-          <select
-            value=""
-            onChange={(e) => {
-              const id = Number(e.target.value);
-              const p = produits?.find((x) => x.id === id);
-              if (p) addProduit(p);
-              e.currentTarget.value = "";
-            }}
-            disabled={!produits || produits.length === 0}
-            className="h-9 min-w-[14rem] flex-1 rounded-md border border-border bg-white px-2 text-sm outline-none focus:border-primary disabled:opacity-60"
-          >
-            <option value="">
-              {produits === null
-                ? "Chargement du catalogue…"
-                : produits.length === 0
-                  ? "Aucune présélection (catalogue Pennylane vide)"
-                  : "+ Ajouter une présélection (Essentia…)"}
-            </option>
-            {(produits ?? []).map((p) => (
-              <option key={p.id} value={p.id}>
-                {p.label} — {eur(p.prixHt)} HT
-              </option>
-            ))}
-          </select>
+          <p className="flex-1 text-sm text-muted-foreground">
+            Configure la pergola sur-mesure : tout est comptabilisé en un seul
+            produit (prix global + description avec les mesures exactes).
+          </p>
           <button
             type="button"
             onClick={() => setSmOpen((v) => !v)}
@@ -255,12 +207,16 @@ export function DevisForm({
           <SurMesureCalc
             descriptions={surMesureDescriptions}
             onAjouter={(ls) => {
+              // Le sur-mesure = 1 bloc global. On garde les éventuelles lignes
+              // libres déjà saisies (hors ligne pré-remplie par défaut).
               setLines((cur) => {
-                const base = cur.filter((l) => l.designation.trim());
-                return [...base, ...ls];
+                const gardees = cur.filter(
+                  (l) => l.designation.trim() && l.designation !== prefill.designation,
+                );
+                return [...gardees, ...ls];
               });
               setSmOpen(false);
-              toast.success(`${ls.length} ligne(s) sur-mesure ajoutée(s)`);
+              toast.success("Pergola sur-mesure ajoutée (1 ligne globale)");
             }}
             onClose={() => setSmOpen(false)}
           />
