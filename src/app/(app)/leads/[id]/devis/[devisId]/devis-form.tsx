@@ -3,9 +3,10 @@
 import { useEffect, useState, useTransition } from "react";
 import Link from "next/link";
 import { useRouter } from "next/navigation";
-import { Plus, Trash2, FileText, Download, ExternalLink, RefreshCw } from "lucide-react";
+import { Plus, Trash2, FileText, Download, ExternalLink, RefreshCw, Calculator } from "lucide-react";
 import { toast } from "sonner";
 import { formatEuros } from "@/lib/format";
+import { SurMesureCalc } from "./sur-mesure-calc";
 import {
   creerDevis,
   fetchProduits,
@@ -102,6 +103,7 @@ export function DevisForm({
   const router = useRouter();
   const [pending, start] = useTransition();
   const [produits, setProduits] = useState<Produit[] | null>(null);
+  const [smOpen, setSmOpen] = useState(false);
   const [pdfUrl, setPdfUrl] = useState<string | null>(null);
   const [pdfLoading, setPdfLoading] = useState(false);
   const [pdfKey, setPdfKey] = useState(0); // force le rechargement de l'iframe
@@ -200,31 +202,58 @@ export function DevisForm({
           </p>
         ) : null}
 
-        {/* Présélections */}
-        <select
-          value=""
-          onChange={(e) => {
-            const id = Number(e.target.value);
-            const p = produits?.find((x) => x.id === id);
-            if (p) addProduit(p);
-            e.currentTarget.value = "";
-          }}
-          disabled={!produits || produits.length === 0}
-          className="h-9 w-full rounded-md border border-border bg-white px-2 text-sm outline-none focus:border-primary disabled:opacity-60"
-        >
-          <option value="">
-            {produits === null
-              ? "Chargement du catalogue…"
-              : produits.length === 0
-                ? "Aucune présélection (catalogue Pennylane vide)"
-                : "+ Ajouter une présélection (Essentia…)"}
-          </option>
-          {(produits ?? []).map((p) => (
-            <option key={p.id} value={p.id}>
-              {p.label} — {eur(p.prixHt)} HT
+        {/* Présélections + sur-mesure */}
+        <div className="flex flex-wrap items-center gap-2">
+          <select
+            value=""
+            onChange={(e) => {
+              const id = Number(e.target.value);
+              const p = produits?.find((x) => x.id === id);
+              if (p) addProduit(p);
+              e.currentTarget.value = "";
+            }}
+            disabled={!produits || produits.length === 0}
+            className="h-9 min-w-[14rem] flex-1 rounded-md border border-border bg-white px-2 text-sm outline-none focus:border-primary disabled:opacity-60"
+          >
+            <option value="">
+              {produits === null
+                ? "Chargement du catalogue…"
+                : produits.length === 0
+                  ? "Aucune présélection (catalogue Pennylane vide)"
+                  : "+ Ajouter une présélection (Essentia…)"}
             </option>
-          ))}
-        </select>
+            {(produits ?? []).map((p) => (
+              <option key={p.id} value={p.id}>
+                {p.label} — {eur(p.prixHt)} HT
+              </option>
+            ))}
+          </select>
+          <button
+            type="button"
+            onClick={() => setSmOpen((v) => !v)}
+            className={`inline-flex h-9 items-center gap-1.5 rounded-md border px-3 text-sm font-semibold ${
+              smOpen
+                ? "border-primary bg-primary/10 text-primary"
+                : "border-border bg-white text-foreground hover:border-primary/40"
+            }`}
+          >
+            <Calculator className="size-4" /> Sur-mesure
+          </button>
+        </div>
+
+        {smOpen ? (
+          <SurMesureCalc
+            onAjouter={(ls) => {
+              setLines((cur) => {
+                const base = cur.filter((l) => l.designation.trim());
+                return [...base, ...ls];
+              });
+              setSmOpen(false);
+              toast.success(`${ls.length} ligne(s) sur-mesure ajoutée(s)`);
+            }}
+            onClose={() => setSmOpen(false)}
+          />
+        ) : null}
 
         <div className="hidden grid-cols-[1fr_3.5rem_6rem_5rem_2rem] gap-2 text-[0.7rem] font-semibold uppercase tracking-wide text-muted-foreground sm:grid">
           <span>Désignation</span>
