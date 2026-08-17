@@ -81,7 +81,7 @@ export function DevisForm({
   quoteId,
   numero,
   pennylaneConfigured,
-  surMesureMapping,
+  surMesureDescriptions,
   prefill,
   client,
   infos,
@@ -91,7 +91,7 @@ export function DevisForm({
   quoteId: string | null;
   numero: string | null;
   pennylaneConfigured: boolean;
-  surMesureMapping: Record<string, number>;
+  surMesureDescriptions: Record<string, string>;
   prefill: { designation: string; prixHt: number };
   client: {
     nom: string;
@@ -253,7 +253,7 @@ export function DevisForm({
 
         {smOpen ? (
           <SurMesureCalc
-            mapping={surMesureMapping}
+            descriptions={surMesureDescriptions}
             onAjouter={(ls) => {
               setLines((cur) => {
                 const base = cur.filter((l) => l.designation.trim());

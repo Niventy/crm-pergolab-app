@@ -1,0 +1,937 @@
+{
+  "id": "5a39242a-8ff3-477c-8407-8018b2d4b004",
+  "prevId": "32636936-f98e-4608-a269-3c1ef76c7154",
+  "version": "7",
+  "dialect": "postgresql",
+  "tables": {
+    "public.devis": {
+      "name": "devis",
+      "schema": "",
+      "columns": {
+        "id": {
+          "name": "id",
+          "type": "uuid",
+          "primaryKey": true,
+          "notNull": true,
+          "default": "gen_random_uuid()"
+        },
+        "lead_id": {
+          "name": "lead_id",
+          "type": "uuid",
+          "primaryKey": false,
+          "notNull": true
+        },
+        "numero": {
+          "name": "numero",
+          "type": "text",
+          "primaryKey": false,
+          "notNull": false
+        },
+        "montant": {
+          "name": "montant",
+          "type": "numeric(12, 2)",
+          "primaryKey": false,
+          "notNull": false
+        },
+        "statut": {
+          "name": "statut",
+          "type": "text",
+          "primaryKey": false,
+          "notNull": false
+        },
+        "lien_externe": {
+          "name": "lien_externe",
+          "type": "text",
+          "primaryKey": false,
+          "notNull": false
+        },
+        "external_id": {
+          "name": "external_id",
+          "type": "text",
+          "primaryKey": false,
+          "notNull": false
+        },
+        "created_at": {
+          "name": "created_at",
+          "type": "timestamp with time zone",
+          "primaryKey": false,
+          "notNull": true,
+          "default": "now()"
+        }
+      },
+      "indexes": {},
+      "foreignKeys": {
+        "devis_lead_id_leads_id_fk": {
+          "name": "devis_lead_id_leads_id_fk",
+          "tableFrom": "devis",
+          "tableTo": "leads",
+          "columnsFrom": [
+            "lead_id"
+          ],
+          "columnsTo": [
+            "id"
+          ],
+          "onDelete": "cascade",
+          "onUpdate": "no action"
+        }
+      },
+      "compositePrimaryKeys": {},
+      "uniqueConstraints": {},
+      "policies": {},
+      "checkConstraints": {},
+      "isRLSEnabled": false
+    },
+    "public.echanges": {
+      "name": "echanges",
+      "schema": "",
+      "columns": {
+        "id": {
+          "name": "id",
+          "type": "uuid",
+          "primaryKey": true,
+          "notNull": true,
+          "default": "gen_random_uuid()"
+        },
+        "lead_id": {
+          "name": "lead_id",
+          "type": "uuid",
+          "primaryKey": false,
+          "notNull": true
+        },
+        "user_id": {
+          "name": "user_id",
+          "type": "uuid",
+          "primaryKey": false,
+          "notNull": false
+        },
+        "type": {
+          "name": "type",
+          "type": "text",
+          "primaryKey": false,
+          "notNull": true
+        },
+        "contenu": {
+          "name": "contenu",
+          "type": "text",
+          "primaryKey": false,
+          "notNull": false
+        },
+        "date": {
+          "name": "date",
+          "type": "timestamp with time zone",
+          "primaryKey": false,
+          "notNull": true,
+          "default": "now()"
+        }
+      },
+      "indexes": {},
+      "foreignKeys": {
+        "echanges_lead_id_leads_id_fk": {
+          "name": "echanges_lead_id_leads_id_fk",
+          "tableFrom": "echanges",
+          "tableTo": "leads",
+          "columnsFrom": [
+            "lead_id"
+          ],
+          "columnsTo": [
+            "id"
+          ],
+          "onDelete": "cascade",
+          "onUpdate": "no action"
+        },
+        "echanges_user_id_profiles_id_fk": {
+          "name": "echanges_user_id_profiles_id_fk",
+          "tableFrom": "echanges",
+          "tableTo": "profiles",
+          "columnsFrom": [
+            "user_id"
+          ],
+          "columnsTo": [
+            "id"
+          ],
+          "onDelete": "set null",
+          "onUpdate": "no action"
+        }
+      },
+      "compositePrimaryKeys": {},
+      "uniqueConstraints": {},
+      "policies": {},
+      "checkConstraints": {},
+      "isRLSEnabled": false
+    },
+    "public.leads": {
+      "name": "leads",
+      "schema": "",
+      "columns": {
+        "id": {
+          "name": "id",
+          "type": "uuid",
+          "primaryKey": true,
+          "notNull": true,
+          "default": "gen_random_uuid()"
+        },
+        "created_at": {
+          "name": "created_at",
+          "type": "timestamp with time zone",
+          "primaryKey": false,
+          "notNull": true,
+          "default": "now()"
+        },
+        "stage_id": {
+          "name": "stage_id",
+          "type": "uuid",
+          "primaryKey": false,
+          "notNull": false
+        },
+        "assigned_to": {
+          "name": "assigned_to",
+          "type": "uuid",
+          "primaryKey": false,
+          "notNull": false
+        },
+        "nom": {
+          "name": "nom",
+          "type": "text",
+          "primaryKey": false,
+          "notNull": true
+        },
+        "entreprise": {
+          "name": "entreprise",
+          "type": "text",
+          "primaryKey": false,
+          "notNull": false
+        },
+        "email": {
+          "name": "email",
+          "type": "text",
+          "primaryKey": false,
+          "notNull": false
+        },
+        "telephone": {
+          "name": "telephone",
+          "type": "text",
+          "primaryKey": false,
+          "notNull": false
+        },
+        "source": {
+          "name": "source",
+          "type": "text",
+          "primaryKey": false,
+          "notNull": false
+        },
+        "campagne": {
+          "name": "campagne",
+          "type": "text",
+          "primaryKey": false,
+          "notNull": false
+        },
+        "montant": {
+          "name": "montant",
+          "type": "numeric(12, 2)",
+          "primaryKey": false,
+          "notNull": false
+        },
+        "probabilite": {
+          "name": "probabilite",
+          "type": "integer",
+          "primaryKey": false,
+          "notNull": false
+        },
+        "objectif_date": {
+          "name": "objectif_date",
+          "type": "date",
+          "primaryKey": false,
+          "notNull": false
+        },
+        "type_projet": {
+          "name": "type_projet",
+          "type": "text",
+          "primaryKey": false,
+          "notNull": false
+        },
+        "adresse": {
+          "name": "adresse",
+          "type": "text",
+          "primaryKey": false,
+          "notNull": false
+        },
+        "ville": {
+          "name": "ville",
+          "type": "text",
+          "primaryKey": false,
+          "notNull": false
+        },
+        "code_postal": {
+          "name": "code_postal",
+          "type": "text",
+          "primaryKey": false,
+          "notNull": false
+        },
+        "date_installation": {
+          "name": "date_installation",
+          "type": "text",
+          "primaryKey": false,
+          "notNull": false
+        },
+        "date_souhaitee_appel": {
+          "name": "date_souhaitee_appel",
+          "type": "text",
+          "primaryKey": false,
+          "notNull": false
+        },
+        "statut": {
+          "name": "statut",
+          "type": "lead_statut",
+          "typeSchema": "public",
+          "primaryKey": false,
+          "notNull": true,
+          "default": "'en_cours'"
+        },
+        "rdv_date": {
+          "name": "rdv_date",
+          "type": "date",
+          "primaryKey": false,
+          "notNull": false
+        },
+        "rdv_type": {
+          "name": "rdv_type",
+          "type": "rdv_type",
+          "typeSchema": "public",
+          "primaryKey": false,
+          "notNull": false
+        },
+        "rdv_statut": {
+          "name": "rdv_statut",
+          "type": "rdv_statut",
+          "typeSchema": "public",
+          "primaryKey": false,
+          "notNull": false
+        },
+        "rdv_heure": {
+          "name": "rdv_heure",
+          "type": "text",
+          "primaryKey": false,
+          "notNull": false
+        },
+        "rdv_event_id": {
+          "name": "rdv_event_id",
+          "type": "text",
+          "primaryKey": false,
+          "notNull": false
+        },
+        "pennylane_customer_id": {
+          "name": "pennylane_customer_id",
+          "type": "text",
+          "primaryKey": false,
+          "notNull": false
+        },
+        "pennylane_quote_id": {
+          "name": "pennylane_quote_id",
+          "type": "text",
+          "primaryKey": false,
+          "notNull": false
+        },
+        "next_relance_date": {
+          "name": "next_relance_date",
+          "type": "date",
+          "primaryKey": false,
+          "notNull": false
+        },
+        "relance_count": {
+          "name": "relance_count",
+          "type": "integer",
+          "primaryKey": false,
+          "notNull": true,
+          "default": 0
+        },
+        "resoumission": {
+          "name": "resoumission",
+          "type": "boolean",
+          "primaryKey": false,
+          "notNull": true,
+          "default": false
+        },
+        "date_premier_contact": {
+          "name": "date_premier_contact",
+          "type": "timestamp with time zone",
+          "primaryKey": false,
+          "notNull": false
+        },
+        "raison_perte": {
+          "name": "raison_perte",
+          "type": "raison_perte",
+          "typeSchema": "public",
+          "primaryKey": false,
+          "notNull": false
+        },
+        "mode_paiement": {
+          "name": "mode_paiement",
+          "type": "mode_paiement",
+          "typeSchema": "public",
+          "primaryKey": false,
+          "notNull": false
+        },
+        "acompte": {
+          "name": "acompte",
+          "type": "numeric(12, 2)",
+          "primaryKey": false,
+          "notNull": false
+        },
+        "montant_achat": {
+          "name": "montant_achat",
+          "type": "numeric(12, 2)",
+          "primaryKey": false,
+          "notNull": false
+        },
+        "date_signature": {
+          "name": "date_signature",
+          "type": "date",
+          "primaryKey": false,
+          "notNull": false
+        },
+        "gamme": {
+          "name": "gamme",
+          "type": "text",
+          "primaryKey": false,
+          "notNull": false
+        },
+        "dimensions": {
+          "name": "dimensions",
+          "type": "text",
+          "primaryKey": false,
+          "notNull": false
+        },
+        "finition": {
+          "name": "finition",
+          "type": "text",
+          "primaryKey": false,
+          "notNull": false
+        },
+        "options": {
+          "name": "options",
+          "type": "text",
+          "primaryKey": false,
+          "notNull": false
+        },
+        "type_pose": {
+          "name": "type_pose",
+          "type": "type_pose",
+          "typeSchema": "public",
+          "primaryKey": false,
+          "notNull": false
+        },
+        "pose_assigned_to": {
+          "name": "pose_assigned_to",
+          "type": "uuid",
+          "primaryKey": false,
+          "notNull": false
+        },
+        "date_metre": {
+          "name": "date_metre",
+          "type": "date",
+          "primaryKey": false,
+          "notNull": false
+        },
+        "fournisseur": {
+          "name": "fournisseur",
+          "type": "text",
+          "primaryKey": false,
+          "notNull": false
+        },
+        "ref_commande": {
+          "name": "ref_commande",
+          "type": "text",
+          "primaryKey": false,
+          "notNull": false
+        },
+        "date_commande": {
+          "name": "date_commande",
+          "type": "date",
+          "primaryKey": false,
+          "notNull": false
+        },
+        "date_livraison_prevue": {
+          "name": "date_livraison_prevue",
+          "type": "date",
+          "primaryKey": false,
+          "notNull": false
+        },
+        "date_livraison_reelle": {
+          "name": "date_livraison_reelle",
+          "type": "date",
+          "primaryKey": false,
+          "notNull": false
+        },
+        "date_pose_prevue": {
+          "name": "date_pose_prevue",
+          "type": "date",
+          "primaryKey": false,
+          "notNull": false
+        },
+        "date_pose_reelle": {
+          "name": "date_pose_reelle",
+          "type": "date",
+          "primaryKey": false,
+          "notNull": false
+        },
+        "adresse_pose": {
+          "name": "adresse_pose",
+          "type": "text",
+          "primaryKey": false,
+          "notNull": false
+        },
+        "updated_at": {
+          "name": "updated_at",
+          "type": "timestamp with time zone",
+          "primaryKey": false,
+          "notNull": true,
+          "default": "now()"
+        },
+        "updated_by": {
+          "name": "updated_by",
+          "type": "uuid",
+          "primaryKey": false,
+          "notNull": false
+        },
+        "raw_payload": {
+          "name": "raw_payload",
+          "type": "jsonb",
+          "primaryKey": false,
+          "notNull": false
+        }
+      },
+      "indexes": {},
+      "foreignKeys": {
+        "leads_stage_id_stages_id_fk": {
+          "name": "leads_stage_id_stages_id_fk",
+          "tableFrom": "leads",
+          "tableTo": "stages",
+          "columnsFrom": [
+            "stage_id"
+          ],
+          "columnsTo": [
+            "id"
+          ],
+          "onDelete": "set null",
+          "onUpdate": "no action"
+        },
+        "leads_assigned_to_profiles_id_fk": {
+          "name": "leads_assigned_to_profiles_id_fk",
+          "tableFrom": "leads",
+          "tableTo": "profiles",
+          "columnsFrom": [
+            "assigned_to"
+          ],
+          "columnsTo": [
+            "id"
+          ],
+          "onDelete": "set null",
+          "onUpdate": "no action"
+        },
+        "leads_pose_assigned_to_profiles_id_fk": {
+          "name": "leads_pose_assigned_to_profiles_id_fk",
+          "tableFrom": "leads",
+          "tableTo": "profiles",
+          "columnsFrom": [
+            "pose_assigned_to"
+          ],
+          "columnsTo": [
+            "id"
+          ],
+          "onDelete": "set null",
+          "onUpdate": "no action"
+        },
+        "leads_updated_by_profiles_id_fk": {
+          "name": "leads_updated_by_profiles_id_fk",
+          "tableFrom": "leads",
+          "tableTo": "profiles",
+          "columnsFrom": [
+            "updated_by"
+          ],
+          "columnsTo": [
+            "id"
+          ],
+          "onDelete": "set null",
+          "onUpdate": "no action"
+        }
+      },
+      "compositePrimaryKeys": {},
+      "uniqueConstraints": {},
+      "policies": {},
+      "checkConstraints": {},
+      "isRLSEnabled": false
+    },
+    "public.notes": {
+      "name": "notes",
+      "schema": "",
+      "columns": {
+        "id": {
+          "name": "id",
+          "type": "uuid",
+          "primaryKey": true,
+          "notNull": true,
+          "default": "gen_random_uuid()"
+        },
+        "lead_id": {
+          "name": "lead_id",
+          "type": "uuid",
+          "primaryKey": false,
+          "notNull": true
+        },
+        "user_id": {
+          "name": "user_id",
+          "type": "uuid",
+          "primaryKey": false,
+          "notNull": false
+        },
+        "contenu": {
+          "name": "contenu",
+          "type": "text",
+          "primaryKey": false,
+          "notNull": true
+        },
+        "mentions": {
+          "name": "mentions",
+          "type": "uuid[]",
+          "primaryKey": false,
+          "notNull": false
+        },
+        "created_at": {
+          "name": "created_at",
+          "type": "timestamp with time zone",
+          "primaryKey": false,
+          "notNull": true,
+          "default": "now()"
+        }
+      },
+      "indexes": {},
+      "foreignKeys": {
+        "notes_lead_id_leads_id_fk": {
+          "name": "notes_lead_id_leads_id_fk",
+          "tableFrom": "notes",
+          "tableTo": "leads",
+          "columnsFrom": [
+            "lead_id"
+          ],
+          "columnsTo": [
+            "id"
+          ],
+          "onDelete": "cascade",
+          "onUpdate": "no action"
+        },
+        "notes_user_id_profiles_id_fk": {
+          "name": "notes_user_id_profiles_id_fk",
+          "tableFrom": "notes",
+          "tableTo": "profiles",
+          "columnsFrom": [
+            "user_id"
+          ],
+          "columnsTo": [
+            "id"
+          ],
+          "onDelete": "set null",
+          "onUpdate": "no action"
+        }
+      },
+      "compositePrimaryKeys": {},
+      "uniqueConstraints": {},
+      "policies": {},
+      "checkConstraints": {},
+      "isRLSEnabled": false
+    },
+    "public.profiles": {
+      "name": "profiles",
+      "schema": "",
+      "columns": {
+        "id": {
+          "name": "id",
+          "type": "uuid",
+          "primaryKey": true,
+          "notNull": true
+        },
+        "email": {
+          "name": "email",
+          "type": "text",
+          "primaryKey": false,
+          "notNull": true
+        },
+        "nom": {
+          "name": "nom",
+          "type": "text",
+          "primaryKey": false,
+          "notNull": false
+        },
+        "role": {
+          "name": "role",
+          "type": "text",
+          "primaryKey": false,
+          "notNull": true,
+          "default": "'membre'"
+        },
+        "objectif_mensuel": {
+          "name": "objectif_mensuel",
+          "type": "numeric(12, 2)",
+          "primaryKey": false,
+          "notNull": false
+        }
+      },
+      "indexes": {},
+      "foreignKeys": {},
+      "compositePrimaryKeys": {},
+      "uniqueConstraints": {},
+      "policies": {},
+      "checkConstraints": {},
+      "isRLSEnabled": false
+    },
+    "public.stages": {
+      "name": "stages",
+      "schema": "",
+      "columns": {
+        "id": {
+          "name": "id",
+          "type": "uuid",
+          "primaryKey": true,
+          "notNull": true,
+          "default": "gen_random_uuid()"
+        },
+        "nom": {
+          "name": "nom",
+          "type": "text",
+          "primaryKey": false,
+          "notNull": true
+        },
+        "position": {
+          "name": "position",
+          "type": "integer",
+          "primaryKey": false,
+          "notNull": true
+        },
+        "couleur": {
+          "name": "couleur",
+          "type": "text",
+          "primaryKey": false,
+          "notNull": true,
+          "default": "'#94a3b8'"
+        },
+        "cycle": {
+          "name": "cycle",
+          "type": "integer",
+          "primaryKey": false,
+          "notNull": true,
+          "default": 1
+        },
+        "is_gagnee": {
+          "name": "is_gagnee",
+          "type": "boolean",
+          "primaryKey": false,
+          "notNull": true,
+          "default": false
+        },
+        "is_perdue": {
+          "name": "is_perdue",
+          "type": "boolean",
+          "primaryKey": false,
+          "notNull": true,
+          "default": false
+        }
+      },
+      "indexes": {},
+      "foreignKeys": {},
+      "compositePrimaryKeys": {},
+      "uniqueConstraints": {},
+      "policies": {},
+      "checkConstraints": {},
+      "isRLSEnabled": false
+    },
+    "public.sur_mesure_mapping": {
+      "name": "sur_mesure_mapping",
+      "schema": "",
+      "columns": {
+        "composant": {
+          "name": "composant",
+          "type": "text",
+          "primaryKey": true,
+          "notNull": true
+        },
+        "product_id": {
+          "name": "product_id",
+          "type": "text",
+          "primaryKey": false,
+          "notNull": false
+        },
+        "description": {
+          "name": "description",
+          "type": "text",
+          "primaryKey": false,
+          "notNull": false
+        }
+      },
+      "indexes": {},
+      "foreignKeys": {},
+      "compositePrimaryKeys": {},
+      "uniqueConstraints": {},
+      "policies": {},
+      "checkConstraints": {},
+      "isRLSEnabled": false
+    },
+    "public.taches": {
+      "name": "taches",
+      "schema": "",
+      "columns": {
+        "id": {
+          "name": "id",
+          "type": "uuid",
+          "primaryKey": true,
+          "notNull": true,
+          "default": "gen_random_uuid()"
+        },
+        "user_id": {
+          "name": "user_id",
+          "type": "uuid",
+          "primaryKey": false,
+          "notNull": true
+        },
+        "titre": {
+          "name": "titre",
+          "type": "text",
+          "primaryKey": false,
+          "notNull": true
+        },
+        "echeance": {
+          "name": "echeance",
+          "type": "date",
+          "primaryKey": false,
+          "notNull": false
+        },
+        "fait": {
+          "name": "fait",
+          "type": "boolean",
+          "primaryKey": false,
+          "notNull": true,
+          "default": false
+        },
+        "fait_at": {
+          "name": "fait_at",
+          "type": "timestamp with time zone",
+          "primaryKey": false,
+          "notNull": false
+        },
+        "lead_id": {
+          "name": "lead_id",
+          "type": "uuid",
+          "primaryKey": false,
+          "notNull": false
+        },
+        "created_at": {
+          "name": "created_at",
+          "type": "timestamp with time zone",
+          "primaryKey": false,
+          "notNull": true,
+          "default": "now()"
+        }
+      },
+      "indexes": {},
+      "foreignKeys": {
+        "taches_user_id_profiles_id_fk": {
+          "name": "taches_user_id_profiles_id_fk",
+          "tableFrom": "taches",
+          "tableTo": "profiles",
+          "columnsFrom": [
+            "user_id"
+          ],
+          "columnsTo": [
+            "id"
+          ],
+          "onDelete": "cascade",
+          "onUpdate": "no action"
+        },
+        "taches_lead_id_leads_id_fk": {
+          "name": "taches_lead_id_leads_id_fk",
+          "tableFrom": "taches",
+          "tableTo": "leads",
+          "columnsFrom": [
+            "lead_id"
+          ],
+          "columnsTo": [
+            "id"
+          ],
+          "onDelete": "set null",
+          "onUpdate": "no action"
+        }
+      },
+      "compositePrimaryKeys": {},
+      "uniqueConstraints": {},
+      "policies": {},
+      "checkConstraints": {},
+      "isRLSEnabled": false
+    }
+  },
+  "enums": {
+    "public.lead_statut": {
+      "name": "lead_statut",
+      "schema": "public",
+      "values": [
+        "en_cours",
+        "gagnee",
+        "perdue"
+      ]
+    },
+    "public.mode_paiement": {
+      "name": "mode_paiement",
+      "schema": "public",
+      "values": [
+        "comptant",
+        "financement_60",
+        "financement_120"
+      ]
+    },
+    "public.raison_perte": {
+      "name": "raison_perte",
+      "schema": "public",
+      "values": [
+        "prix",
+        "delai",
+        "concurrent",
+        "injoignable",
+        "annule",
+        "non_qualifie",
+        "autre"
+      ]
+    },
+    "public.rdv_statut": {
+      "name": "rdv_statut",
+      "schema": "public",
+      "values": [
+        "prevu",
+        "a_reprogrammer",
+        "honore"
+      ]
+    },
+    "public.rdv_type": {
+      "name": "rdv_type",
+      "schema": "public",
+      "values": [
+        "physique",
+        "visio"
+      ]
+    },
+    "public.type_pose": {
+      "name": "type_pose",
+      "schema": "public",
+      "values": [
+        "autoportee",
+        "adossee"
+      ]
+    }
+  },
+  "schemas": {},
+  "sequences": {},
+  "roles": {},
+  "policies": {},
+  "views": {},
+  "_meta": {
+    "columns": {},
+    "schemas": {},
+    "tables": {}
+  }
+}

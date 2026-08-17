@@ -1,0 +1,1 @@
+ALTER TABLE "sur_mesure_mapping" ADD COLUMN "description" text;

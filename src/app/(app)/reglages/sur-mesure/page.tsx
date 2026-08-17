@@ -1,34 +1,34 @@
 import { notFound } from "next/navigation";
-import { Link2 } from "lucide-react";
+import { FileText } from "lucide-react";
 import { isAdmin } from "@/lib/current-user";
-import { OPTIONS } from "../../leads/[id]/devis/[devisId]/sur-mesure";
-import { getMappingSurMesure } from "../actions";
-import { MappingSurMesure } from "./mapping-client";
+import { COMPOSANTS } from "../../leads/[id]/devis/[devisId]/sur-mesure";
+import { getDescriptionsSurMesure } from "../actions";
+import { DescriptionsSurMesure } from "./mapping-client";
 
 export const dynamic = "force-dynamic";
 
 export default async function ReglagesSurMesurePage() {
   if (!(await isAdmin())) notFound();
 
-  const mapping = await getMappingSurMesure();
-  const options = OPTIONS.map((o) => ({ id: o.id, label: o.label }));
+  const descriptions = await getDescriptionsSurMesure();
 
   return (
     <main className="mx-auto w-full max-w-3xl flex-1 space-y-5 px-6 py-6 pb-28">
       <div className="flex items-center gap-3">
         <span className="flex size-10 items-center justify-center rounded-xl bg-brand text-brand-foreground">
-          <Link2 className="size-5" />
+          <FileText className="size-5" />
         </span>
         <div>
-          <h1 className="text-display text-2xl">Mapping sur-mesure ↔ Pennylane</h1>
+          <h1 className="text-display text-2xl">Descriptions sur-mesure</h1>
           <p className="text-sm text-muted-foreground">
-            Associe chaque option du configurateur à son produit Pennylane — sa
-            description remontera alors sur les devis (le prix reste calculé au m²).
+            Rédige la description pré-stockée de chaque composant. Elle s&apos;ajoute
+            automatiquement sur la ligne correspondante quand on configure une pergola
+            sur-mesure, et s&apos;affiche dans le CRM comme sur le devis.
           </p>
         </div>
       </div>
 
-      <MappingSurMesure options={options} mapping={mapping} />
+      <DescriptionsSurMesure composants={COMPOSANTS} descriptions={descriptions} />
     </main>
   );
 }

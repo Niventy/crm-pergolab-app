@@ -8,6 +8,7 @@ export type Ligne = {
   prixHt: number;
   tva: number;
   productId?: number | null;
+  description?: string | null;
 };
 
 export type Modele = {
@@ -91,12 +92,25 @@ export function prixOption(o: OptionSM, c: OptionConfig): number {
   return r2(surface * o.prix * q); // surface
 }
 
+// Liste des composants (pour l'écran de descriptions pré-stockées).
+export const COMPOSANTS: { id: string; label: string }[] = [
+  { id: "toit_E140U", label: "Toit E140U" },
+  { id: "toit_E175U", label: "Toit E175U" },
+  { id: "toit_E220", label: "Toit E220" },
+  { id: "poteau_E140U", label: "Poteaux E140U" },
+  { id: "poteau_E175U", label: "Poteaux E175U" },
+  { id: "poteau_E220", label: "Poteaux E220" },
+  { id: "led", label: "Bandeau LED" },
+  { id: "eclairage", label: "Système d'éclairage" },
+  ...OPTIONS.map((o) => ({ id: o.id, label: o.label })),
+];
+
 // Construit les lignes de devis détaillées à partir de la config.
-// `mapping` : id d'option du configurateur → id produit Pennylane (pour lier la
-// ligne au catalogue → sa description remonte sur le devis).
+// `descriptions` : id de composant → description pré-stockée (injectée sur la ligne
+// et affichée dans le CRM / sur le devis).
 export function construireLignes(
   cfg: ConfigSM,
-  mapping: Record<string, number | null> = {},
+  descriptions: Record<string, string> = {},
 ): Ligne[] {
   const m = MODELES.find((x) => x.code === cfg.modele) ?? MODELES[0];
   const lignes: Ligne[] = [];
@@ -108,6 +122,7 @@ export function construireLignes(
   if (toit > 0)
     lignes.push({
       designation: `Pergola ${m.code} — toit ${L}×${W} m`,
+      description: descriptions[`toit_${m.code}`] || null,
       quantite: 1,
       prixHt: toit,
       tva: 20,
@@ -118,6 +133,7 @@ export function construireLignes(
   if (poteaux > 0)
     lignes.push({
       designation: `Poteaux ${m.code} (×${cfg.poteaux})`,
+      description: descriptions[`poteau_${m.code}`] || null,
       quantite: 1,
       prixHt: poteaux,
       tva: 20,
@@ -129,6 +145,7 @@ export function construireLignes(
   if (led > 0)
     lignes.push({
       designation: `Bandeau LED (${perimetre} m de périmètre)`,
+      description: descriptions["led"] || null,
       quantite: 1,
       prixHt: led,
       tva: 20,
@@ -139,6 +156,7 @@ export function construireLignes(
   if (ecl > 0)
     lignes.push({
       designation: `Système d'éclairage (×${cfg.eclairage})`,
+      description: descriptions["eclairage"] || null,
       quantite: 1,
       prixHt: ecl,
       tva: 20,
@@ -155,10 +173,10 @@ export function construireLignes(
     const face = el.face ? ` — ${el.face}` : "";
     lignes.push({
       designation: `${o.label}${face} (${dims})`,
+      description: descriptions[o.id] || null,
       quantite: 1,
       prixHt: p,
       tva: 20,
-      productId: mapping[o.id] ?? null, // lie au produit Pennylane → description
     });
   }
 

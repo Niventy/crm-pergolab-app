@@ -22,11 +22,11 @@ const entier = (raw: string) => Math.max(0, Math.trunc(Number(raw) || 0));
 type Elem = Element & { key: number };
 
 export function SurMesureCalc({
-  mapping,
+  descriptions,
   onAjouter,
   onClose,
 }: {
-  mapping: Record<string, number>;
+  descriptions: Record<string, string>;
   onAjouter: (lignes: Ligne[]) => void;
   onClose: () => void;
 }) {
@@ -84,8 +84,8 @@ export function SurMesureCalc({
       eclairage,
       elements,
     };
-    return construireLignes(cfg, mapping);
-  }, [modele, toitL, toitW, toitQte, poteaux, eclairage, elements, mapping]);
+    return construireLignes(cfg, descriptions);
+  }, [modele, toitL, toitW, toitQte, poteaux, eclairage, elements, descriptions]);
   const total = lignes.reduce((a, l) => a + l.prixHt, 0);
   const perimetre = Math.round((toitL + toitW) * 2 * 100) / 100;
 

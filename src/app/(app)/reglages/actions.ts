@@ -38,3 +38,34 @@ export async function setMappingSurMesure(
 export async function fetchProduitsReglages() {
   return listProduitsPennylane();
 }
+
+// Descriptions pré-stockées : composant du configurateur → texte injecté sur la ligne.
+export async function getDescriptionsSurMesure(): Promise<
+  Record<string, string>
+> {
+  const rows = await db.select().from(surMesureMapping);
+  const map: Record<string, string> = {};
+  for (const r of rows) if (r.description) map[r.composant] = r.description;
+  return map;
+}
+
+// Définit (ou efface) la description d'un composant. Réservé aux admins.
+export async function setDescriptionSurMesure(
+  composant: string,
+  description: string | null,
+) {
+  if (!(await isAdmin()))
+    return { ok: false as const, error: "Réservé aux admins." };
+
+  const desc = description?.trim() || null;
+  await db
+    .insert(surMesureMapping)
+    .values({ composant, description: desc })
+    .onConflictDoUpdate({
+      target: surMesureMapping.composant,
+      set: { description: desc },
+    });
+
+  revalidatePath("/reglages/sur-mesure");
+  return { ok: true as const, error: null };
+}

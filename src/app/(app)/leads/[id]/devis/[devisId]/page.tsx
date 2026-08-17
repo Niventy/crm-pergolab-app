@@ -3,7 +3,7 @@ import { notFound } from "next/navigation";
 import { eq } from "drizzle-orm";
 import { db } from "@/db";
 import { leads as leadsTable, devis as devisTable } from "@/db/schema";
-import { getMappingSurMesure } from "@/app/(app)/reglages/actions";
+import { getDescriptionsSurMesure } from "@/app/(app)/reglages/actions";
 import { DevisForm } from "./devis-form";
 
 export const dynamic = "force-dynamic";
@@ -27,13 +27,8 @@ export default async function DevisEditPage({
     : await db.query.devis.findFirst({ where: eq(devisTable.id, devisId) });
   if (!isNew && !devisRow) notFound();
 
-  // Mapping composant sur-mesure → produit Pennylane (pour les descriptions).
-  const rawMap = await getMappingSurMesure();
-  const surMesureMapping: Record<string, number> = {};
-  for (const [k, v] of Object.entries(rawMap)) {
-    const n = Number(v);
-    if (n) surMesureMapping[k] = n;
-  }
+  // Descriptions pré-stockées par composant sur-mesure (injectées sur les lignes).
+  const surMesureDescriptions = await getDescriptionsSurMesure();
 
   return (
     <main className="flex w-full flex-1 flex-col gap-3 px-4 py-4">
@@ -56,7 +51,7 @@ export default async function DevisEditPage({
         quoteId={devisRow?.externalId ?? null}
         numero={devisRow?.numero ?? null}
         pennylaneConfigured={!!process.env.PENNYLANE_API_KEY}
-        surMesureMapping={surMesureMapping}
+        surMesureDescriptions={surMesureDescriptions}
         prefill={{
           designation:
             `Pergola${lead.gamme ? ` ${lead.gamme}` : ""}${

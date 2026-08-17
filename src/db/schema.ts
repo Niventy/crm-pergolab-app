@@ -257,7 +257,8 @@ export const taches = pgTable("taches", {
 // ---------------------------------------------------------------------------
 export const surMesureMapping = pgTable("sur_mesure_mapping", {
   composant: text("composant").primaryKey(), // ex. "toit_E140U", "led", "chauffage"
-  productId: text("product_id"), // id du produit Pennylane
+  productId: text("product_id"), // id du produit Pennylane (optionnel)
+  description: text("description"), // description pré-stockée → injectée sur la ligne
 });
 
 // ---------------------------------------------------------------------------
