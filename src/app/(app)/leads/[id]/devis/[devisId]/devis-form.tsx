@@ -152,8 +152,8 @@ export function DevisForm({
     setLines((ls) => [
       ...ls,
       {
+        // Pas de description ici : product_id suffit, Pennylane l'attache.
         designation: p.label,
-        description: p.description,
         quantite: 1,
         prixHt: p.prixHt,
         tva: p.tva,
@@ -322,13 +322,19 @@ export function DevisForm({
               <Trash2 className="size-4" />
             </button>
           </div>
-          <textarea
-            value={l.description ?? ""}
-            onChange={(e) => setLine(i, { description: e.target.value })}
-            placeholder="Description (apparaît sur le devis)…"
-            rows={l.description ? 2 : 1}
-            className="w-full resize-y rounded-md border border-border bg-white px-2 py-1.5 text-xs text-muted-foreground outline-none focus:border-primary"
-          />
+          {l.productId ? (
+            <p className="px-1 text-[0.7rem] text-muted-foreground">
+              Description gérée par le produit Pennylane.
+            </p>
+          ) : (
+            <textarea
+              value={l.description ?? ""}
+              onChange={(e) => setLine(i, { description: e.target.value })}
+              placeholder="Description (apparaît sur le devis)…"
+              rows={l.description ? 2 : 1}
+              className="w-full resize-y rounded-md border border-border bg-white px-2 py-1.5 text-xs text-muted-foreground outline-none focus:border-primary"
+            />
+          )}
           </div>
         ))}
 

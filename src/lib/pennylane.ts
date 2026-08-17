@@ -53,13 +53,15 @@ function vatCode(tva: number): string {
 // Une ligne du CRM → payload de CRÉATION Pennylane.
 // Issue d'une présélection => reste liée au produit (product_id).
 function toLinePayload(l: DevisLine) {
-  const desc = l.description?.trim() || undefined;
+  // Ligne-produit : Pennylane gère la description via product_id → on n'envoie
+  // pas de description (sinon on écrase le texte enrichi du produit par du brut).
+  // Ligne libre : on envoie la description saisie dans le CRM.
+  const desc = l.productId ? undefined : l.description?.trim() || undefined;
   return l.productId
     ? {
         product_id: l.productId,
         quantity: l.quantite || 1,
         label: l.designation || undefined,
-        description: desc,
         raw_currency_unit_price: String(l.prixHt ?? 0),
         unit: "pièce",
         vat_rate: vatCode(l.tva),
@@ -75,12 +77,14 @@ function toLinePayload(l: DevisLine) {
 }
 
 // Une ligne existante → payload de MISE À JOUR (id + valeurs éditables).
-// On renvoie la description pour ne pas l'effacer lors d'une édition.
 function toLineUpdatePayload(l: DevisLine) {
   return {
     id: l.id,
     label: l.designation || "Prestation",
-    description: l.description?.trim() || undefined,
+    // Idem : pas de description sur une ligne-produit (gérée par Pennylane).
+    ...(l.productId
+      ? {}
+      : { description: l.description?.trim() || undefined }),
     quantity: l.quantite || 1,
     raw_currency_unit_price: String(l.prixHt ?? 0),
     unit: "pièce",
@@ -276,7 +280,9 @@ export async function getQuoteLines(
   const lines: DevisLine[] = items.map((l) => ({
     id: l.id ? Number(l.id) : null,
     designation: String(l.label ?? ""),
-    description: (l.description as string) ?? null,
+    // Description CRM uniquement pour les lignes libres (les lignes-produit ont
+    // un texte enrichi géré par Pennylane, qu'on ne veut pas afficher en brut).
+    description: l.product_id ? null : ((l.description as string) ?? null),
     quantite: Number(l.quantity ?? 1) || 1,
     prixHt:
       Number(
