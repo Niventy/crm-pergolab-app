@@ -120,6 +120,13 @@
       "when": 1786981918462,
       "tag": "0016_spotty_northstar",
       "breakpoints": true
+    },
+    {
+      "idx": 17,
+      "version": "7",
+      "when": 1787060908453,
+      "tag": "0017_goofy_black_tarantula",
+      "breakpoints": true
     }
   ]
 }

@@ -377,3 +377,54 @@ export async function addNote(
   revalidatePath(`/leads/${leadId}`);
   return { error: null };
 }
+
+// Enregistre l'encaissement + le dossier administratif de la commande (fiche).
+// Champs à valeurs nulles = effacés. Numériques stockés en texte (numeric).
+export type EncaissementInput = {
+  montantTtc?: string | null;
+  acompteEncaisse?: string | null;
+  paiementEspece?: string | null;
+  financeur?: string | null;
+  equipePose?: string | null;
+  mesure?: string | null;
+  factureSoldeClient?: boolean;
+  factureSoldePoseur?: boolean;
+  dossierDateEnvoi?: string | null;
+};
+
+export async function saveEncaissement(
+  leadId: string,
+  data: EncaissementInput,
+) {
+  const num = (v?: string | null) => {
+    const t = (v ?? "").toString().trim().replace(",", ".");
+    if (t === "") return null;
+    const n = Number(t);
+    return Number.isFinite(n) ? String(n) : null;
+  };
+  const txt = (v?: string | null) => {
+    const t = (v ?? "").toString().trim();
+    return t === "" ? null : t;
+  };
+
+  await db
+    .update(leads)
+    .set({
+      montantTtc: num(data.montantTtc),
+      acompteEncaisse: num(data.acompteEncaisse),
+      paiementEspece: num(data.paiementEspece),
+      financeur: txt(data.financeur),
+      equipePose: txt(data.equipePose),
+      mesure: txt(data.mesure),
+      factureSoldeClient: !!data.factureSoldeClient,
+      factureSoldePoseur: !!data.factureSoldePoseur,
+      dossierDateEnvoi: txt(data.dossierDateEnvoi),
+      updatedAt: new Date(),
+      updatedBy: await currentUserId(),
+    })
+    .where(eq(leads.id, leadId));
+
+  revalidatePath(`/leads/${leadId}`);
+  revalidatePath("/clients");
+  return { ok: true as const, error: null };
+}

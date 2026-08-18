@@ -11,6 +11,7 @@ const TABS = [
   { href: "/dashboard", label: "Dashboard" },
   { href: "/kanban", label: "Kanban" },
   { href: "/liste", label: "Liste" },
+  { href: "/clients", label: "Clients" },
   { href: "/devis", label: "Devis" },
   { href: "/emploi-du-temps", label: "Planning" },
   { href: "/commercial", label: "Commercial" },

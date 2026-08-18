@@ -10,6 +10,13 @@ import { Button, buttonVariants } from "@/components/ui/button";
 import { Card, CardContent, CardHeader, CardTitle } from "@/components/ui/card";
 import { Separator } from "@/components/ui/separator";
 import { formatEuros, formatDate, tempsRelatif, humanise } from "@/lib/format";
+import {
+  computeGaranties,
+  GARANTIE_STATUT_LABEL,
+  GARANTIE_STRUCTURE_ANS,
+  GARANTIE_MOTORISATION_ANS,
+  type GarantieStatut,
+} from "@/lib/garanties";
 import { assignLead } from "./actions";
 import { AssignSelect } from "./assign-select";
 import { StageMover } from "./stage-mover";
@@ -18,6 +25,7 @@ import { ActivitePills } from "./activite-pills";
 import { EmailCompose } from "./email-compose";
 import { EmailThread } from "./email-thread";
 import { Conversation } from "./conversation";
+import { EncaissementForm } from "./encaissement-form";
 
 export const dynamic = "force-dynamic";
 
@@ -95,6 +103,41 @@ function StatutBadge({ statut }: { statut: string }) {
     >
       {s.label}
     </span>
+  );
+}
+
+const GARANTIE_CLS: Record<GarantieStatut, string> = {
+  active: "bg-green-100 text-green-700",
+  bientot: "bg-amber-100 text-amber-700",
+  expiree: "bg-red-100 text-red-700",
+  inconnue: "bg-slate-100 text-slate-500",
+};
+
+function GarantieLigne({
+  titre,
+  ans,
+  fin,
+  statut,
+}: {
+  titre: string;
+  ans: number;
+  fin: string | null;
+  statut: GarantieStatut;
+}) {
+  return (
+    <div className="flex items-center justify-between rounded-lg border border-border bg-muted/30 px-3 py-2">
+      <div>
+        <div className="text-sm font-medium text-foreground">{titre}</div>
+        <div className="text-xs text-muted-foreground">
+          {ans} ans · {fin ? `jusqu'au ${formatDate(fin)}` : "date de départ inconnue"}
+        </div>
+      </div>
+      <span
+        className={`rounded px-1.5 py-0.5 text-[10px] font-bold uppercase tracking-wide ${GARANTIE_CLS[statut]}`}
+      >
+        {GARANTIE_STATUT_LABEL[statut]}
+      </span>
+    </div>
   );
 }
 
@@ -489,6 +532,73 @@ export default async function LeadPage({
         </CardContent>
       </Card>
       ) : null}
+
+      {/* Encaissement & administratif — dossier client (fiches gagnées) */}
+      {lead.statut === "gagnee" ? (
+        <Card>
+          <CardHeader>
+            <CardTitle className="text-eyebrow text-muted-foreground">
+              Encaissement &amp; administratif
+            </CardTitle>
+          </CardHeader>
+          <CardContent>
+            <EncaissementForm
+              leadId={lead.id}
+              montantHt={lead.montant ? Number(lead.montant) : null}
+              montantTtc={lead.montantTtc}
+              acompteEncaisse={lead.acompteEncaisse}
+              paiementEspece={lead.paiementEspece}
+              financeur={lead.financeur}
+              equipePose={lead.equipePose}
+              mesure={lead.mesure}
+              factureSoldeClient={lead.factureSoldeClient}
+              factureSoldePoseur={lead.factureSoldePoseur}
+              dossierDateEnvoi={lead.dossierDateEnvoi}
+            />
+          </CardContent>
+        </Card>
+      ) : null}
+
+      {/* Garanties — portefeuille client (fiches gagnées) */}
+      {lead.statut === "gagnee"
+        ? (() => {
+            const g = computeGaranties({
+              datePoseReelle: lead.datePoseReelle,
+              dateSignature: lead.dateSignature,
+            });
+            return (
+              <Card>
+                <CardHeader>
+                  <CardTitle className="text-eyebrow text-muted-foreground">
+                    Garanties
+                  </CardTitle>
+                </CardHeader>
+                <CardContent className="space-y-2">
+                  <div className="text-xs text-muted-foreground">
+                    Point de départ :{" "}
+                    {g.source === "pose"
+                      ? `pose du ${formatDate(g.depart)}`
+                      : g.source === "signature"
+                        ? `signature du ${formatDate(g.depart)} (pose non datée)`
+                        : "à définir (aucune date de pose ni de signature)"}
+                  </div>
+                  <GarantieLigne
+                    titre="Structure aluminium"
+                    ans={GARANTIE_STRUCTURE_ANS}
+                    fin={g.structureFin}
+                    statut={g.structureStatut}
+                  />
+                  <GarantieLigne
+                    titre="Motorisation"
+                    ans={GARANTIE_MOTORISATION_ANS}
+                    fin={g.motorisationFin}
+                    statut={g.motorisationStatut}
+                  />
+                </CardContent>
+              </Card>
+            );
+          })()
+        : null}
 
       {/* Devis — composés dans le CRM puis créés dans Pennylane */}
       <Card>

@@ -144,6 +144,18 @@ export const leads = pgTable("leads", {
   // Date de signature (fixée au passage en « gagnée ») → CA/marge par période.
   dateSignature: date("date_signature"),
 
+  // --- Suivi de commande / encaissement (remplace le tableau de facturation) ---
+  montantTtc: numeric("montant_ttc", { precision: 12, scale: 2 }),
+  acompteEncaisse: numeric("acompte_encaisse", { precision: 12, scale: 2 }),
+  paiementEspece: numeric("paiement_espece", { precision: 12, scale: 2 }),
+  financeur: text("financeur"), // ex. SOFINCO (complète mode_paiement)
+  equipePose: text("equipe_pose"), // nom libre de l'équipe de pose
+  mesure: text("mesure"), // nombre de kilo / métré
+  // Dossier administratif : factures de solde + date d'envoi du dossier.
+  factureSoldeClient: boolean("facture_solde_client").notNull().default(false),
+  factureSoldePoseur: boolean("facture_solde_poseur").notNull().default(false),
+  dossierDateEnvoi: date("dossier_date_envoi"),
+
   // --- Produit / configurateur ---
   gamme: text("gamme"), // Essentia / Horizon / Signature / Sur mesure
   dimensions: text("dimensions"),
