@@ -428,3 +428,66 @@ export async function saveEncaissement(
   revalidatePath("/clients");
   return { ok: true as const, error: null };
 }
+
+// Champs client modifiables sur place (whitelist) → libellé pour la trace.
+const CHAMPS_CLIENT: Record<string, string> = {
+  nom: "Nom",
+  telephone: "Téléphone",
+  email: "Email",
+  adresse: "Adresse",
+  codePostal: "Code postal",
+  ville: "Ville",
+  gamme: "Gamme",
+  dimensions: "Produit / dimensions",
+  finition: "Finition",
+  options: "Options",
+  mesure: "Mesure",
+  equipePose: "Équipe de pose",
+  adressePose: "Adresse de pose",
+};
+
+// Enregistre des champs client + JOURNALISE ce qui a réellement changé
+// (une entrée d'activité type « modification » avec les libellés modifiés).
+export async function saveLeadChamps(
+  leadId: string,
+  data: Record<string, string | null>,
+) {
+  const userId = await currentUserId();
+  const keys = Object.keys(data).filter((k) => k in CHAMPS_CLIENT);
+  if (keys.length === 0) return { ok: false as const, error: "Aucun champ." };
+
+  const [current] = await db
+    .select()
+    .from(leads)
+    .where(eq(leads.id, leadId))
+    .limit(1);
+  if (!current) return { ok: false as const, error: "Fiche introuvable." };
+  const cur = current as Record<string, unknown>;
+
+  const set: Record<string, unknown> = { updatedAt: new Date(), updatedBy: userId };
+  const changed: string[] = [];
+  for (const k of keys) {
+    const val = (data[k] ?? "").toString().trim() || null;
+    set[k] = val;
+    const before = (cur[k] ?? null) as string | null;
+    if ((before ?? null) !== val) changed.push(CHAMPS_CLIENT[k]);
+  }
+
+  await db
+    .update(leads)
+    .set(set as Partial<typeof leads.$inferInsert>)
+    .where(eq(leads.id, leadId));
+
+  if (changed.length > 0) {
+    await db.insert(echanges).values({
+      leadId,
+      userId,
+      type: "modification",
+      contenu: `Modifié : ${changed.join(", ")}`,
+    });
+  }
+
+  revalidatePath(`/leads/${leadId}`);
+  revalidatePath("/clients");
+  return { ok: true as const, error: null, changed };
+}

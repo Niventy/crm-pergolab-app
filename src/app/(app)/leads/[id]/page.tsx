@@ -26,6 +26,7 @@ import { EmailCompose } from "./email-compose";
 import { EmailThread } from "./email-thread";
 import { Conversation } from "./conversation";
 import { EncaissementForm } from "./encaissement-form";
+import { ChampsEditables } from "./champs-editables";
 
 export const dynamic = "force-dynamic";
 
@@ -181,6 +182,7 @@ export default async function LeadPage({
   const cycle = lead.stage?.cycle ?? 1;
   const hasRelance = lead.relanceCount > 0 || !!lead.nextRelanceDate;
   const admin = await isAdmin(); // masque coût fournisseur + marge aux ADV
+  const isClient = lead.statut === "gagnee"; // fiche « mode client » (post-signature)
 
   // Email : qui est connecté + depuis quelle adresse il enverra (diagnostic + UX).
   const supabase = await createClient();
@@ -296,23 +298,41 @@ export default async function LeadPage({
             />
           </div>
 
-          {/* BESOIN CLIENT — groupé */}
-          <div className="rounded-lg border border-border bg-muted/30 p-3">
-            <div className="text-eyebrow mb-2 text-muted-foreground">
-              Besoin client
-            </div>
-            <div className="grid grid-cols-1 gap-3 sm:grid-cols-3">
-              <Field label="Code postal" value={lead.codePostal} />
-              <Field
-                label="Appel souhaité (créneau)"
-                value={humanise(lead.dateSouhaiteeAppel)}
+          {/* Coordonnées client (éditables) OU besoin prospect selon le statut */}
+          {isClient ? (
+            <div className="rounded-lg border border-border bg-muted/30 p-3">
+              <div className="text-eyebrow text-muted-foreground">
+                Coordonnées &amp; localisation
+              </div>
+              <ChampsEditables
+                leadId={lead.id}
+                champs={[
+                  { key: "telephone", label: "Téléphone", value: lead.telephone, type: "tel" },
+                  { key: "email", label: "Email", value: lead.email, type: "email" },
+                  { key: "ville", label: "Ville", value: lead.ville },
+                  { key: "adresse", label: "Adresse", value: lead.adresse, full: true },
+                  { key: "codePostal", label: "Code postal", value: lead.codePostal },
+                ]}
               />
-              <Field
-                label="Installation souhaitée"
-                value={humanise(lead.dateInstallation)}
-              />
             </div>
-          </div>
+          ) : (
+            <div className="rounded-lg border border-border bg-muted/30 p-3">
+              <div className="text-eyebrow mb-2 text-muted-foreground">
+                Besoin client
+              </div>
+              <div className="grid grid-cols-1 gap-3 sm:grid-cols-3">
+                <Field label="Code postal" value={lead.codePostal} />
+                <Field
+                  label="Appel souhaité (créneau)"
+                  value={humanise(lead.dateSouhaiteeAppel)}
+                />
+                <Field
+                  label="Installation souhaitée"
+                  value={humanise(lead.dateInstallation)}
+                />
+              </div>
+            </div>
+          )}
         </CardContent>
       </Card>
 
@@ -380,8 +400,8 @@ export default async function LeadPage({
         </CardContent>
       </Card>
 
-      {/* RDV + Relance — cycles prospection & devis */}
-      {cycle <= 2 ? (
+      {/* RDV + Relance — cycles prospection & devis (masqué en mode client) */}
+      {cycle <= 2 && !isClient ? (
       <div className="grid grid-cols-1 gap-4 sm:grid-cols-2">
         <Card>
           <CardHeader>

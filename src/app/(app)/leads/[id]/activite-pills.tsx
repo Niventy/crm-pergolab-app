@@ -16,6 +16,7 @@ import {
   Plus,
   Check,
   X,
+  Pencil,
 } from "lucide-react";
 import { toast } from "sonner";
 import { cn } from "@/lib/utils";
@@ -67,6 +68,11 @@ const META: Record<
     label: "Attribution",
     Icon: UserCheck,
     cls: "bg-amber-100 text-amber-700",
+  },
+  modification: {
+    label: "Modification",
+    Icon: Pencil,
+    cls: "bg-slate-100 text-slate-700",
   },
 };
 
