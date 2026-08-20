@@ -7,6 +7,7 @@ import { Plus, Trash2, FileText, Download, ExternalLink, RefreshCw, Calculator }
 import { toast } from "sonner";
 import { formatEuros } from "@/lib/format";
 import { SurMesureCalc } from "./sur-mesure-calc";
+import { construireLignesDevis, type ConfigSM } from "./sur-mesure";
 import type { ProduitCatalogueDTO } from "@/app/(app)/reglages/actions";
 import {
   creerDevis,
@@ -24,6 +25,7 @@ type Line = {
   prixHt: number;
   tva: number;
   productId?: number | null;
+  config?: boolean; // ligne issue du configurateur (kit ou option)
 };
 const TVA_OPTIONS = [20, 10, 5.5, 0];
 const eur = (n: number) => formatEuros(String(Math.round(n * 100) / 100));
@@ -97,6 +99,9 @@ export function DevisForm({
   const router = useRouter();
   const [pending, start] = useTransition();
   const [smOpen, setSmOpen] = useState(false);
+  // Config du configurateur, conservée tant que le devis est ouvert (pour
+  // rouvrir sans tout ressaisir et pour remplacer proprement ses lignes).
+  const [smConfig, setSmConfig] = useState<ConfigSM | null>(null);
   const [pdfUrl, setPdfUrl] = useState<string | null>(null);
   const [pdfLoading, setPdfLoading] = useState(false);
   const [pdfKey, setPdfKey] = useState(0); // force le rechargement de l'iframe
@@ -134,13 +139,22 @@ export function DevisForm({
   const removeLine = (i: number) =>
     setLines((ls) => ls.filter((_, j) => j !== i));
 
-  // Configurateur : la pergola = 1 ligne, toujours en tête du devis. Reconfigurer
-  // REMPLACE la ligne pergola (pas de doublon), en gardant options et lignes libres.
-  const setPergola = (ls: Line[]) =>
-    setLines((cur) => [
-      ...ls,
-      ...cur.filter((l) => !/^Pergola\b/i.test(l.designation.trim())),
-    ]);
+  // Après un rechargement Pennylane, les lignes perdent le drapeau `config` :
+  // on le remet en comparant aux désignations que produit la config courante.
+  const retag = (ls: Line[]): Line[] => {
+    if (!smConfig) return ls;
+    const gen = new Set(
+      construireLignesDevis(smConfig, surMesureDescriptions).map((l) => l.designation),
+    );
+    return ls.map((l) => (gen.has(l.designation) ? { ...l, config: true } : l));
+  };
+
+  // Applique la config : REMPLACE toutes les lignes du configurateur (kit +
+  // options) par les nouvelles, en tête. Les lignes libres/catalogue sont gardées.
+  const appliquerConfig = (ls: Line[], cfg: ConfigSM) => {
+    setSmConfig(cfg);
+    setLines((cur) => [...ls, ...cur.filter((l) => !l.config)]);
+  };
 
   // Ajoute une ligne à partir d'une option du catalogue (nom + prix + description).
   const addCatalogue = (p: ProduitCatalogueDTO) =>
@@ -177,7 +191,7 @@ export function DevisForm({
           // Recharge les lignes : les nouvelles récupèrent leur id Pennylane
           // (sinon un 2e enregistrement les recréerait en double).
           const fresh = await getDevisLines(quoteId);
-          if (fresh.ok && fresh.lines?.length) setLines(fresh.lines as Line[]);
+          if (fresh.ok && fresh.lines?.length) setLines(retag(fresh.lines as Line[]));
           rafraichirPdf();
           router.refresh();
         } else {
@@ -217,7 +231,11 @@ export function DevisForm({
           }`}
         >
           <Calculator className="size-4" />
-          {smOpen ? "Fermer le configurateur" : "Configurer la pergola"}
+          {smOpen
+            ? "Fermer le configurateur"
+            : smConfig
+              ? "Modifier la pergola"
+              : "Configurer la pergola"}
         </button>
 
         {/* Secondaire : ajouter une option du catalogue (énergie, menuiserie…) */}
@@ -253,10 +271,13 @@ export function DevisForm({
         {smOpen ? (
           <SurMesureCalc
             descriptions={surMesureDescriptions}
-            onAjouter={(ls) => {
-              setPergola(ls);
+            initial={smConfig}
+            onAjouter={(ls, cfg) => {
+              appliquerConfig(ls, cfg);
               setSmOpen(false);
-              toast.success("Pergola configurée (1 ligne)");
+              toast.success(
+                `Pergola configurée (${ls.length} ligne${ls.length > 1 ? "s" : ""})`,
+              );
             }}
             onClose={() => setSmOpen(false)}
           />

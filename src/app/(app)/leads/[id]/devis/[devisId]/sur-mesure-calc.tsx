@@ -10,7 +10,7 @@ import {
   PRIX_LED,
   PRIX_ECLAIRAGE,
   construireLignes,
-  construireLigneUnique,
+  construireLignesDevis,
   prixOption,
   type ConfigSM,
   type Element,
@@ -24,22 +24,30 @@ type Elem = Element & { key: number };
 
 export function SurMesureCalc({
   descriptions,
+  initial,
   onAjouter,
   onClose,
 }: {
   descriptions: Record<string, string>;
-  onAjouter: (lignes: Ligne[]) => void;
+  initial?: ConfigSM | null;
+  onAjouter: (lignes: Ligne[], cfg: ConfigSM) => void;
   onClose: () => void;
 }) {
-  const [modele, setModele] = useState(MODELES[0].code);
-  const [toitL, setToitL] = useState(0);
-  const [toitW, setToitW] = useState(0);
-  const [toitQte, setToitQte] = useState(0);
-  const [poteaux, setPoteaux] = useState(0);
-  const [eclairage, setEclairage] = useState(0);
+  // Une pergola a TOUJOURS un toit (qté 1) et au moins 4 poteaux → valeurs par
+  // défaut, avec 4 poteaux en minimum.
+  const [modele, setModele] = useState(initial?.modele ?? MODELES[0].code);
+  const [toitL, setToitL] = useState(initial?.toitL ?? 0);
+  const [toitW, setToitW] = useState(initial?.toitW ?? 0);
+  const [toitQte, setToitQte] = useState(initial?.toitQte ?? 1);
+  const [poteaux, setPoteaux] = useState(initial?.poteaux ?? 4);
+  const [eclairage, setEclairage] = useState(initial?.eclairage ?? 0);
 
-  const [elements, setElements] = useState<Elem[]>([]);
-  const keyRef = useRef(0);
+  // Clés initiales = index ; les éléments ajoutés ensuite démarrent au-dessus
+  // (1000+) pour éviter toute collision de clé.
+  const keyRef = useRef(1000);
+  const [elements, setElements] = useState<Elem[]>(
+    () => (initial?.elements ?? []).map((e, i) => ({ ...e, key: i })),
+  );
 
   // Ligne d'ajout d'un élément.
   const [optId, setOptId] = useState(OPTIONS[0].id);
@@ -85,13 +93,13 @@ export function SurMesureCalc({
     () => construireLignes(cfg, descriptions),
     [cfg, descriptions],
   );
-  const ligneUnique = useMemo(
-    () => construireLigneUnique(cfg, descriptions),
+  // Lignes envoyées au devis : le kit pergola + 1 ligne par option (visibles).
+  const lignesDevis = useMemo(
+    () => construireLignesDevis(cfg, descriptions),
     [cfg, descriptions],
   );
   const total = apercu.reduce((a, l) => a + l.prixHt, 0);
   const perimetre = Math.round((toitL + toitW) * 2 * 100) / 100;
-  const descriptionUnique = ligneUnique[0]?.description ?? "";
 
   return (
     <div className="space-y-4 rounded-xl border border-primary/30 bg-primary/[0.03] p-4">
@@ -133,8 +141,8 @@ export function SurMesureCalc({
         <div className="grid grid-cols-2 gap-2 sm:grid-cols-5">
           <Champ label="Largeur (m)" value={toitL} onChange={setToitL} />
           <Champ label="Avancée (m)" value={toitW} onChange={setToitW} />
-          <Champ label="Qté toit" value={toitQte} onChange={setToitQte} />
-          <Champ label="Poteaux" value={poteaux} onChange={setPoteaux} />
+          <Champ label="Qté toit" value={toitQte} onChange={setToitQte} min={1} />
+          <Champ label="Poteaux" value={poteaux} onChange={setPoteaux} min={4} />
           <Champ label="Éclairage" value={eclairage} onChange={setEclairage} />
         </div>
         <p className="mt-2 text-xs text-muted-foreground">
@@ -248,36 +256,43 @@ export function SurMesureCalc({
         )}
       </div>
 
-      {/* Description unifiée (aperçu de la ligne unique du devis) */}
-      {descriptionUnique ? (
+      {/* Aperçu des lignes envoyées au devis (kit + options) */}
+      {lignesDevis.length > 0 ? (
         <div className="rounded-lg border border-border bg-white p-3">
           <div className="text-eyebrow mb-1.5 text-muted-foreground">
-            Description du devis (1 seul produit — modifiable ensuite)
+            Lignes ajoutées au devis
           </div>
-          <pre className="whitespace-pre-wrap font-sans text-xs leading-relaxed text-foreground">
-            {descriptionUnique}
-          </pre>
+          <ul className="divide-y divide-border">
+            {lignesDevis.map((l, i) => (
+              <li key={i} className="flex items-center gap-2 py-1 text-sm">
+                <span className="flex-1 text-foreground">{l.designation}</span>
+                <span className="tabular-nums text-muted-foreground">
+                  {eur(l.prixHt)}
+                </span>
+              </li>
+            ))}
+          </ul>
         </div>
       ) : null}
 
       {/* Total + action */}
       <div className="flex flex-wrap items-center justify-between gap-3">
         <div className="text-sm">
-          <span className="text-muted-foreground">Prix global HT : </span>
+          <span className="text-muted-foreground">Total HT : </span>
           <span className="text-lg font-bold tabular-nums text-foreground">
             {eur(total)}
           </span>
           <span className="ml-2 text-xs text-muted-foreground">
-            → 1 ligne de devis
+            → {lignesDevis.length} ligne{lignesDevis.length > 1 ? "s" : ""} de devis
           </span>
         </div>
         <button
           type="button"
-          onClick={() => onAjouter(ligneUnique)}
-          disabled={ligneUnique.length === 0}
+          onClick={() => onAjouter(lignesDevis, cfg)}
+          disabled={lignesDevis.length === 0}
           className="inline-flex items-center gap-1.5 rounded-md bg-primary px-3 py-1.5 text-sm font-semibold text-primary-foreground hover:bg-primary/90 disabled:opacity-50"
         >
-          Ajouter au devis
+          {initial ? "Mettre à jour la pergola" : "Ajouter au devis"}
         </button>
       </div>
     </div>
@@ -288,10 +303,12 @@ function Champ({
   label,
   value,
   onChange,
+  min = 0,
 }: {
   label: string;
   value: number;
   onChange: (v: number) => void;
+  min?: number;
 }) {
   return (
     <label className="block">
@@ -300,10 +317,10 @@ function Champ({
       </span>
       <input
         type="number"
-        min={0}
+        min={min}
         step={1}
         value={value}
-        onChange={(e) => onChange(entier(e.target.value))}
+        onChange={(e) => onChange(Math.max(min, entier(e.target.value)))}
         className="h-9 w-full rounded-md border border-border bg-white px-2 text-sm outline-none focus:border-primary"
       />
     </label>

@@ -9,6 +9,7 @@ export type Ligne = {
   tva: number;
   productId?: number | null;
   description?: string | null;
+  config?: boolean; // ligne issue du configurateur (pour la remplacer proprement)
 };
 
 export type Modele = {
@@ -326,4 +327,59 @@ export function construireLigneUnique(
       tva: 20,
     },
   ];
+}
+
+// Lignes de devis du configurateur : le KIT pergola (toit + poteaux + LED +
+// éclairage) en 1 ligne, puis CHAQUE option sur SA PROPRE ligne (visible et
+// éditable). Toutes marquées `config` pour un remplacement propre.
+export function construireLignesDevis(
+  cfg: ConfigSM,
+  descriptions: Record<string, string> = {},
+): Ligne[] {
+  const m = MODELES.find((x) => x.code === cfg.modele) ?? MODELES[0];
+  const L = cfg.toitL || 0;
+  const W = cfg.toitW || 0;
+  const lignes: Ligne[] = [];
+
+  // 1) Ligne KIT (toit + poteaux + LED + éclairage), options exclues.
+  const cfgBase: ConfigSM = { ...cfg, elements: [] };
+  const baseTotal = r2(
+    construireLignes(cfgBase, descriptions).reduce((a, l) => a + l.prixHt, 0),
+  );
+  if (baseTotal > 0) {
+    const gamme = m.code.charAt(0) + m.code.slice(1).toLowerCase();
+    const dims = L > 0 && W > 0 ? ` ${fr(L)}x${fr(W)} (longueur x largeur)` : "";
+    lignes.push({
+      designation: `Pergola ${gamme}${dims}`,
+      description: construireDescription(cfgBase, descriptions),
+      quantite: 1,
+      prixHt: baseTotal,
+      tva: 20,
+      config: true,
+    });
+  }
+
+  // 2) Une ligne par option posée (avec sa face, ses dimensions, sa description).
+  for (const el of cfg.elements) {
+    const o = OPTIONS.find((x) => x.id === el.optionId);
+    if (!o) continue;
+    const p = prixOption(o, { qte: el.qte, L: el.L, H: el.H });
+    if (p <= 0) continue;
+    const dims =
+      o.type === "unite" ? `×${el.qte}` : `${fr(el.L)} × ${fr(el.H)} m · ×${el.qte}`;
+    const face = el.face ? ` — ${el.face}` : "";
+    const brut = descriptions[o.id]?.trim();
+    const desc =
+      brut && brut.toLowerCase() !== "manquant" ? injecterTokens(brut, cfg) : null;
+    lignes.push({
+      designation: `${o.label}${face} (${dims})`,
+      description: desc,
+      quantite: 1,
+      prixHt: p,
+      tva: 20,
+      config: true,
+    });
+  }
+
+  return lignes;
 }
