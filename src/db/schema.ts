@@ -315,6 +315,26 @@ export const documents = pgTable("documents", {
 });
 
 // ---------------------------------------------------------------------------
+// notifications — centre de notifications par destinataire (@mention, attribution)
+// ---------------------------------------------------------------------------
+export const notifications = pgTable("notifications", {
+  id: uuid("id").primaryKey().defaultRandom(),
+  userId: uuid("user_id") // destinataire
+    .notNull()
+    .references(() => profiles.id, { onDelete: "cascade" }),
+  type: text("type").notNull(), // "mention" | "attribution"
+  leadId: uuid("lead_id").references(() => leads.id, { onDelete: "cascade" }),
+  acteurId: uuid("acteur_id").references(() => profiles.id, {
+    onDelete: "set null",
+  }),
+  message: text("message").notNull(),
+  lu: boolean("lu").notNull().default(false),
+  createdAt: timestamp("created_at", { withTimezone: true })
+    .notNull()
+    .defaultNow(),
+});
+
+// ---------------------------------------------------------------------------
 // Relations
 // ---------------------------------------------------------------------------
 export const profilesRelations = relations(profiles, ({ many }) => ({
@@ -358,6 +378,14 @@ export const documentsRelations = relations(documents, ({ one }) => ({
   }),
 }));
 
+export const notificationsRelations = relations(notifications, ({ one }) => ({
+  lead: one(leads, { fields: [notifications.leadId], references: [leads.id] }),
+  acteur: one(profiles, {
+    fields: [notifications.acteurId],
+    references: [profiles.id],
+  }),
+}));
+
 export const notesRelations = relations(notes, ({ one }) => ({
   lead: one(leads, { fields: [notes.leadId], references: [leads.id] }),
   auteur: one(profiles, { fields: [notes.userId], references: [profiles.id] }),
@@ -396,3 +424,4 @@ export type Devis = typeof devis.$inferSelect;
 export type Tache = typeof taches.$inferSelect;
 export type ProduitCatalogue = typeof produitsCatalogue.$inferSelect;
 export type Document = typeof documents.$inferSelect;
+export type Notification = typeof notifications.$inferSelect;

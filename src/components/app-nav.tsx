@@ -8,6 +8,8 @@ import { cn } from "@/lib/utils";
 import { Button } from "@/components/ui/button";
 import { initiales } from "@/lib/format";
 import { logout } from "@/app/login/actions";
+import { NotificationBell } from "@/components/notification-bell";
+import type { NotifItem } from "@/app/(app)/notifications-actions";
 
 type Item = { href: string; label: string; exact?: boolean; match?: string };
 type Univers = { label: string; items: Item[] };
@@ -53,9 +55,11 @@ function buildUnivers(admin: boolean): Univers[] {
 export function AppNav({
   email,
   role,
+  notifs,
 }: {
   email: string | null;
   role?: string;
+  notifs: { items: NotifItem[]; unread: number };
 }) {
   const pathname = usePathname();
   const admin = role === "admin";
@@ -143,6 +147,7 @@ export function AppNav({
       </div>
 
       <div className="flex items-center gap-3">
+        <NotificationBell initial={notifs} />
         <span
           className={cn(
             "rounded-full px-2 py-0.5 text-[10px] font-bold uppercase tracking-wide",

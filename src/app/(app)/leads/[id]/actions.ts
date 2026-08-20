@@ -6,6 +6,7 @@ import { db } from "@/db";
 import { leads, stages, notes, echanges, profiles, devis } from "@/db/schema";
 import { createClient } from "@/lib/supabase/server";
 import { currentUserId } from "@/lib/current-user";
+import { notifier } from "@/lib/notifications";
 import {
   creerDevisPennylane,
   listProduitsPennylane,
@@ -143,12 +144,38 @@ export async function addMessage(
 ) {
   const c = contenu.trim();
   if (!c) return { ok: false, error: "Message vide." };
+  const userId = await currentUserId();
   await db.insert(notes).values({
     leadId,
-    userId: await currentUserId(),
+    userId,
     contenu: c,
     mentions: mentions.length ? mentions : null,
   });
+
+  // Notifie les personnes @mentionnées (hors l'auteur).
+  if (mentions.length) {
+    const [lead] = await db
+      .select({ nom: leads.nom })
+      .from(leads)
+      .where(eq(leads.id, leadId))
+      .limit(1);
+    const [acteur] = userId
+      ? await db
+          .select({ nom: profiles.nom, email: profiles.email })
+          .from(profiles)
+          .where(eq(profiles.id, userId))
+          .limit(1)
+      : [undefined];
+    const par = acteur?.nom ?? acteur?.email ?? "Quelqu'un";
+    await notifier({
+      userIds: mentions,
+      type: "mention",
+      leadId,
+      acteurId: userId,
+      message: `${par} vous a mentionné sur « ${lead?.nom ?? "une fiche"} »`,
+    });
+  }
+
   revalidatePath(`/leads/${leadId}`);
   return { ok: true, error: null };
 }
@@ -346,6 +373,30 @@ export async function assignLead(leadId: string, assignedTo: string | null) {
     contenu = `Attribué à ${p?.nom ?? p?.email ?? "un membre"}`;
   }
   await db.insert(echanges).values({ leadId, userId, type: "attribution", contenu });
+
+  // Notifie la personne nouvellement attribuée (sauf auto-attribution).
+  if (assignedTo && assignedTo !== userId) {
+    const [{ nom } = { nom: null }] = await db
+      .select({ nom: leads.nom })
+      .from(leads)
+      .where(eq(leads.id, leadId))
+      .limit(1);
+    const [acteur] = userId
+      ? await db
+          .select({ nom: profiles.nom, email: profiles.email })
+          .from(profiles)
+          .where(eq(profiles.id, userId))
+          .limit(1)
+      : [undefined];
+    const par = acteur?.nom ?? acteur?.email ?? "Quelqu'un";
+    await notifier({
+      userIds: [assignedTo],
+      type: "attribution",
+      leadId,
+      acteurId: userId,
+      message: `${par} vous a attribué « ${nom ?? "une fiche"} »`,
+    });
+  }
 
   revalidatePath(`/leads/${leadId}`);
   revalidatePath("/kanban");
