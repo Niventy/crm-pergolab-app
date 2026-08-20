@@ -294,6 +294,27 @@ export const produitsCatalogue = pgTable("produits_catalogue", {
 });
 
 // ---------------------------------------------------------------------------
+// documents — fichiers rattachés à une fiche (factures, plans, PV…),
+// stockés dans le bucket Supabase Storage « documents ».
+// ---------------------------------------------------------------------------
+export const documents = pgTable("documents", {
+  id: uuid("id").primaryKey().defaultRandom(),
+  leadId: uuid("lead_id")
+    .notNull()
+    .references(() => leads.id, { onDelete: "cascade" }),
+  nom: text("nom").notNull(), // nom d'affichage (fichier original)
+  chemin: text("chemin").notNull(), // chemin dans le bucket
+  mime: text("mime"),
+  taille: integer("taille"), // octets
+  userId: uuid("user_id").references(() => profiles.id, {
+    onDelete: "set null",
+  }),
+  createdAt: timestamp("created_at", { withTimezone: true })
+    .notNull()
+    .defaultNow(),
+});
+
+// ---------------------------------------------------------------------------
 // Relations
 // ---------------------------------------------------------------------------
 export const profilesRelations = relations(profiles, ({ many }) => ({
@@ -326,6 +347,15 @@ export const leadsRelations = relations(leads, ({ one, many }) => ({
   notes: many(notes),
   echanges: many(echanges),
   devis: many(devis),
+  documents: many(documents),
+}));
+
+export const documentsRelations = relations(documents, ({ one }) => ({
+  lead: one(leads, { fields: [documents.leadId], references: [leads.id] }),
+  auteur: one(profiles, {
+    fields: [documents.userId],
+    references: [profiles.id],
+  }),
 }));
 
 export const notesRelations = relations(notes, ({ one }) => ({
@@ -365,3 +395,4 @@ export type Echange = typeof echanges.$inferSelect;
 export type Devis = typeof devis.$inferSelect;
 export type Tache = typeof taches.$inferSelect;
 export type ProduitCatalogue = typeof produitsCatalogue.$inferSelect;
+export type Document = typeof documents.$inferSelect;

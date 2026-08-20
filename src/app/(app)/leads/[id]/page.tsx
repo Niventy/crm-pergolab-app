@@ -27,6 +27,7 @@ import { EmailThread } from "./email-thread";
 import { Conversation } from "./conversation";
 import { EncaissementForm } from "./encaissement-form";
 import { ChampsEditables } from "./champs-editables";
+import { Documents } from "./documents";
 
 export const dynamic = "force-dynamic";
 
@@ -166,6 +167,10 @@ export default async function LeadPage({
           orderBy: (e, { desc }) => [desc(e.date)],
         },
         devis: {
+          orderBy: (d, { desc }) => [desc(d.createdAt)],
+        },
+        documents: {
+          with: { auteur: true },
           orderBy: (d, { desc }) => [desc(d.createdAt)],
         },
       },
@@ -630,6 +635,28 @@ export default async function LeadPage({
             leadId={lead.id}
             devisExistants={lead.devis}
             pennylaneConfigured={!!process.env.PENNYLANE_API_KEY}
+          />
+        </CardContent>
+      </Card>
+
+      {/* Documents — factures, plans, PV, photos (Supabase Storage) */}
+      <Card>
+        <CardHeader>
+          <CardTitle className="text-eyebrow text-muted-foreground">
+            Documents
+          </CardTitle>
+        </CardHeader>
+        <CardContent>
+          <Documents
+            leadId={lead.id}
+            docs={lead.documents.map((d) => ({
+              id: d.id,
+              nom: d.nom,
+              mime: d.mime,
+              taille: d.taille,
+              createdAt: d.createdAt,
+              auteur: d.auteur?.nom ?? d.auteur?.email ?? null,
+            }))}
           />
         </CardContent>
       </Card>

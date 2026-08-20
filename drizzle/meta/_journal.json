@@ -127,6 +127,13 @@
       "when": 1787060908453,
       "tag": "0017_goofy_black_tarantula",
       "breakpoints": true
+    },
+    {
+      "idx": 18,
+      "version": "7",
+      "when": 1787219009980,
+      "tag": "0018_fixed_darkhawk",
+      "breakpoints": true
     }
   ]
 }
