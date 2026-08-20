@@ -28,8 +28,9 @@ function buildUnivers(admin: boolean): Univers[] {
     {
       label: "Clients",
       items: [
-        { href: "/clients", label: "Portefeuille", exact: true },
-        { href: "/clients/chantiers", label: "Chantiers" },
+        { href: "/clients", label: "Commande", exact: true },
+        { href: "/clients/facturation", label: "Facturation" },
+        { href: "/clients/sav", label: "SAV" },
       ],
     },
     {

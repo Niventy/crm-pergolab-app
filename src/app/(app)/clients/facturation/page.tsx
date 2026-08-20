@@ -1,13 +1,13 @@
-import { CommandesTable } from "./clients-table";
-import { ClientsNav } from "./clients-nav";
-import { getClients, PHASES } from "./phases";
+import { CommandesTable } from "../clients-table";
+import { ClientsNav } from "../clients-nav";
+import { getClients, PHASES } from "../phases";
 
 export const dynamic = "force-dynamic";
 
-export default async function ClientsPage() {
+export default async function FacturationPage() {
   const { rows, counts, stageOptions, admin, userId } = await getClients();
-  const meta = PHASES.find((p) => p.key === "commande")!;
-  const list = rows.filter((r) => r.phase === "commande");
+  const meta = PHASES.find((p) => p.key === "facturation")!;
+  const list = rows.filter((r) => r.phase === "facturation");
 
   return (
     <main className="flex flex-1 flex-col overflow-hidden">
