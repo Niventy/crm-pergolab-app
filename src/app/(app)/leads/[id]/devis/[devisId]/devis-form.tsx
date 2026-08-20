@@ -30,6 +30,14 @@ type Line = {
 const TVA_OPTIONS = [20, 10, 5.5, 0];
 const eur = (n: number) => formatEuros(String(Math.round(n * 100) / 100));
 
+// La (les) ligne(s) « Pergola » toujours en tête, les options après.
+function ordonner(ls: Line[]): Line[] {
+  const estPergola = (l: Line) => /^Pergola\b/i.test(l.designation.trim());
+  return [...ls].sort((a, b) =>
+    estPergola(a) === estPergola(b) ? 0 : estPergola(a) ? -1 : 1,
+  );
+}
+
 function ouvrirDans(
   getUrl: () => Promise<{ ok?: boolean; url?: string; error?: string } | string>,
 ) {
@@ -113,7 +121,7 @@ export function DevisForm({
   useEffect(() => {
     if (!quoteId) return;
     getDevisLines(quoteId).then((r) => {
-      if (r.ok && r.lines?.length) setLines(r.lines as Line[]);
+      if (r.ok && r.lines?.length) setLines(ordonner(r.lines as Line[]));
     });
     devisPdfUrl(quoteId).then((r) => {
       if (r.ok && r.url) setPdfUrl(r.url);
@@ -153,7 +161,7 @@ export function DevisForm({
   // options) par les nouvelles, en tête. Les lignes libres/catalogue sont gardées.
   const appliquerConfig = (ls: Line[], cfg: ConfigSM) => {
     setSmConfig(cfg);
-    setLines((cur) => [...ls, ...cur.filter((l) => !l.config)]);
+    setLines((cur) => ordonner([...ls, ...cur.filter((l) => !l.config)]));
   };
 
   // Ajoute une ligne à partir d'une option du catalogue (nom + prix + description).
@@ -191,7 +199,8 @@ export function DevisForm({
           // Recharge les lignes : les nouvelles récupèrent leur id Pennylane
           // (sinon un 2e enregistrement les recréerait en double).
           const fresh = await getDevisLines(quoteId);
-          if (fresh.ok && fresh.lines?.length) setLines(retag(fresh.lines as Line[]));
+          if (fresh.ok && fresh.lines?.length)
+            setLines(ordonner(retag(fresh.lines as Line[])));
           rafraichirPdf();
           router.refresh();
         } else {
