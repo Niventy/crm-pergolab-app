@@ -4,6 +4,7 @@ import { leads as leadsTable } from "@/db/schema";
 import { createClient } from "@/lib/supabase/server";
 import { isAdmin } from "@/lib/current-user";
 import { CommandesTable, type CommandeRow } from "./clients-table";
+import { ClientsNav } from "./clients-nav";
 
 export const dynamic = "force-dynamic";
 
@@ -54,8 +55,9 @@ export default async function ClientsPage() {
 
   return (
     <main className="flex flex-1 flex-col overflow-hidden">
-      <div className="flex items-baseline gap-3 px-6 pt-5 pb-3">
-        <h1 className="text-display text-2xl">Clients</h1>
+      <ClientsNav />
+      <div className="flex items-baseline gap-3 px-6 pt-4 pb-3">
+        <h1 className="text-display text-2xl">Portefeuille</h1>
         <span className="text-sm text-muted-foreground">
           Suivi des commandes · {rows.length} commande{rows.length > 1 ? "s" : ""}
         </span>

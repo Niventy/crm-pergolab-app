@@ -26,7 +26,7 @@ export default async function KanbanPage({
 }: {
   searchParams: Promise<{ mois?: string }>;
 }) {
-  const [sp, stages, allLeads] = await Promise.all([
+  const [sp, allStages, everyLead] = await Promise.all([
     searchParams,
     db.select().from(stagesTable).orderBy(asc(stagesTable.position)),
     db.query.leads.findMany({
@@ -34,6 +34,11 @@ export default async function KanbanPage({
       orderBy: (l, { desc }) => [desc(l.createdAt)],
     }),
   ]);
+
+  // Le Kanban est le pipeline COMMERCIAL : uniquement cycles 1 & 2, et une fiche
+  // SIGNÉE le quitte (elle devient un client → espace Clients / Chantiers).
+  const stages = allStages.filter((s) => s.cycle <= 2);
+  const allLeads = everyLead.filter((l) => l.statut !== "gagnee");
 
   // Mois présents (réception), du plus récent au plus ancien.
   const months = [...new Set(allLeads.map((l) => ym(l.createdAt)))].sort().reverse();

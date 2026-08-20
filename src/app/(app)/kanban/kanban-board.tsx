@@ -328,6 +328,23 @@ export function KanbanBoard({
     if (lead.stageId === targetStageId) return;
 
     const previous = leads;
+
+    // Étape « gagnée » (Signée) = signature : la fiche QUITTE le Kanban vente
+    // et devient un client (espace Clients / Chantiers).
+    if (targetStage.isGagnee) {
+      setLeads((curr) => curr.filter((l) => l.id !== leadId));
+      const res = await updateLeadStage(leadId, targetStageId);
+      if (res?.error) {
+        setLeads(previous);
+        toast.error("Signature impossible", { description: res.error });
+      } else {
+        toast.success(`« ${lead.nom} » signé → dans Clients`, {
+          description: "Retrouve-le dans l'espace Clients / Chantiers.",
+        });
+      }
+      return;
+    }
+
     setLeads((curr) =>
       curr.map((l) =>
         l.id === leadId
@@ -378,7 +395,7 @@ export function KanbanBoard({
             <CycleTabs
               cycle={cycle}
               onChange={setCycle}
-              counts={{ 1: cycleCount(1), 2: cycleCount(2), 3: cycleCount(3) }}
+              counts={{ 1: cycleCount(1), 2: cycleCount(2) }}
             />
           )}
 
@@ -473,10 +490,11 @@ function FocusSelect({
 }
 
 // --- Sélecteur de cycle de vente -------------------------------------------
+// Le Kanban commercial ne couvre QUE la vente (le post-signature est dans
+// l'espace Clients → Chantiers).
 const CYCLES = [
   { id: 1, label: "Prospection" },
   { id: 2, label: "Devis & closing" },
-  { id: 3, label: "Pose & technique" },
 ];
 
 function CycleTabs({
