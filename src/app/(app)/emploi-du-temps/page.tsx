@@ -1,5 +1,5 @@
 import Link from "next/link";
-import { asc, eq } from "drizzle-orm";
+import { and, asc, eq, or } from "drizzle-orm";
 import {
   CalendarCheck,
   RefreshCw,
@@ -8,11 +8,15 @@ import {
   FilePen,
   Clock,
   Moon,
+  Ruler,
+  Wrench,
+  Wallet,
+  FolderOpen,
 } from "lucide-react";
 import { db } from "@/db";
 import { taches, leads as leadsTable } from "@/db/schema";
 import { cn } from "@/lib/utils";
-import { formatDateCourte, tempsRelatif } from "@/lib/format";
+import { formatDateCourte, formatEuros, tempsRelatif } from "@/lib/format";
 import { currentUserId } from "@/lib/current-user";
 import { TodoList } from "./todo-list";
 import { AgendaGoogle } from "./agenda-google";
@@ -37,7 +41,7 @@ export default async function EmploiDuTempsPage() {
     );
   }
 
-  const [mesLeads, mesTaches] = await Promise.all([
+  const [mesLeads, mesTaches, mesChantiers] = await Promise.all([
     db.query.leads.findMany({
       where: eq(leadsTable.assignedTo, userId),
       with: { stage: true },
@@ -46,6 +50,17 @@ export default async function EmploiDuTempsPage() {
       where: eq(taches.userId, userId),
       orderBy: [asc(taches.createdAt)],
       with: { lead: { columns: { id: true, nom: true } } },
+    }),
+    // Mes chantiers = clients signés dont je suis responsable OU poseur.
+    db.query.leads.findMany({
+      where: and(
+        eq(leadsTable.statut, "gagnee"),
+        or(
+          eq(leadsTable.assignedTo, userId),
+          eq(leadsTable.poseAssignedTo, userId),
+        ),
+      ),
+      with: { stage: true },
     }),
   ]);
 
@@ -128,7 +143,59 @@ export default async function EmploiDuTempsPage() {
     { key: "sommeil", titre: "Leads en sommeil (+48 h)", Icon: Moon, accent: "text-muted-foreground", list: b.sommeil },
   ];
 
-  const totalActions = SECTIONS.reduce((a, s) => a + s.list.length, 0);
+  // --- Files CHANTIER (clients signés attribués à moi) ---
+  const ch: Record<string, BLead[]> = {
+    metre: [],
+    pose: [],
+    encaisser: [],
+    dossier: [],
+  };
+  for (const l of mesChantiers) {
+    const stage = l.stage?.nom ?? "";
+    const ttc = Number(l.montantTtc ?? l.montant ?? 0);
+    const enc = Number(l.acompteEncaisse ?? 0) + Number(l.paiementEspece ?? 0);
+    const reste = Math.max(0, ttc - enc);
+    const pose = l.datePoseReelle;
+
+    if (stage === "À métrer") {
+      ch.metre.push({ id: l.id, nom: l.nom, sousTitre: "Métré à planifier" });
+    } else if (l.datePosePrevue && !pose) {
+      const jour = l.datePosePrevue === today;
+      ch.pose.push({
+        id: l.id,
+        nom: l.nom,
+        sousTitre: jour
+          ? "Pose aujourd'hui"
+          : `Pose prévue le ${formatDateCourte(l.datePosePrevue)}`,
+      });
+    } else if (pose && reste > 0) {
+      ch.encaisser.push({
+        id: l.id,
+        nom: l.nom,
+        sousTitre: `Solde à encaisser : ${formatEuros(reste)}`,
+      });
+    } else if (
+      pose &&
+      (!l.factureSoldeClient || !l.factureSoldePoseur || !l.dossierDateEnvoi)
+    ) {
+      ch.dossier.push({
+        id: l.id,
+        nom: l.nom,
+        sousTitre: "Dossier à compléter (factures / envoi)",
+      });
+    }
+  }
+
+  const CHANTIERS = [
+    { key: "metre", titre: "Métrés à planifier", Icon: Ruler, accent: "text-violet-700", list: ch.metre },
+    { key: "pose", titre: "Poses planifiées", Icon: Wrench, accent: "text-teal-700", list: ch.pose },
+    { key: "encaisser", titre: "Soldes à encaisser", Icon: Wallet, accent: "text-orange-700", list: ch.encaisser },
+    { key: "dossier", titre: "Dossiers à compléter", Icon: FolderOpen, accent: "text-foreground", list: ch.dossier },
+  ];
+
+  const totalActions =
+    SECTIONS.reduce((a, s) => a + s.list.length, 0) +
+    CHANTIERS.reduce((a, s) => a + s.list.length, 0);
 
   const leadOptions = mesLeads
     .filter((l) => l.statut === "en_cours")
@@ -145,8 +212,8 @@ export default async function EmploiDuTempsPage() {
           <h1 className="text-display text-2xl">Gestion d&apos;emploi du temps</h1>
           <p className="text-sm text-muted-foreground">
             {totalActions > 0
-              ? `${totalActions} action${totalActions > 1 ? "s" : ""} à traiter sur tes leads`
-              : "Aucune action en attente sur tes leads"}
+              ? `${totalActions} action${totalActions > 1 ? "s" : ""} à traiter (leads + chantiers)`
+              : "Aucune action en attente"}
           </p>
         </div>
       </div>
@@ -186,6 +253,37 @@ export default async function EmploiDuTempsPage() {
           ),
         )
       )}
+
+      {/* Chantiers — clients signés dont je suis responsable ou poseur */}
+      {CHANTIERS.some((s) => s.list.length > 0) ? (
+        <>
+          <h2 className="text-eyebrow px-1 pt-2 text-primary">Mes chantiers</h2>
+          {CHANTIERS.map((s) =>
+            s.list.length === 0 ? null : (
+              <section key={s.key} className="rounded-xl border border-border bg-white p-4">
+                <h2 className={cn("text-eyebrow mb-2 flex items-center gap-1.5", s.accent)}>
+                  <s.Icon className="size-3.5" /> {s.titre} · {s.list.length}
+                </h2>
+                <ul className="divide-y divide-border">
+                  {s.list.map((bl) => (
+                    <li key={bl.id}>
+                      <Link
+                        href={`/leads/${bl.id}`}
+                        className="-mx-2 flex items-center justify-between gap-3 rounded px-2 py-2 transition-colors hover:bg-primary/[0.06]"
+                      >
+                        <span className="font-medium text-foreground">{bl.nom}</span>
+                        <span className="text-right text-xs text-muted-foreground">
+                          {bl.sousTitre}
+                        </span>
+                      </Link>
+                    </li>
+                  ))}
+                </ul>
+              </section>
+            ),
+          )}
+        </>
+      ) : null}
 
       <section className="rounded-xl border border-border bg-white p-4">
         <h2 className="text-eyebrow mb-3 text-muted-foreground">Mes tâches</h2>
