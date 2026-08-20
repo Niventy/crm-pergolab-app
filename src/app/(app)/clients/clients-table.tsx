@@ -1,10 +1,12 @@
 "use client";
 
-import { useMemo, useState } from "react";
+import { useMemo, useState, useTransition } from "react";
 import { useRouter } from "next/navigation";
 import { Check, Minus } from "lucide-react";
+import { toast } from "sonner";
 import { cn } from "@/lib/utils";
 import { formatEuros, formatDate } from "@/lib/format";
+import { updateLeadStage } from "@/app/(app)/kanban/actions";
 import {
   Select,
   SelectContent,
@@ -12,6 +14,8 @@ import {
   SelectTrigger,
   SelectValue,
 } from "@/components/ui/select";
+
+export type StageOption = { id: string; nom: string; couleur: string };
 
 export type CommandeRow = {
   id: string;
@@ -34,6 +38,7 @@ export type CommandeRow = {
   factureSoldePoseur: boolean;
   dossierDateEnvoi: string | null;
   datePoseReelle: string | null;
+  stageId: string | null;
   stageNom: string | null;
   stageCouleur: string | null;
 };
@@ -59,10 +64,12 @@ export function CommandesTable({
   rows,
   admin,
   currentUserId,
+  stages,
 }: {
   rows: CommandeRow[];
   admin: boolean;
   currentUserId: string | null;
+  stages: StageOption[];
 }) {
   const router = useRouter();
   const [annee, setAnnee] = useState("all");
@@ -141,7 +148,7 @@ export function CommandesTable({
     setEquipe("all");
   };
 
-  const NB_COLS = 12;
+  const NB_COLS = 11;
 
   return (
     <div className="flex min-h-0 flex-1 flex-col">
@@ -184,24 +191,40 @@ export function CommandesTable({
             <table className="w-full border-collapse text-sm">
               <thead className="sticky top-0 z-10">
                 <tr className="bg-muted">
-                  {["Sem.", "Date", "Commercial", "Équipe pose", "Client", "Localisation", "Produit", "HT", "TTC", "Encaissé", "Reste", "Dossier"].map(
-                    (c, i) => (
-                      <th
-                        key={c}
-                        className={cn(
-                          "border-b border-r border-border px-3 py-2 text-[0.7rem] font-semibold uppercase tracking-wide text-muted-foreground whitespace-nowrap last:border-r-0",
-                          i >= 7 && i <= 10 ? "text-right" : "text-left",
-                        )}
-                      >
-                        {c}
-                      </th>
-                    ),
-                  )}
+                  {[
+                    { l: "Sem." },
+                    { l: "Date" },
+                    { l: "Client" },
+                    { l: "Statut" },
+                    { l: "Localisation" },
+                    { l: "Produit" },
+                    { l: "HT", r: true },
+                    { l: "TTC", r: true },
+                    { l: "Encaissé", r: true },
+                    { l: "Reste", r: true },
+                    { l: "Dossier" },
+                  ].map((c) => (
+                    <th
+                      key={c.l}
+                      className={cn(
+                        "border-b border-r border-border px-3 py-2 text-[0.7rem] font-semibold uppercase tracking-wide text-muted-foreground whitespace-nowrap last:border-r-0",
+                        c.r ? "text-right" : "text-left",
+                      )}
+                    >
+                      {c.l}
+                    </th>
+                  ))}
                 </tr>
               </thead>
               <tbody>
                 {groupes.map((g) => (
-                  <MonthGroup key={g.mois} g={g} nbCols={NB_COLS} router={router} />
+                  <MonthGroup
+                    key={g.mois}
+                    g={g}
+                    nbCols={NB_COLS}
+                    router={router}
+                    stages={stages}
+                  />
                 ))}
               </tbody>
             </table>
@@ -216,6 +239,7 @@ function MonthGroup({
   g,
   nbCols,
   router,
+  stages,
 }: {
   g: {
     mois: string;
@@ -227,6 +251,7 @@ function MonthGroup({
   };
   nbCols: number;
   router: ReturnType<typeof useRouter>;
+  stages: StageOption[];
 }) {
   return (
     <>
@@ -246,9 +271,16 @@ function MonthGroup({
         >
           <Td className="text-muted-foreground">{semaine(r.dateCde)}</Td>
           <Td className="whitespace-nowrap tabular-nums">{formatDate(r.dateCde)}</Td>
-          <Td className="whitespace-nowrap">{r.commercial ?? "—"}</Td>
-          <Td className="whitespace-nowrap">{r.equipePose ?? "—"}</Td>
           <Td className="font-medium text-foreground">{r.nom}</Td>
+          <Td className="whitespace-nowrap">
+            <StatutSelect
+              leadId={r.id}
+              stageId={r.stageId}
+              couleur={r.stageCouleur}
+              stages={stages}
+              onDone={() => router.refresh()}
+            />
+          </Td>
           <Td className="whitespace-nowrap text-muted-foreground">
             {[r.codePostal, r.ville].filter(Boolean).join(" ") || "—"}
           </Td>
@@ -276,7 +308,7 @@ function MonthGroup({
       ))}
       {/* Total du mois */}
       <tr className="bg-muted/60 font-semibold">
-        <Td className="text-[0.7rem] uppercase tracking-wide text-muted-foreground" colSpan={7}>
+        <Td className="text-[0.7rem] uppercase tracking-wide text-muted-foreground" colSpan={6}>
           Total {moisLabel(g.mois)}
         </Td>
         <Td className="text-right tabular-nums">{formatEuros(g.totHt)}</Td>
@@ -286,6 +318,63 @@ function MonthGroup({
         <Td />
       </tr>
     </>
+  );
+}
+
+// Statut modifiable sur place : change l'étape du dossier client.
+function StatutSelect({
+  leadId,
+  stageId,
+  couleur,
+  stages,
+  onDone,
+}: {
+  leadId: string;
+  stageId: string | null;
+  couleur: string | null;
+  stages: StageOption[];
+  onDone: () => void;
+}) {
+  const [pending, start] = useTransition();
+
+  function onChange(newId: string) {
+    if (!newId || newId === stageId) return;
+    start(async () => {
+      const r = await updateLeadStage(leadId, newId);
+      if (r?.error) toast.error("Changement impossible", { description: r.error });
+      else {
+        toast.success("Statut mis à jour");
+        onDone();
+      }
+    });
+  }
+
+  return (
+    <span
+      className="inline-flex items-center gap-1.5"
+      onClick={(e) => e.stopPropagation()}
+    >
+      <span
+        className="size-2 shrink-0 rounded-full"
+        style={{ backgroundColor: couleur ?? "#94a3b8" }}
+      />
+      <select
+        value={stageId ?? ""}
+        disabled={pending}
+        onClick={(e) => e.stopPropagation()}
+        onChange={(e) => onChange(e.target.value)}
+        className="h-7 max-w-[9rem] cursor-pointer rounded-md border border-transparent bg-transparent px-1 text-sm outline-none hover:border-border focus:border-primary disabled:opacity-50"
+      >
+        {stageId && !stages.some((s) => s.id === stageId) ? (
+          <option value={stageId}>— hors chantier —</option>
+        ) : null}
+        {stages.map((s) => (
+          <option key={s.id} value={s.id}>
+            {s.nom}
+          </option>
+        ))}
+      </select>
+    </span>
   );
 }
 

@@ -60,6 +60,7 @@ export async function updateLeadStage(leadId: string, stageId: string) {
   revalidatePath("/kanban");
   revalidatePath(`/leads/${leadId}`);
   revalidatePath("/liste");
+  revalidatePath("/clients");
   revalidatePath("/clients/chantiers");
   return { error: null };
 }

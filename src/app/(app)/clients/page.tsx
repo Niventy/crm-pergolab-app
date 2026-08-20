@@ -1,9 +1,9 @@
-import { eq } from "drizzle-orm";
+import { asc, eq, or } from "drizzle-orm";
 import { db } from "@/db";
-import { leads as leadsTable } from "@/db/schema";
+import { leads as leadsTable, stages as stagesTable } from "@/db/schema";
 import { createClient } from "@/lib/supabase/server";
 import { isAdmin } from "@/lib/current-user";
-import { CommandesTable, type CommandeRow } from "./clients-table";
+import { CommandesTable, type CommandeRow, type StageOption } from "./clients-table";
 import { ClientsNav } from "./clients-nav";
 
 export const dynamic = "force-dynamic";
@@ -15,12 +15,18 @@ function dateCde(l: { dateSignature: string | null; createdAt: Date }): string {
 }
 
 export default async function ClientsPage() {
-  const [commandes, admin, supabase] = await Promise.all([
+  const [commandes, chantierStages, admin, supabase] = await Promise.all([
     db.query.leads.findMany({
       where: eq(leadsTable.statut, "gagnee"),
       with: { stage: true, responsable: true, poseur: true },
       orderBy: (l, { desc }) => [desc(l.dateSignature), desc(l.createdAt)],
     }),
+    // Étapes modifiables depuis le portefeuille : « Signée » + cycle 3.
+    db
+      .select({ id: stagesTable.id, nom: stagesTable.nom, couleur: stagesTable.couleur })
+      .from(stagesTable)
+      .where(or(eq(stagesTable.isGagnee, true), eq(stagesTable.cycle, 3)))
+      .orderBy(asc(stagesTable.position)),
     isAdmin(),
     createClient(),
   ]);
@@ -49,9 +55,12 @@ export default async function ClientsPage() {
     factureSoldePoseur: l.factureSoldePoseur,
     dossierDateEnvoi: l.dossierDateEnvoi,
     datePoseReelle: l.datePoseReelle,
+    stageId: l.stageId,
     stageNom: l.stage?.nom ?? null,
     stageCouleur: l.stage?.couleur ?? null,
   }));
+
+  const stageOptions: StageOption[] = chantierStages;
 
   return (
     <main className="flex flex-1 flex-col overflow-hidden">
@@ -62,7 +71,12 @@ export default async function ClientsPage() {
           Suivi des commandes · {rows.length} commande{rows.length > 1 ? "s" : ""}
         </span>
       </div>
-      <CommandesTable rows={rows} admin={admin} currentUserId={user?.id ?? null} />
+      <CommandesTable
+        rows={rows}
+        admin={admin}
+        currentUserId={user?.id ?? null}
+        stages={stageOptions}
+      />
     </main>
   );
 }
