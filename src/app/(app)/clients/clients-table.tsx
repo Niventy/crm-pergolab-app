@@ -186,9 +186,9 @@ export function CommandesTable({
           passe « Gagnée ».
         </div>
       ) : (
-        <div className="flex-1 overflow-auto px-6 pb-6">
-          <div className="overflow-hidden rounded-lg border border-border">
-            <table className="w-full border-collapse text-sm">
+        <div className="flex min-h-0 flex-1 flex-col px-6 pb-6">
+          <div className="min-h-0 flex-1 overflow-auto rounded-lg border border-border">
+            <table className="min-w-full border-collapse text-sm">
               <thead className="sticky top-0 z-10">
                 <tr className="bg-muted">
                   {[
