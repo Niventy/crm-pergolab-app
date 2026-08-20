@@ -1,26 +1,41 @@
 import Link from "next/link";
 import { FileText } from "lucide-react";
 import { db } from "@/db";
+import { leads as leadsTable } from "@/db/schema";
 import { formatEuros, formatHorodatage } from "@/lib/format";
 import { DevisActions } from "./devis-actions";
+import { NouveauDevisButton, type LeadPick } from "./nouveau-devis";
 
 export const dynamic = "force-dynamic";
 
 export default async function DevisPage() {
-  const devisList = await db.query.devis.findMany({
-    with: {
-      lead: {
-        columns: { id: true, nom: true, codePostal: true, email: true },
+  const [devisList, leadsRaw] = await Promise.all([
+    db.query.devis.findMany({
+      with: {
+        lead: {
+          columns: { id: true, nom: true, codePostal: true, email: true },
+        },
       },
-    },
-    orderBy: (d, { desc }) => [desc(d.createdAt)],
-  });
+      orderBy: (d, { desc }) => [desc(d.createdAt)],
+    }),
+    db
+      .select({
+        id: leadsTable.id,
+        nom: leadsTable.nom,
+        codePostal: leadsTable.codePostal,
+        email: leadsTable.email,
+        statut: leadsTable.statut,
+      })
+      .from(leadsTable)
+      .orderBy(leadsTable.nom),
+  ]);
+  const leadsPick: LeadPick[] = leadsRaw;
 
   const total = devisList.reduce((a, d) => a + Number(d.montant ?? 0), 0);
 
   return (
     <main className="mx-auto w-full max-w-6xl flex-1 space-y-6 px-6 py-6 pb-28">
-      <div className="flex items-center gap-3">
+      <div className="flex flex-wrap items-center gap-3">
         <span className="flex size-10 items-center justify-center rounded-xl bg-brand text-brand-foreground">
           <FileText className="size-5" />
         </span>
@@ -30,12 +45,15 @@ export default async function DevisPage() {
             {devisList.length} devis · {formatEuros(String(total))} HT au total
           </p>
         </div>
+        <div className="ml-auto">
+          <NouveauDevisButton leads={leadsPick} />
+        </div>
       </div>
 
       {devisList.length === 0 ? (
         <div className="rounded-xl border border-dashed border-border bg-muted/30 px-4 py-16 text-center text-sm text-muted-foreground">
-          Aucun devis pour l&apos;instant. Crée-en un depuis la section « Devis »
-          d&apos;une fiche prospect.
+          Aucun devis pour l&apos;instant. Clique sur « Créer un devis » et choisis
+          le client concerné.
         </div>
       ) : (
         <div className="overflow-hidden rounded-lg border border-border">
