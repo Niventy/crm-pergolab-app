@@ -2,21 +2,53 @@
 
 import Link from "next/link";
 import { usePathname } from "next/navigation";
+import { useState } from "react";
+import { ChevronDown } from "lucide-react";
 import { cn } from "@/lib/utils";
 import { Button } from "@/components/ui/button";
 import { initiales } from "@/lib/format";
 import { logout } from "@/app/login/actions";
 
-const TABS = [
-  { href: "/dashboard", label: "Dashboard" },
-  { href: "/kanban", label: "Kanban" },
-  { href: "/liste", label: "Liste" },
-  { href: "/clients", label: "Clients" },
-  { href: "/devis", label: "Devis" },
-  { href: "/emploi-du-temps", label: "Planning" },
-  { href: "/commercial", label: "Commercial" },
-  // Comptabilité : admin uniquement (ajouté plus bas selon le rôle).
-];
+type Item = { href: string; label: string; exact?: boolean; match?: string };
+type Univers = { label: string; items: Item[] };
+
+// Navigation regroupée en 4 univers métier (au lieu d'une liste plate).
+function buildUnivers(admin: boolean): Univers[] {
+  return [
+    {
+      label: "Vente",
+      items: [
+        { href: "/kanban", label: "Kanban" },
+        { href: "/liste", label: "Liste" },
+        { href: "/devis", label: "Devis" },
+      ],
+    },
+    {
+      label: "Clients",
+      items: [
+        { href: "/clients", label: "Portefeuille", exact: true },
+        { href: "/clients/chantiers", label: "Chantiers" },
+      ],
+    },
+    {
+      label: "Pilotage",
+      items: [
+        { href: "/dashboard", label: "Dashboard" },
+        { href: "/commercial", label: "Commercial" },
+        ...(admin ? [{ href: "/comptabilite", label: "Comptabilité" }] : []),
+      ],
+    },
+    {
+      label: "Mon espace",
+      items: [
+        { href: "/emploi-du-temps", label: "Planning" },
+        ...(admin
+          ? [{ href: "/reglages/sur-mesure", label: "Réglages", match: "/reglages" }]
+          : []),
+      ],
+    },
+  ];
+}
 
 export function AppNav({
   email,
@@ -27,17 +59,20 @@ export function AppNav({
 }) {
   const pathname = usePathname();
   const admin = role === "admin";
-  const tabs = admin
-    ? [
-        ...TABS,
-        { href: "/comptabilite", label: "Comptabilité" },
-        { href: "/reglages/sur-mesure", label: "Réglages" },
-      ]
-    : TABS;
+  const univers = buildUnivers(admin);
+  const [open, setOpen] = useState<string | null>(null);
+
+  const itemActive = (it: Item) => {
+    if (it.exact) return pathname === it.href;
+    const base = it.match ?? it.href;
+    return pathname === base || pathname.startsWith(base + "/");
+  };
+  const universActive = (u: Univers) => u.items.some(itemActive);
+  const activeItemLabel = (u: Univers) => u.items.find(itemActive)?.label;
 
   return (
-    <header className="flex items-center justify-between border-b bg-white px-6 py-2.5">
-      <div className="flex items-center gap-7">
+    <header className="relative flex items-center justify-between border-b bg-white px-6 py-2.5">
+      <div className="flex items-center gap-6">
         <Link href="/kanban" className="flex items-center gap-2">
           <span className="text-display text-lg leading-none text-primary">
             PERGOLAB
@@ -46,25 +81,62 @@ export function AppNav({
             CRM
           </span>
         </Link>
-        <nav className="flex flex-wrap items-center gap-0.5">
-          {tabs.map((tab) => {
-            const active = pathname.startsWith(tab.href);
+
+        <nav className="flex flex-wrap items-center gap-1">
+          {univers.map((u) => {
+            const active = universActive(u);
+            const isOpen = open === u.label;
+            const sousPage = active ? activeItemLabel(u) : null;
             return (
-              <Link
-                key={tab.href}
-                href={tab.href}
-                className={cn(
-                  "relative px-3 py-1.5 text-xs font-semibold uppercase tracking-wide transition-colors",
-                  active
-                    ? "text-primary"
-                    : "text-muted-foreground hover:text-foreground",
-                )}
-              >
-                {tab.label}
-                {active ? (
-                  <span className="absolute inset-x-2 -bottom-[11px] h-0.5 rounded-full bg-brand" />
+              <div key={u.label} className="relative">
+                <button
+                  type="button"
+                  onClick={() => setOpen((o) => (o === u.label ? null : u.label))}
+                  className={cn(
+                    "relative flex items-center gap-1.5 rounded-md px-3 py-1.5 text-xs font-semibold uppercase tracking-wide transition-colors",
+                    active
+                      ? "text-primary"
+                      : "text-muted-foreground hover:text-foreground",
+                    isOpen && "bg-muted",
+                  )}
+                >
+                  {u.label}
+                  {sousPage ? (
+                    <span className="hidden text-[10px] font-medium normal-case text-muted-foreground sm:inline">
+                      · {sousPage}
+                    </span>
+                  ) : null}
+                  <ChevronDown
+                    className={cn(
+                      "size-3 transition-transform",
+                      isOpen && "rotate-180",
+                    )}
+                  />
+                  {active ? (
+                    <span className="absolute inset-x-2 -bottom-[11px] h-0.5 rounded-full bg-brand" />
+                  ) : null}
+                </button>
+
+                {isOpen ? (
+                  <div className="absolute left-0 top-full z-50 mt-1 min-w-44 rounded-lg border border-border bg-white p-1 shadow-lg">
+                    {u.items.map((it) => (
+                      <Link
+                        key={it.href}
+                        href={it.href}
+                        onClick={() => setOpen(null)}
+                        className={cn(
+                          "block rounded-md px-3 py-1.5 text-sm transition-colors",
+                          itemActive(it)
+                            ? "bg-primary/10 font-semibold text-primary"
+                            : "text-foreground hover:bg-muted",
+                        )}
+                      >
+                        {it.label}
+                      </Link>
+                    ))}
+                  </div>
                 ) : null}
-              </Link>
+              </div>
             );
           })}
         </nav>
@@ -98,6 +170,17 @@ export function AppNav({
           </Button>
         </form>
       </div>
+
+      {/* Overlay de fermeture au clic extérieur */}
+      {open ? (
+        <button
+          type="button"
+          aria-hidden
+          tabIndex={-1}
+          onClick={() => setOpen(null)}
+          className="fixed inset-0 z-40 cursor-default"
+        />
+      ) : null}
     </header>
   );
 }
