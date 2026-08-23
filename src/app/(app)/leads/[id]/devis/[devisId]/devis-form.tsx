@@ -3,7 +3,7 @@
 import { useEffect, useState, useTransition } from "react";
 import Link from "next/link";
 import { useRouter } from "next/navigation";
-import { Plus, Trash2, FileText, Download, ExternalLink, RefreshCw, Calculator, PenLine, Copy } from "lucide-react";
+import { Plus, Trash2, FileText, Download, ExternalLink, RefreshCw, Calculator, PenLine } from "lucide-react";
 import { toast } from "sonner";
 import { formatEuros } from "@/lib/format";
 import { SurMesureCalc } from "./sur-mesure-calc";
@@ -15,6 +15,7 @@ import {
   modifierDevis,
   devisAppUrl,
   devisPdfUrl,
+  devisSignatureUrl,
 } from "../../actions";
 
 type Line = {
@@ -430,26 +431,11 @@ export function DevisForm({
               </button>
               <button
                 type="button"
-                onClick={() => ouvrirDans(() => devisPdfUrl(quoteId))}
+                onClick={() => ouvrirDans(() => devisSignatureUrl(quoteId))}
                 className="inline-flex items-center gap-1 text-sm font-semibold text-primary hover:underline"
+                title="Ouvre la page Pennylane pour envoyer le devis en signature (Yousign)"
               >
-                <PenLine className="size-3.5" /> Lien de signature
-              </button>
-              <button
-                type="button"
-                onClick={() => {
-                  devisPdfUrl(quoteId).then((r) => {
-                    if (r.ok && r.url) {
-                      navigator.clipboard
-                        .writeText(r.url)
-                        .then(() => toast.success("Lien copié — à envoyer au client"))
-                        .catch(() => toast.error("Copie impossible"));
-                    } else toast.error(r.error ?? "Lien indisponible");
-                  });
-                }}
-                className="inline-flex items-center gap-1 text-sm font-medium text-muted-foreground hover:text-foreground"
-              >
-                <Copy className="size-3.5" /> Copier le lien
+                <PenLine className="size-3.5" /> Envoyer pour signature
               </button>
             </>
           ) : null}

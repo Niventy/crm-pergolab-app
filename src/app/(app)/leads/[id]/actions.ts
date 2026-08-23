@@ -14,6 +14,7 @@ import {
   updateQuotePennylane,
   getQuotePdfUrl,
   buildQuoteAppUrl,
+  buildEsignatureUrl,
   type DevisLine,
 } from "@/lib/pennylane";
 
@@ -344,6 +345,11 @@ export async function devisAppUrl(quoteId: string) {
 // URL fraîche du PDF d'un devis Pennylane (le lien expire ~30 min).
 export async function devisPdfUrl(quoteId: string) {
   return getQuotePdfUrl(quoteId);
+}
+
+// URL de la page « Envoyer pour e-signature » (Yousign via Pennylane).
+export async function devisSignatureUrl(quoteId: string) {
+  return buildEsignatureUrl(quoteId);
 }
 
 // Attribue / réassigne le lead à un responsable (ou null pour désassigner).

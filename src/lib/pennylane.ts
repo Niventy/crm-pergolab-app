@@ -422,6 +422,17 @@ export async function buildQuoteAppUrl(quoteId: string): Promise<string> {
   return template.replace("{company}", cid).replace("{quote}", quoteId);
 }
 
+// URL de la page « Envoyer le devis pour e-signature » (Yousign via Pennylane).
+// Pattern configurable via PENNYLANE_ESIGN_URL si l'id/route diffèrent.
+export async function buildEsignatureUrl(quoteId: string): Promise<string> {
+  const template =
+    process.env.PENNYLANE_ESIGN_URL ??
+    "https://app.pennylane.com/companies/{company}/clients/send_esignature?estimate_to_send_id={quote}";
+  const cid = await getCompanyId();
+  if (!cid) return "https://app.pennylane.com";
+  return template.replace("{company}", cid).replace("{quote}", quoteId);
+}
+
 // ---------------------------------------------------------------------------
 // Facturation — factures d'ACOMPTE et de SOLDE (POST /customer_invoices)
 // ---------------------------------------------------------------------------
