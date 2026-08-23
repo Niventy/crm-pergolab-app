@@ -15,6 +15,7 @@ import {
   getQuotePdfUrl,
   buildQuoteAppUrl,
   buildEsignatureUrl,
+  envoyerDevisEmail,
   type DevisLine,
 } from "@/lib/pennylane";
 
@@ -350,6 +351,12 @@ export async function devisPdfUrl(quoteId: string) {
 // URL de la page « Envoyer pour e-signature » (Yousign via Pennylane).
 export async function devisSignatureUrl(quoteId: string) {
   return buildEsignatureUrl(quoteId);
+}
+
+// Envoie le devis par email au client (via Pennylane).
+export async function envoyerDevis(quoteId: string, email?: string) {
+  const dest = email?.trim() ? [email.trim()] : undefined;
+  return envoyerDevisEmail(quoteId, dest);
 }
 
 // Attribue / réassigne le lead à un responsable (ou null pour désassigner).

@@ -3,7 +3,7 @@
 import { useEffect, useState, useTransition } from "react";
 import Link from "next/link";
 import { useRouter } from "next/navigation";
-import { Plus, Trash2, FileText, Download, ExternalLink, RefreshCw, Calculator, PenLine } from "lucide-react";
+import { Plus, Trash2, FileText, Download, ExternalLink, RefreshCw, Calculator, PenLine, Mail, Send, X } from "lucide-react";
 import { toast } from "sonner";
 import { formatEuros } from "@/lib/format";
 import { SurMesureCalc } from "./sur-mesure-calc";
@@ -16,6 +16,7 @@ import {
   devisAppUrl,
   devisPdfUrl,
   devisSignatureUrl,
+  envoyerDevis,
 } from "../../actions";
 
 type Line = {
@@ -114,6 +115,10 @@ export function DevisForm({
   const [pdfUrl, setPdfUrl] = useState<string | null>(null);
   const [pdfLoading, setPdfLoading] = useState(false);
   const [pdfKey, setPdfKey] = useState(0); // force le rechargement de l'iframe
+  // Envoi du devis par email (via Pennylane).
+  const [mailOpen, setMailOpen] = useState(false);
+  const [mailTo, setMailTo] = useState(client.email ?? "");
+  const [mailPending, startMail] = useTransition();
   // Le devis démarre VIDE : la pergola vient du configurateur, les extras du
   // catalogue. Plus de ligne pré-remplie (qui prêtait à confusion).
   const [lines, setLines] = useState<Line[]>([]);
@@ -431,6 +436,13 @@ export function DevisForm({
               </button>
               <button
                 type="button"
+                onClick={() => setMailOpen((v) => !v)}
+                className="inline-flex items-center gap-1 text-sm font-medium text-primary hover:underline"
+              >
+                <Mail className="size-3.5" /> Envoyer par email
+              </button>
+              <button
+                type="button"
                 onClick={() => ouvrirDans(() => devisSignatureUrl(quoteId))}
                 className="inline-flex items-center gap-1 text-sm font-semibold text-primary hover:underline"
                 title="Ouvre la page Pennylane pour envoyer le devis en signature (Yousign)"
@@ -440,6 +452,52 @@ export function DevisForm({
             </>
           ) : null}
         </div>
+
+        {/* Envoi du devis par email au client (Pennylane) */}
+        {quoteId && mailOpen ? (
+          <div className="flex flex-wrap items-end gap-2 rounded-lg border border-primary/30 bg-primary/[0.03] p-3">
+            <label className="flex-1 min-w-[14rem]">
+              <span className="text-[0.65rem] uppercase tracking-wide text-muted-foreground">
+                Email du destinataire
+              </span>
+              <input
+                type="email"
+                value={mailTo}
+                onChange={(e) => setMailTo(e.target.value)}
+                placeholder="client@exemple.fr"
+                className="h-9 w-full rounded-md border border-border bg-white px-2 text-sm outline-none focus:border-primary"
+              />
+            </label>
+            <button
+              type="button"
+              disabled={mailPending || !mailTo.trim()}
+              onClick={() =>
+                startMail(async () => {
+                  const r = await envoyerDevis(quoteId, mailTo);
+                  if (r.ok) {
+                    toast.success(`Devis envoyé à ${mailTo}`);
+                    setMailOpen(false);
+                  } else toast.error(r.error ?? "Échec de l'envoi");
+                })
+              }
+              className="inline-flex h-9 items-center gap-1.5 rounded-md bg-primary px-3 text-sm font-semibold text-primary-foreground hover:bg-primary/90 disabled:opacity-50"
+            >
+              {mailPending ? (
+                <RefreshCw className="size-4 animate-spin" />
+              ) : (
+                <Send className="size-4" />
+              )}
+              Envoyer
+            </button>
+            <button
+              type="button"
+              onClick={() => setMailOpen(false)}
+              className="inline-flex h-9 items-center gap-1 rounded-md px-2 text-sm text-muted-foreground hover:text-foreground"
+            >
+              <X className="size-4" /> Annuler
+            </button>
+          </div>
+        ) : null}
       </div>
 
       {/* Le prospect : contacter + localiser (l'essentiel pendant la rédaction) */}

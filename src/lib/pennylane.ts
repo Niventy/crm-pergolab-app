@@ -372,6 +372,30 @@ export async function listProduitsPennylane(): Promise<{
   return { ok: true, produits };
 }
 
+// POST /quotes/{id}/send_by_email → envoie le devis (PDF) par email au client.
+export async function envoyerDevisEmail(
+  quoteId: string,
+  recipients?: string[],
+): Promise<{ ok: boolean; error?: string }> {
+  if (!process.env.PENNYLANE_API_KEY)
+    return { ok: false, error: "Pennylane non configuré (clé API manquante)." };
+  const clean = (recipients ?? []).map((e) => e.trim()).filter(Boolean);
+  const body = clean.length ? { recipients: clean } : {};
+  const res = await fetch(`${BASE}/quotes/${quoteId}/send_by_email`, {
+    method: "POST",
+    headers: plHeaders(),
+    body: JSON.stringify(body),
+  });
+  if (res.status === 204 || res.ok) return { ok: true };
+  if (res.status === 409)
+    return {
+      ok: false,
+      error: "Le PDF du devis n'est pas encore prêt — réessaie dans une minute.",
+    };
+  const t = await res.text();
+  return { ok: false, error: `Envoi ${res.status} — ${t.slice(0, 150)}` };
+}
+
 // GET /quotes/{id} → URL publique du PDF (valable ~30 min).
 export async function getQuotePdfUrl(
   quoteId: string,
