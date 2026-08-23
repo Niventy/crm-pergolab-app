@@ -55,7 +55,6 @@ export default async function DevisEditPage({
         devisId={devisRow?.id ?? null}
         quoteId={devisRow?.externalId ?? null}
         numero={devisRow?.numero ?? null}
-        lienSignature={devisRow?.lienExterne ?? null}
         pennylaneConfigured={!!process.env.PENNYLANE_API_KEY}
         surMesureDescriptions={surMesureDescriptions}
         catalogue={catalogue}

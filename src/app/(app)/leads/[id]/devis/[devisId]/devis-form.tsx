@@ -81,7 +81,6 @@ export function DevisForm({
   devisId,
   quoteId,
   numero,
-  lienSignature,
   pennylaneConfigured,
   surMesureDescriptions,
   catalogue,
@@ -92,7 +91,6 @@ export function DevisForm({
   devisId: string | null;
   quoteId: string | null;
   numero: string | null;
-  lienSignature: string | null;
   pennylaneConfigured: boolean;
   surMesureDescriptions: Record<string, string>;
   catalogue: ProduitCatalogueDTO[];
@@ -430,30 +428,29 @@ export function DevisForm({
               >
                 <ExternalLink className="size-3.5" /> Pennylane
               </button>
-              {lienSignature ? (
-                <>
-                  <a
-                    href={lienSignature}
-                    target="_blank"
-                    rel="noopener noreferrer"
-                    className="inline-flex items-center gap-1 text-sm font-semibold text-primary hover:underline"
-                  >
-                    <PenLine className="size-3.5" /> Lien de signature
-                  </a>
-                  <button
-                    type="button"
-                    onClick={() => {
+              <button
+                type="button"
+                onClick={() => ouvrirDans(() => devisPdfUrl(quoteId))}
+                className="inline-flex items-center gap-1 text-sm font-semibold text-primary hover:underline"
+              >
+                <PenLine className="size-3.5" /> Lien de signature
+              </button>
+              <button
+                type="button"
+                onClick={() => {
+                  devisPdfUrl(quoteId).then((r) => {
+                    if (r.ok && r.url) {
                       navigator.clipboard
-                        .writeText(lienSignature)
+                        .writeText(r.url)
                         .then(() => toast.success("Lien copié — à envoyer au client"))
                         .catch(() => toast.error("Copie impossible"));
-                    }}
-                    className="inline-flex items-center gap-1 text-sm font-medium text-muted-foreground hover:text-foreground"
-                  >
-                    <Copy className="size-3.5" /> Copier
-                  </button>
-                </>
-              ) : null}
+                    } else toast.error(r.error ?? "Lien indisponible");
+                  });
+                }}
+                className="inline-flex items-center gap-1 text-sm font-medium text-muted-foreground hover:text-foreground"
+              >
+                <Copy className="size-3.5" /> Copier le lien
+              </button>
             </>
           ) : null}
         </div>

@@ -165,6 +165,7 @@ async function createQuote(
     id?: number;
     quote_number?: string;
     number?: string;
+    public_file_url?: string;
     public_url?: string;
     pdf_url?: string;
     file_url?: string;
@@ -172,7 +173,8 @@ async function createQuote(
   return {
     id: j.id ?? null,
     number: j.quote_number ?? j.number ?? null,
-    link: j.public_url ?? j.pdf_url ?? j.file_url ?? null,
+    // Lien public client = public_file_url (le vrai champ Pennylane).
+    link: j.public_file_url ?? j.public_url ?? j.pdf_url ?? j.file_url ?? null,
   };
 }
 
