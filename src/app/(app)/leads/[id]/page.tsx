@@ -28,6 +28,7 @@ import { Conversation } from "./conversation";
 import { EncaissementForm } from "./encaissement-form";
 import { ChampsEditables } from "./champs-editables";
 import { Documents } from "./documents";
+import { Facturation } from "./facturation";
 
 export const dynamic = "force-dynamic";
 
@@ -172,6 +173,9 @@ export default async function LeadPage({
         documents: {
           with: { auteur: true },
           orderBy: (d, { desc }) => [desc(d.createdAt)],
+        },
+        factures: {
+          orderBy: (f, { asc }) => [asc(f.createdAt)],
         },
       },
     }),
@@ -638,6 +642,32 @@ export default async function LeadPage({
           />
         </CardContent>
       </Card>
+
+      {/* Facturation Pennylane — acompte + solde (fiches gagnées) */}
+      {lead.statut === "gagnee" ? (
+        <Card>
+          <CardHeader>
+            <CardTitle className="text-eyebrow text-muted-foreground">
+              Facturation
+            </CardTitle>
+          </CardHeader>
+          <CardContent>
+            <Facturation
+              leadId={lead.id}
+              pennylaneConfigured={!!process.env.PENNYLANE_API_KEY}
+              montantHt={Number(lead.montant ?? 0)}
+              factures={lead.factures.map((f) => ({
+                id: f.id,
+                type: f.type,
+                numero: f.numero,
+                externalId: f.externalId,
+                montantHt: f.montantHt ? Number(f.montantHt) : null,
+                statut: f.statut,
+              }))}
+            />
+          </CardContent>
+        </Card>
+      ) : null}
 
       {/* Documents — factures, plans, PV, photos (Supabase Storage) */}
       <Card>

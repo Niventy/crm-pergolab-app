@@ -4,7 +4,7 @@
 
 import { eq } from "drizzle-orm";
 import { db } from "@/db";
-import { leads, devis, type Lead } from "@/db/schema";
+import { leads, devis, factures, type Lead } from "@/db/schema";
 
 const BASE = "https://app.pennylane.com/api/external/v2";
 
@@ -418,4 +418,113 @@ export async function buildQuoteAppUrl(quoteId: string): Promise<string> {
   const cid = await getCompanyId();
   if (!cid) return "https://app.pennylane.com";
   return template.replace("{company}", cid).replace("{quote}", quoteId);
+}
+
+// ---------------------------------------------------------------------------
+// Facturation — factures d'ACOMPTE et de SOLDE (POST /customer_invoices)
+// ---------------------------------------------------------------------------
+
+// Crée une facture client Pennylane (brouillon par défaut).
+async function createInvoice(
+  customerId: number,
+  lines: DevisLine[],
+  draft: boolean,
+): Promise<{ id: number | null; number?: string | null; status?: string | null; error?: string }> {
+  const now = new Date();
+  const deadline = new Date(now.getTime() + 30 * 86400000);
+  const body = {
+    customer_id: customerId,
+    date: ymd(now),
+    deadline: ymd(deadline),
+    currency: "EUR",
+    draft,
+    invoice_lines: toInvoiceLines(lines),
+  };
+  const res = await fetch(`${BASE}/customer_invoices`, {
+    method: "POST",
+    headers: plHeaders(),
+    body: JSON.stringify(body),
+  });
+  if (!res.ok) {
+    const t = await res.text();
+    return { id: null, error: `Facture ${res.status} — ${t.slice(0, 200)}` };
+  }
+  const j = (await res.json()) as {
+    id?: number;
+    invoice_number?: string;
+    number?: string;
+    status?: string;
+  };
+  return {
+    id: j.id ?? null,
+    number: j.invoice_number ?? j.number ?? null,
+    status: j.status ?? null,
+  };
+}
+
+// Crée une facture (acompte/solde) pour un lead + enregistre la ligne `factures`.
+export async function creerFacturePennylane(
+  leadId: string,
+  opts: { type: "acompte" | "solde" | "finale"; libelle: string; montantHt: number; tva?: number; draft?: boolean },
+): Promise<{ ok: boolean; error?: string; numero?: string | null; factureId?: string }> {
+  if (!process.env.PENNYLANE_API_KEY)
+    return { ok: false, error: "Pennylane non configuré (clé API manquante)." };
+  if (!(opts.montantHt > 0)) return { ok: false, error: "Montant invalide." };
+
+  const lead = await db.query.leads.findFirst({ where: eq(leads.id, leadId) });
+  if (!lead) return { ok: false, error: "Lead introuvable." };
+
+  let customerId = lead.pennylaneCustomerId ? Number(lead.pennylaneCustomerId) : null;
+  if (!customerId) {
+    const c = await createCustomer(lead);
+    if (!c.id) return { ok: false, error: c.error };
+    customerId = c.id;
+    await db
+      .update(leads)
+      .set({ pennylaneCustomerId: String(customerId) })
+      .where(eq(leads.id, leadId));
+  }
+
+  const line: DevisLine = {
+    designation: opts.libelle,
+    quantite: 1,
+    prixHt: opts.montantHt,
+    tva: opts.tva ?? 20,
+  };
+  const inv = await createInvoice(customerId, [line], opts.draft ?? true);
+  if (!inv.id) return { ok: false, error: inv.error };
+
+  const [row] = await db
+    .insert(factures)
+    .values({
+      leadId,
+      type: opts.type,
+      numero: inv.number ?? `PL-${inv.id}`,
+      externalId: String(inv.id),
+      montantHt: String(opts.montantHt),
+      statut: inv.status ?? (opts.draft ?? true ? "draft" : "finalized"),
+    })
+    .returning({ id: factures.id });
+
+  return { ok: true, numero: inv.number ?? `PL-${inv.id}`, factureId: row?.id };
+}
+
+// GET /customer_invoices/{id} → URL publique du PDF de la facture.
+export async function getFacturePdfUrl(
+  invoiceId: string,
+): Promise<{ ok: boolean; url?: string; error?: string }> {
+  if (!process.env.PENNYLANE_API_KEY)
+    return { ok: false, error: "Pennylane non configuré." };
+  const res = await fetch(`${BASE}/customer_invoices/${invoiceId}`, {
+    headers: plHeaders(),
+  });
+  if (!res.ok) return { ok: false, error: `Erreur ${res.status}` };
+  const j = (await res.json()) as {
+    public_file_url?: string;
+    pdf_url?: string;
+    file_url?: string;
+  };
+  const url = j.public_file_url ?? j.pdf_url ?? j.file_url ?? null;
+  if (!url) return { ok: false, error: "PDF indisponible pour l'instant." };
+  return { ok: true, url };
 }

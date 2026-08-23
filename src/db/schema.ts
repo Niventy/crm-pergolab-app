@@ -315,6 +315,24 @@ export const documents = pgTable("documents", {
 });
 
 // ---------------------------------------------------------------------------
+// factures — factures Pennylane rattachées à une commande client (acompte/solde)
+// ---------------------------------------------------------------------------
+export const factures = pgTable("factures", {
+  id: uuid("id").primaryKey().defaultRandom(),
+  leadId: uuid("lead_id")
+    .notNull()
+    .references(() => leads.id, { onDelete: "cascade" }),
+  type: text("type").notNull(), // "acompte" | "solde" | "finale"
+  numero: text("numero"),
+  externalId: text("external_id"), // id de la facture Pennylane
+  montantHt: numeric("montant_ht", { precision: 12, scale: 2 }),
+  statut: text("statut"), // draft / finalized
+  createdAt: timestamp("created_at", { withTimezone: true })
+    .notNull()
+    .defaultNow(),
+});
+
+// ---------------------------------------------------------------------------
 // notifications — centre de notifications par destinataire (@mention, attribution)
 // ---------------------------------------------------------------------------
 export const notifications = pgTable("notifications", {
@@ -368,6 +386,11 @@ export const leadsRelations = relations(leads, ({ one, many }) => ({
   echanges: many(echanges),
   devis: many(devis),
   documents: many(documents),
+  factures: many(factures),
+}));
+
+export const facturesRelations = relations(factures, ({ one }) => ({
+  lead: one(leads, { fields: [factures.leadId], references: [leads.id] }),
 }));
 
 export const documentsRelations = relations(documents, ({ one }) => ({
@@ -425,3 +448,4 @@ export type Tache = typeof taches.$inferSelect;
 export type ProduitCatalogue = typeof produitsCatalogue.$inferSelect;
 export type Document = typeof documents.$inferSelect;
 export type Notification = typeof notifications.$inferSelect;
+export type Facture = typeof factures.$inferSelect;

@@ -3,7 +3,7 @@
 import { useEffect, useState, useTransition } from "react";
 import Link from "next/link";
 import { useRouter } from "next/navigation";
-import { Plus, Trash2, FileText, Download, ExternalLink, RefreshCw, Calculator } from "lucide-react";
+import { Plus, Trash2, FileText, Download, ExternalLink, RefreshCw, Calculator, PenLine, Copy } from "lucide-react";
 import { toast } from "sonner";
 import { formatEuros } from "@/lib/format";
 import { SurMesureCalc } from "./sur-mesure-calc";
@@ -81,6 +81,7 @@ export function DevisForm({
   devisId,
   quoteId,
   numero,
+  lienSignature,
   pennylaneConfigured,
   surMesureDescriptions,
   catalogue,
@@ -91,6 +92,7 @@ export function DevisForm({
   devisId: string | null;
   quoteId: string | null;
   numero: string | null;
+  lienSignature: string | null;
   pennylaneConfigured: boolean;
   surMesureDescriptions: Record<string, string>;
   catalogue: ProduitCatalogueDTO[];
@@ -428,6 +430,30 @@ export function DevisForm({
               >
                 <ExternalLink className="size-3.5" /> Pennylane
               </button>
+              {lienSignature ? (
+                <>
+                  <a
+                    href={lienSignature}
+                    target="_blank"
+                    rel="noopener noreferrer"
+                    className="inline-flex items-center gap-1 text-sm font-semibold text-primary hover:underline"
+                  >
+                    <PenLine className="size-3.5" /> Lien de signature
+                  </a>
+                  <button
+                    type="button"
+                    onClick={() => {
+                      navigator.clipboard
+                        .writeText(lienSignature)
+                        .then(() => toast.success("Lien copié — à envoyer au client"))
+                        .catch(() => toast.error("Copie impossible"));
+                    }}
+                    className="inline-flex items-center gap-1 text-sm font-medium text-muted-foreground hover:text-foreground"
+                  >
+                    <Copy className="size-3.5" /> Copier
+                  </button>
+                </>
+              ) : null}
             </>
           ) : null}
         </div>
