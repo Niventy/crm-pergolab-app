@@ -131,6 +131,63 @@ async function createCustomer(
   return { id: j.id ?? null };
 }
 
+// S'assure qu'un CONTACT (personne nommée + email) existe sur le client Pennylane.
+// Sans contact, la signature électronique affiche « contact indisponible » car
+// le corps de création du client n'accepte pas de tableau `contacts` : il faut un
+// appel séparé POST /customers/{id}/contacts.
+// Renvoie {ok,error} : `error` remonte le vrai message d'API (statut + corps) pour
+// diagnostiquer, mais l'appel est optionnel côté création de devis (non bloquant).
+async function ensureCustomerContact(
+  customerId: number,
+  lead: Lead,
+): Promise<{ ok: boolean; created?: boolean; error?: string }> {
+  const email = (lead.email ?? "").trim();
+  if (!email)
+    return { ok: false, error: "Le client n'a pas d'email : contact impossible." };
+
+  // Déjà un contact avec cet email ? on ne recrée pas.
+  try {
+    const list = await fetch(`${BASE}/customers/${customerId}/contacts`, {
+      headers: plHeaders(),
+    });
+    if (list.ok) {
+      const j = (await list.json()) as { items?: { email?: string }[] };
+      const existing = j.items ?? [];
+      if (
+        existing.some(
+          (c) => (c.email ?? "").trim().toLowerCase() === email.toLowerCase(),
+        )
+      )
+        return { ok: true, created: false };
+    }
+  } catch {
+    // On tente quand même la création si la liste échoue.
+  }
+
+  const parts = (lead.nom ?? "").trim().split(/\s+/);
+  const first_name = parts[0] || "Client";
+  const last_name = parts.slice(1).join(" ") || parts[0] || "Pergolab";
+  // Corps minimal : le téléphone est omis (format E.164 exigé, risque de 422).
+  // Seul l'email compte pour la signature électronique.
+  const body = { first_name, last_name, email };
+
+  try {
+    const res = await fetch(`${BASE}/customers/${customerId}/contacts`, {
+      method: "POST",
+      headers: plHeaders(),
+      body: JSON.stringify(body),
+    });
+    if (!res.ok) {
+      const t = await res.text();
+      return { ok: false, error: `Contact ${res.status} — ${t.slice(0, 300)}` };
+    }
+    return { ok: true, created: true };
+  } catch (e) {
+    const msg = e instanceof Error ? e.message : String(e);
+    return { ok: false, error: `Contact — échec réseau : ${msg.slice(0, 200)}` };
+  }
+}
+
 // POST /quotes → id + n° + lien du devis créé (à partir des lignes composées).
 async function createQuote(
   customerId: number,
@@ -226,6 +283,9 @@ export async function creerDevisPennylane(
       .where(eq(leads.id, leadId));
   }
 
+  // Crée le contact signataire s'il manque (nouveau OU ancien client sans contact).
+  await ensureCustomerContact(customerId, lead);
+
   const q = await createQuote(customerId, useLines);
   if (!q.id) return { ok: false, error: q.error };
 
@@ -294,6 +354,22 @@ export async function getQuoteLines(
     productId: l.product_id ? Number(l.product_id) : null,
   }));
   return { ok: true, lines };
+}
+
+// Crée/complète le CONTACT signataire du client Pennylane d'un lead existant.
+// Utile pour un client déjà créé sans contact (signature « contact indisponible »).
+export async function assurerContactPennylane(
+  leadId: string,
+): Promise<{ ok: boolean; error?: string }> {
+  if (!process.env.PENNYLANE_API_KEY)
+    return { ok: false, error: "Pennylane non configuré." };
+  const lead = await db.query.leads.findFirst({ where: eq(leads.id, leadId) });
+  if (!lead) return { ok: false, error: "Lead introuvable." };
+  if (!lead.pennylaneCustomerId)
+    return { ok: false, error: "Aucun client Pennylane pour ce lead." };
+  if (!lead.email)
+    return { ok: false, error: "Ce lead n'a pas d'email (contact impossible)." };
+  return ensureCustomerContact(Number(lead.pennylaneCustomerId), lead);
 }
 
 // PUT /quotes/{id} → remplace les lignes du devis (édition depuis le CRM).

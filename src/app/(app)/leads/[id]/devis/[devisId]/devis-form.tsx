@@ -3,12 +3,13 @@
 import { useEffect, useState, useTransition } from "react";
 import Link from "next/link";
 import { useRouter } from "next/navigation";
-import { Plus, Trash2, FileText, Download, ExternalLink, RefreshCw, Calculator, PenLine, Mail, Send, X } from "lucide-react";
+import { Plus, Trash2, FileText, Download, ExternalLink, RefreshCw, Calculator, PenLine, Mail, Send, X, User } from "lucide-react";
 import { toast } from "sonner";
 import { formatEuros } from "@/lib/format";
 import { SurMesureCalc } from "./sur-mesure-calc";
 import { construireLignesDevis, type ConfigSM } from "./sur-mesure";
 import type { ProduitCatalogueDTO } from "@/app/(app)/reglages/actions";
+import { sendDevisParGmail } from "../../email-actions";
 import {
   creerDevis,
   getDevisLines,
@@ -16,7 +17,7 @@ import {
   devisAppUrl,
   devisPdfUrl,
   devisSignatureUrl,
-  envoyerDevis,
+  creerContactSignataire,
 } from "../../actions";
 
 type Line = {
@@ -115,10 +116,17 @@ export function DevisForm({
   const [pdfUrl, setPdfUrl] = useState<string | null>(null);
   const [pdfLoading, setPdfLoading] = useState(false);
   const [pdfKey, setPdfKey] = useState(0); // force le rechargement de l'iframe
-  // Envoi du devis par email (via Pennylane).
+  // Envoi du devis par email — via Gmail (adresse Pergolab de l'ADV), PDF en PJ.
   const [mailOpen, setMailOpen] = useState(false);
   const [mailTo, setMailTo] = useState(client.email ?? "");
+  const [mailSubject, setMailSubject] = useState(
+    `Votre devis PERGOLAB${numero ? ` N° ${numero}` : ""}`,
+  );
+  const [mailBody, setMailBody] = useState(
+    `Bonjour ${client.nom},\n\nVeuillez trouver ci-joint votre devis PERGOLAB.\nNous restons à votre disposition pour toute question.\n\nCordialement,`,
+  );
   const [mailPending, startMail] = useTransition();
+  const [contactPending, startContact] = useTransition();
   // Le devis démarre VIDE : la pergola vient du configurateur, les extras du
   // catalogue. Plus de ligne pré-remplie (qui prêtait à confusion).
   const [lines, setLines] = useState<Line[]>([]);
@@ -443,6 +451,29 @@ export function DevisForm({
               </button>
               <button
                 type="button"
+                disabled={contactPending}
+                onClick={() =>
+                  startContact(async () => {
+                    const r = await creerContactSignataire(leadId);
+                    if (r.ok)
+                      toast.success(
+                        "Contact signataire créé dans Pennylane. Il est maintenant sélectionnable pour la signature.",
+                      );
+                    else toast.error(r.error ?? "Échec de la création du contact");
+                  })
+                }
+                className="inline-flex items-center gap-1 text-sm font-medium text-muted-foreground hover:text-foreground disabled:opacity-50"
+                title="Crée le contact (nom + email) du client dans Pennylane pour pouvoir le choisir comme signataire"
+              >
+                {contactPending ? (
+                  <RefreshCw className="size-3.5 animate-spin" />
+                ) : (
+                  <User className="size-3.5" />
+                )}
+                Créer le contact
+              </button>
+              <button
+                type="button"
                 onClick={() => ouvrirDans(() => devisSignatureUrl(quoteId))}
                 className="inline-flex items-center gap-1 text-sm font-semibold text-primary hover:underline"
                 title="Ouvre la page Pennylane pour envoyer le devis en signature (Yousign)"
@@ -453,49 +484,70 @@ export function DevisForm({
           ) : null}
         </div>
 
-        {/* Envoi du devis par email au client (Pennylane) */}
+        {/* Envoi du devis par email — via Gmail (adresse Pergolab), PDF en PJ */}
         {quoteId && mailOpen ? (
-          <div className="flex flex-wrap items-end gap-2 rounded-lg border border-primary/30 bg-primary/[0.03] p-3">
-            <label className="flex-1 min-w-[14rem]">
-              <span className="text-[0.65rem] uppercase tracking-wide text-muted-foreground">
-                Email du destinataire
+          <div className="space-y-2 rounded-lg border border-primary/30 bg-primary/[0.03] p-3">
+            <div className="text-eyebrow flex items-center gap-1.5 text-primary">
+              <Mail className="size-4" /> Envoyer le devis par email
+              <span className="ml-auto text-[10px] font-medium normal-case text-muted-foreground">
+                PDF en pièce jointe · depuis ton adresse Pergolab
               </span>
-              <input
-                type="email"
-                value={mailTo}
-                onChange={(e) => setMailTo(e.target.value)}
-                placeholder="client@exemple.fr"
-                className="h-9 w-full rounded-md border border-border bg-white px-2 text-sm outline-none focus:border-primary"
-              />
-            </label>
-            <button
-              type="button"
-              disabled={mailPending || !mailTo.trim()}
-              onClick={() =>
-                startMail(async () => {
-                  const r = await envoyerDevis(quoteId, mailTo);
-                  if (r.ok) {
-                    toast.success(`Devis envoyé à ${mailTo}`);
-                    setMailOpen(false);
-                  } else toast.error(r.error ?? "Échec de l'envoi");
-                })
-              }
-              className="inline-flex h-9 items-center gap-1.5 rounded-md bg-primary px-3 text-sm font-semibold text-primary-foreground hover:bg-primary/90 disabled:opacity-50"
-            >
-              {mailPending ? (
-                <RefreshCw className="size-4 animate-spin" />
-              ) : (
-                <Send className="size-4" />
-              )}
-              Envoyer
-            </button>
-            <button
-              type="button"
-              onClick={() => setMailOpen(false)}
-              className="inline-flex h-9 items-center gap-1 rounded-md px-2 text-sm text-muted-foreground hover:text-foreground"
-            >
-              <X className="size-4" /> Annuler
-            </button>
+            </div>
+            <input
+              type="email"
+              value={mailTo}
+              onChange={(e) => setMailTo(e.target.value)}
+              placeholder="Email du client"
+              className="h-9 w-full rounded-md border border-border bg-white px-2 text-sm outline-none focus:border-primary"
+            />
+            <input
+              type="text"
+              value={mailSubject}
+              onChange={(e) => setMailSubject(e.target.value)}
+              placeholder="Objet"
+              className="h-9 w-full rounded-md border border-border bg-white px-2 text-sm outline-none focus:border-primary"
+            />
+            <textarea
+              value={mailBody}
+              onChange={(e) => setMailBody(e.target.value)}
+              rows={5}
+              className="w-full resize-y rounded-md border border-border bg-white px-2 py-1.5 text-sm outline-none focus:border-primary"
+            />
+            <div className="flex items-center gap-2">
+              <button
+                type="button"
+                disabled={mailPending || !mailTo.trim()}
+                onClick={() =>
+                  startMail(async () => {
+                    const r = await sendDevisParGmail(leadId, quoteId, numero, {
+                      to: mailTo,
+                      subject: mailSubject,
+                      body: mailBody,
+                    });
+                    if (r.ok) {
+                      toast.success(`Devis envoyé à ${mailTo}`);
+                      setMailOpen(false);
+                      router.refresh();
+                    } else toast.error(r.error ?? "Échec de l'envoi");
+                  })
+                }
+                className="inline-flex h-9 items-center gap-1.5 rounded-md bg-primary px-3 text-sm font-semibold text-primary-foreground hover:bg-primary/90 disabled:opacity-50"
+              >
+                {mailPending ? (
+                  <RefreshCw className="size-4 animate-spin" />
+                ) : (
+                  <Send className="size-4" />
+                )}
+                Envoyer
+              </button>
+              <button
+                type="button"
+                onClick={() => setMailOpen(false)}
+                className="inline-flex h-9 items-center gap-1 rounded-md px-2 text-sm text-muted-foreground hover:text-foreground"
+              >
+                <X className="size-4" /> Annuler
+              </button>
+            </div>
           </div>
         ) : null}
       </div>

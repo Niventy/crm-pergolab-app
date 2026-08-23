@@ -7,6 +7,7 @@ import { echanges } from "@/db/schema";
 import { createClient } from "@/lib/supabase/server";
 import { currentUserId } from "@/lib/current-user";
 import { resolveSender, allSenders } from "@/lib/email-sender";
+import { getQuotePdfUrl } from "@/lib/pennylane";
 
 export type EmailState = { ok: boolean; error: string | null };
 
@@ -250,4 +251,125 @@ export async function fetchLeadEmails(
 
   out.sort((a, b) => a.date - b.date);
   return { ok: true, messages: out };
+}
+
+// Message MIME multipart avec le PDF du devis en pièce jointe (API Gmail).
+function buildRawWithPdf(
+  from: string,
+  to: string,
+  subject: string,
+  html: string,
+  pdfBase64: string,
+  filename: string,
+  replyTo?: string,
+) {
+  const boundary = `=_pl_${Date.now().toString(36)}`;
+  const lines = [
+    `From: ${from}`,
+    `To: ${to}`,
+    ...(replyTo ? [`Reply-To: ${replyTo}`] : []),
+    `Subject: ${encodeHeader(subject)}`,
+    "MIME-Version: 1.0",
+    `Content-Type: multipart/mixed; boundary="${boundary}"`,
+    "",
+    `--${boundary}`,
+    'Content-Type: text/html; charset="UTF-8"',
+    "Content-Transfer-Encoding: base64",
+    "",
+    Buffer.from(html, "utf-8").toString("base64"),
+    "",
+    `--${boundary}`,
+    `Content-Type: application/pdf; name="${filename}"`,
+    `Content-Disposition: attachment; filename="${filename}"`,
+    "Content-Transfer-Encoding: base64",
+    "",
+    pdfBase64,
+    "",
+    `--${boundary}--`,
+    "",
+  ];
+  return Buffer.from(lines.join("\r\n"), "utf-8").toString("base64url");
+}
+
+// Envoie le DEVIS (PDF Pennylane en pièce jointe) par email via Gmail, depuis
+// l'adresse Pergolab de l'ADV connecté (Reply-To = ADV). Pas de lien Pennylane.
+export async function sendDevisParGmail(
+  leadId: string,
+  quoteId: string,
+  numero: string | null,
+  data: { to: string; subject: string; body: string },
+): Promise<EmailState> {
+  const to = data.to.trim();
+  const subject = data.subject.trim();
+  const body = data.body.trim();
+  if (!to || !subject || !body)
+    return { ok: false, error: "Destinataire, objet et message sont requis." };
+
+  const clientId = process.env.GOOGLE_CLIENT_ID;
+  const clientSecret = process.env.GOOGLE_CLIENT_SECRET;
+  if (!clientId || !clientSecret)
+    return { ok: false, error: "Envoi Gmail non configuré (OAuth manquant)." };
+
+  const supabase = await createClient();
+  const {
+    data: { user },
+  } = await supabase.auth.getUser();
+  const replyTo = user?.email ?? undefined;
+  const account = resolveSender(user?.email);
+  if (!account) return { ok: false, error: "Aucun expéditeur Gmail configuré." };
+
+  // 1) Récupère le PDF du devis depuis Pennylane.
+  const pdf = await getQuotePdfUrl(quoteId);
+  if (!pdf.ok || !pdf.url)
+    return {
+      ok: false,
+      error: pdf.error ?? "PDF du devis indisponible (réessaie dans une minute).",
+    };
+  let pdfBase64: string;
+  try {
+    const r = await fetch(pdf.url);
+    if (!r.ok) return { ok: false, error: `Téléchargement PDF ${r.status}.` };
+    pdfBase64 = Buffer.from(await r.arrayBuffer()).toString("base64");
+  } catch {
+    return { ok: false, error: "Échec du téléchargement du PDF." };
+  }
+  const filename = `Devis-${(numero ?? quoteId).replace(/[^\w.-]+/g, "_")}.pdf`;
+
+  const html = body
+    .split("\n")
+    .map((l) => (l.trim() ? `<p>${escapeHtml(l)}</p>` : "<br/>"))
+    .join("");
+  const raw = buildRawWithPdf(account.from, to, subject, html, pdfBase64, filename, replyTo);
+
+  try {
+    const client = new OAuth2Client(clientId, clientSecret);
+    client.setCredentials({ refresh_token: account.refreshToken });
+    const at = await client.getAccessToken();
+    const token = typeof at === "string" ? at : at?.token;
+    if (!token) return { ok: false, error: "Auth Gmail échouée." };
+    const res = await fetch(
+      "https://gmail.googleapis.com/gmail/v1/users/me/messages/send",
+      {
+        method: "POST",
+        headers: { Authorization: `Bearer ${token}`, "Content-Type": "application/json" },
+        body: JSON.stringify({ raw }),
+      },
+    );
+    if (!res.ok) {
+      const detail = await res.text();
+      return { ok: false, error: `Gmail ${res.status} — ${detail.slice(0, 300)}` };
+    }
+  } catch (e) {
+    const msg = e instanceof Error ? e.message : String(e);
+    return { ok: false, error: `Échec envoi : ${msg.slice(0, 300)}` };
+  }
+
+  await db.insert(echanges).values({
+    leadId,
+    userId: await currentUserId(),
+    type: "devis_envoye",
+    contenu: `Devis ${numero ?? ""} envoyé par email à ${to}`.trim(),
+  });
+  revalidatePath(`/leads/${leadId}`);
+  return { ok: true, error: null };
 }
