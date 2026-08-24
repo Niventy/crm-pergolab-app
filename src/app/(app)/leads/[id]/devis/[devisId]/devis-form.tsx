@@ -31,7 +31,9 @@ type Line = {
   remisePct?: number | null; // remise en % sur la ligne (ex. 10 = -10%)
   config?: boolean; // ligne issue du configurateur (kit ou option)
 };
-const TVA_OPTIONS = [20, 10, 5.5, 0];
+// Pennylane ne gère pas de TVA à 0 % (taux mini FR_1_05) → on ne propose que
+// les taux valides. Un 0 € (ex. clause) passe en 20 % côté Pennylane sans effet.
+const TVA_OPTIONS = [20, 10, 5.5];
 
 // La clause suspensive est gérée à part (ligne fixe « Incluse ») : on ne l'affiche
 // pas dans les lignes éditables pour éviter un doublon quand Pennylane la renvoie.

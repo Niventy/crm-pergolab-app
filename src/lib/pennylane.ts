@@ -20,13 +20,14 @@ La réalisation du projet dépend notamment de la nature des supports, des contr
 En cas de contraintes techniques imprévues nécessitant une adaptation, un devis modificatif pourra être proposé.
 Si aucune solution ne peut être mise en œuvre, le devis pourra être annulé sans frais, avec remboursement des sommes éventuellement versées.`;
 
-// La ligne « clause » : quantité 1, 0 € HT, TVA 0.
+// La ligne « clause » : quantité 1, 0 € HT. TVA 20 % (sans effet à 0 €) car le
+// taux 0 % n'existe pas côté Pennylane et ferait échouer la création du devis.
 const CLAUSE_LINE: DevisLine = {
   designation: CLAUSE_LABEL,
   description: CLAUSE_TEXTE,
   quantite: 1,
   prixHt: 0,
-  tva: 0,
+  tva: 20,
 };
 
 function isClauseLine(l: DevisLine): boolean {
@@ -99,9 +100,14 @@ function ymd(d: Date): string {
   return d.toISOString().slice(0, 10);
 }
 
-// « 20 » → « FR_200 », « 5.5 » → « FR_055 », « 0 » → « FR_000 ».
+// Code TVA Pennylane = « FR_ » + taux×10, cadré à 2 chiffres mini (PAS 3) :
+// 20 → FR_200 · 10 → FR_100 · 5.5 → FR_55 · 2.1 → FR_21 · 0.9 → FR_09.
+// ⚠️ 0 % n'existe pas dans l'énum Pennylane (mini FR_1_05) → on retombe sur 20 %
+// (sans effet sur une ligne à 0 €, mais évite un rejet « FR_000/FR_00 » invalide).
 function vatCode(tva: number): string {
-  return `FR_${String(Math.round((tva || 0) * 10)).padStart(3, "0")}`;
+  const r = Math.round((tva || 0) * 10);
+  if (r <= 0) return "FR_200";
+  return `FR_${String(r).padStart(2, "0")}`;
 }
 
 // Une ligne du CRM → payload de CRÉATION Pennylane.
