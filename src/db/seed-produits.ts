@@ -17,23 +17,10 @@ type Seed = {
   description: string;
 };
 
+// NB : « Store Zip motorisé » est géré par le CONFIGURATEUR (option « Store
+// Motorisé », dimensionnée) et « Clause suspensive » est ajoutée automatiquement
+// à 0 € sur chaque devis → tous deux retirés de ce catalogue (plus de doublon).
 const PRODUITS: Seed[] = [
-  {
-    nom: "Store Zip motorisé",
-    categorie: "Option",
-    position: 10,
-    description: `Optimisez votre espace extérieur avec notre store zip motorisé pour pergola !
-
-Alliez confort, design et technologie grâce à notre store zip spécialement conçu pour pergolas. Facile à manipuler grâce à sa motorisation A-OK compatible 110V ou 220V, il se commande simplement à distance via une télécommande, pour un usage pratique au quotidien.
-
-Sa toile technique, composée de 30% polyester et 70% PVC, vous protège efficacement du vent et de la pluie tout en laissant passer la lumière naturelle avec une transparence maîtrisée de 5%. La fermeture éclair des deux côtés assure une installation impeccable et une meilleure résistance face aux intempéries.
-
-Caractéristiques principales :
-* Motorisation : A-OK AC110V ou 220V, télécommande incluse
-* Fermeture : Fermeture éclair (zip) des deux côtés
-* Protection : Résistant au vent et à l'eau
-* Toile : Composée de 30% polyester et 70% PVC, offrant une transparence de 5%`,
-  },
   {
     nom: "VR Rénobloc® ADP 55",
     categorie: "Menuiserie",
@@ -102,18 +89,6 @@ Contrôle de la marchandise à la réception.`,
 * Étanchéité et évacuation : joints d'étanchéité périphérique et système d'évacuation des eaux pluviales (descentes d'eau dans les poteaux).
 * Raccordements (si option motorisation/LED) : raccordement électrique des équipements sur l'attente électrique mise à disposition par le client.
 * Contrôle et finition : réglages, essais de fonctionnement, nettoyage du chantier et évacuation des déchets d'emballage.`,
-  },
-  {
-    nom: "Clause suspensive – faisabilité technique",
-    categorie: "Clause",
-    position: 70,
-    description: `Le présent devis est établi sous réserve de la validation des conditions techniques lors de la visite sur site et de la prise de cotes définitives.
-
-La réalisation du projet dépend notamment de la nature des supports, des contraintes de pose et de l'accessibilité.
-
-En cas de contraintes techniques imprévues nécessitant une adaptation, un devis modificatif pourra être proposé.
-
-Si aucune solution ne peut être mise en œuvre, le devis pourra être annulé sans frais, avec remboursement des sommes éventuellement versées.`,
   },
 ];
 

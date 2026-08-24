@@ -83,6 +83,10 @@ export type ConfigSM = {
 
 const r2 = (n: number) => Math.round(n * 100) / 100;
 
+// Dimensions d'une option au format métier « 3350 L × 2500 H mm » (m → mm).
+const dimsMM = (L: number, H: number) =>
+  `${Math.round((L || 0) * 1000)} L × ${Math.round((H || 0) * 1000)} H mm`;
+
 // Prix d'une option (formule selon son type).
 export function prixOption(o: OptionSM, c: OptionConfig): number {
   const q = c.qte || 0;
@@ -172,7 +176,7 @@ export function construireLignes(
     const p = prixOption(o, { qte: el.qte, L: el.L, H: el.H });
     if (p <= 0) continue;
     const dims =
-      o.type === "unite" ? `×${el.qte}` : `${el.L}×${el.H} m · ×${el.qte}`;
+      o.type === "unite" ? `×${el.qte}` : `${dimsMM(el.L, el.H)} · ×${el.qte}`;
     const face = el.face ? ` — ${el.face}` : "";
     lignes.push({
       designation: `${o.label}${face} (${dims})`,
@@ -284,9 +288,7 @@ export function construireDescription(
     const o = OPTIONS.find((x) => x.id === el.optionId);
     if (!o) continue;
     const d =
-      o.type === "unite"
-        ? `×${el.qte}`
-        : `${fr(el.L)} × ${fr(el.H)} m · ×${el.qte}`;
+      o.type === "unite" ? `×${el.qte}` : `${dimsMM(el.L, el.H)} · ×${el.qte}`;
     const od = reel(descriptions[o.id]);
     const desc = od ? ` — ${sub(od)}` : "";
     opts.push(`• ${o.label}${el.face ? ` (${el.face})` : ""} · ${d}${desc}`);
@@ -366,7 +368,7 @@ export function construireLignesDevis(
     const p = prixOption(o, { qte: el.qte, L: el.L, H: el.H });
     if (p <= 0) continue;
     const dims =
-      o.type === "unite" ? `×${el.qte}` : `${fr(el.L)} × ${fr(el.H)} m · ×${el.qte}`;
+      o.type === "unite" ? `×${el.qte}` : `${dimsMM(el.L, el.H)} · ×${el.qte}`;
     const face = el.face ? ` — ${el.face}` : "";
     const brut = descriptions[o.id]?.trim();
     const desc =

@@ -32,6 +32,11 @@ type Line = {
   config?: boolean; // ligne issue du configurateur (kit ou option)
 };
 const TVA_OPTIONS = [20, 10, 5.5, 0];
+
+// La clause suspensive est gérée à part (ligne fixe « Incluse ») : on ne l'affiche
+// pas dans les lignes éditables pour éviter un doublon quand Pennylane la renvoie.
+const estClause = (l: Line) =>
+  l.designation.trim().toLowerCase().startsWith("clause suspensive");
 const eur = (n: number) => formatEuros(String(Math.round(n * 100) / 100));
 
 // La (les) ligne(s) « Pergola » toujours en tête, les options après.
@@ -251,80 +256,48 @@ export function DevisForm({
           </p>
         ) : null}
 
-        {/* Action principale : configurer la pergola (le configurateur) */}
-        <button
-          type="button"
-          onClick={() => setSmOpen((v) => !v)}
-          className={`inline-flex h-11 w-full items-center justify-center gap-2 rounded-md px-4 text-sm font-semibold transition-colors ${
-            smOpen
-              ? "border border-primary bg-primary/10 text-primary"
-              : "bg-primary text-primary-foreground hover:bg-primary/90"
-          }`}
-        >
-          <Calculator className="size-4" />
-          {smOpen
-            ? "Fermer le configurateur"
-            : smConfig
-              ? "Modifier la pergola"
-              : "Configurer la pergola"}
-        </button>
-
-        {/* Secondaire : ajouter une option du catalogue (énergie, menuiserie…) */}
-        <div className="flex flex-wrap items-center gap-2">
-          <select
-            value=""
-            onChange={(e) => {
-              const p = catalogue.find((x) => x.id === e.target.value);
-              if (p) {
-                addCatalogue(p);
-                toast.success(`« ${p.nom} » ajouté`);
-              }
-              e.currentTarget.value = "";
-            }}
-            disabled={catalogue.length === 0}
-            className="h-9 min-w-[14rem] flex-1 rounded-md border border-border bg-white px-2 text-sm outline-none focus:border-primary disabled:opacity-60"
-          >
-            <option value="">
-              {catalogue.length === 0
-                ? "Catalogue vide (à remplir dans Réglages)"
-                : "+ Ajouter une option du catalogue"}
-            </option>
-            {catalogue.map((p) => (
-              <option key={p.id} value={p.id}>
-                {p.categorie ? `[${p.categorie}] ` : ""}
-                {p.nom}
-                {p.prixHt ? ` — ${eur(p.prixHt)} HT` : ""}
-              </option>
-            ))}
-          </select>
-        </div>
-
+        {/* ÉTAPE 1 — Configurer la pergola : c'est le cœur du devis, affiché
+            directement. Sur un devis déjà créé on peut le replier/rouvrir, mais
+            sans bouton « Fermer » : un simple lien « Modifier la pergola ». */}
         {smOpen ? (
           <SurMesureCalc
             descriptions={surMesureDescriptions}
             initial={smConfig}
+            catalogue={catalogue}
+            onAjouterProduit={(p) => {
+              addCatalogue(p);
+              toast.success(`« ${p.nom} » ajouté au devis`);
+            }}
             onAjouter={(ls, cfg) => {
               appliquerConfig(ls, cfg);
-              setSmOpen(false);
               toast.success(
-                `Pergola configurée (${ls.length} ligne${ls.length > 1 ? "s" : ""})`,
+                `Pergola ${smConfig ? "mise à jour" : "ajoutée"} (${ls.length} ligne${
+                  ls.length > 1 ? "s" : ""
+                })`,
               );
             }}
-            onClose={() => setSmOpen(false)}
           />
-        ) : null}
+        ) : (
+          <button
+            type="button"
+            onClick={() => setSmOpen(true)}
+            className="inline-flex h-11 w-full items-center justify-center gap-2 rounded-md bg-primary px-4 text-sm font-semibold text-primary-foreground hover:bg-primary/90"
+          >
+            <Calculator className="size-4" />
+            {smConfig ? "Modifier la pergola" : "Configurer la pergola"}
+          </button>
+        )}
 
-        {lines.length === 0 && !smOpen ? (
-          <div className="rounded-lg border border-dashed border-border px-4 py-6 text-center text-sm text-muted-foreground">
-            Aucune ligne pour l&apos;instant.
-            <br />
-            <span className="text-xs">
-              Clique sur <span className="font-semibold text-foreground">
-                « Configurer la pergola »
-              </span>{" "}
-              pour créer le produit principal, ou ajoute une option du catalogue.
-            </span>
-          </div>
+        {/* ÉTAPE 2 — Lignes du devis (pergola + options + produits) */}
+        <div className="text-eyebrow border-t border-border pt-3 text-muted-foreground">
+          2 · Lignes du devis
+        </div>
+
+        {lines.length === 0 ? (
+          <p className="rounded-lg border border-dashed border-border px-3 py-4 text-center text-xs text-muted-foreground">
+            Configure la pergola (étape 1) puis ajoute des options : les lignes
+            apparaîtront ici, éditables avant la création du devis.
+          </p>
         ) : null}
 
         {lines.length > 0 ? (
@@ -338,7 +311,8 @@ export function DevisForm({
           </div>
         ) : null}
 
-        {lines.map((l, i) => (
+        {lines.map((l, i) =>
+          estClause(l) ? null : (
           <div key={i} className="space-y-1">
           <div className="grid grid-cols-2 gap-2 sm:grid-cols-[1fr_3.5rem_6rem_4rem_5rem_2rem]">
             <input
@@ -415,7 +389,8 @@ export function DevisForm({
             />
           )}
           </div>
-        ))}
+          ),
+        )}
 
         <button
           type="button"
@@ -424,6 +399,23 @@ export function DevisForm({
         >
           <Plus className="size-3.5" /> Ajouter une ligne libre
         </button>
+
+        {/* Clause suspensive : TOUJOURS incluse (ajoutée à 0 € sur le devis
+            Pennylane), non supprimable. Affichée ici pour la visibilité. */}
+        <div className="flex items-center gap-2 rounded-lg border border-primary/30 bg-primary/[0.04] px-3 py-2">
+          <span className="rounded bg-primary px-1.5 py-0.5 text-[10px] font-bold uppercase tracking-wide text-primary-foreground">
+            Incluse
+          </span>
+          <span className="flex-1 text-sm text-foreground">
+            Clause suspensive – faisabilité technique
+            <span className="ml-1 text-xs text-muted-foreground">
+              · toujours ajoutée au devis
+            </span>
+          </span>
+          <span className="text-sm font-medium tabular-nums text-muted-foreground">
+            0 €
+          </span>
+        </div>
 
         <div className="flex flex-col items-end gap-0.5 border-t border-border pt-2 text-sm">
           {remiseTotale > 0.005 ? (

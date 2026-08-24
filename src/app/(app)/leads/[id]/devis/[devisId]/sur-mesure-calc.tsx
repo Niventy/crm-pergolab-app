@@ -15,10 +15,20 @@ import {
   type ConfigSM,
   type Element,
   type Ligne,
+  type OptionSM,
 } from "./sur-mesure";
+import type { ProduitCatalogueDTO } from "@/app/(app)/reglages/actions";
 
 const eur = (n: number) => formatEuros(String(Math.round(n * 100) / 100));
 const entier = (raw: string) => Math.max(0, Math.trunc(Number(raw) || 0));
+
+// Indication de prix affichée sur la vignette d'une option (selon son mode).
+function indicPrix(o: OptionSM): string {
+  if (o.type === "unite") return `${eur(o.prix)}/u`;
+  if (o.type === "surface_forfait")
+    return `${eur(o.prix)}/m² + ${eur(o.forfait ?? 0)}`;
+  return `${eur(o.prix)}/m²`;
+}
 
 type Elem = Element & { key: number };
 
@@ -27,11 +37,15 @@ export function SurMesureCalc({
   initial,
   onAjouter,
   onClose,
+  catalogue = [],
+  onAjouterProduit,
 }: {
   descriptions: Record<string, string>;
   initial?: ConfigSM | null;
   onAjouter: (lignes: Ligne[], cfg: ConfigSM) => void;
-  onClose: () => void;
+  onClose?: () => void;
+  catalogue?: ProduitCatalogueDTO[];
+  onAjouterProduit?: (p: ProduitCatalogueDTO) => void;
 }) {
   // Une pergola a TOUJOURS un toit (qté 1). Poteaux : 4 par défaut (autoportée),
   // mais minimum 2 car les pergolas adossées à l'existant n'en ont que 2.
@@ -49,37 +63,39 @@ export function SurMesureCalc({
     () => (initial?.elements ?? []).map((e, i) => ({ ...e, key: i })),
   );
 
-  // Ligne d'ajout d'un élément.
+  // Ligne d'ajout d'un élément. Les dimensions se SAISISSENT en MILLIMÈTRES
+  // (usage métier : « 3350 L × 2500 H ») mais sont stockées en mètres (÷1000)
+  // car le moteur de prix travaille en m² — addLmm / addHmm = mm.
   const [optId, setOptId] = useState(OPTIONS[0].id);
   const [face, setFace] = useState(FACES[0]);
-  const [addL, setAddL] = useState(0);
-  const [addH, setAddH] = useState(0);
+  const [addLmm, setAddLmm] = useState(0);
+  const [addHmm, setAddHmm] = useState(0);
   const [addQte, setAddQte] = useState(1);
 
   const optSel = OPTIONS.find((o) => o.id === optId)!;
   const surfacique = optSel.type !== "unite";
   const apercuPrix = prixOption(optSel, {
     qte: addQte,
-    L: surfacique ? addL : 0,
-    H: surfacique ? addH : 0,
+    L: surfacique ? addLmm / 1000 : 0,
+    H: surfacique ? addHmm / 1000 : 0,
   });
 
   function ajouterElement() {
     if (addQte <= 0) return;
-    if (surfacique && (addL <= 0 || addH <= 0)) return;
+    if (surfacique && (addLmm <= 0 || addHmm <= 0)) return;
     setElements((e) => [
       ...e,
       {
         key: keyRef.current++,
         optionId: optId,
         face,
-        L: surfacique ? addL : 0,
-        H: surfacique ? addH : 0,
+        L: surfacique ? addLmm / 1000 : 0,
+        H: surfacique ? addHmm / 1000 : 0,
         qte: addQte,
       },
     ]);
-    setAddL(0);
-    setAddH(0);
+    setAddLmm(0);
+    setAddHmm(0);
     setAddQte(1);
   }
 
@@ -105,16 +121,18 @@ export function SurMesureCalc({
     <div className="space-y-4 rounded-xl border border-primary/30 bg-primary/[0.03] p-4">
       <div className="flex items-center justify-between">
         <span className="text-eyebrow flex items-center gap-1.5 text-primary">
-          <Calculator className="size-4" /> Configurer la pergola
+          <Calculator className="size-4" /> 1 · Configurer la pergola
         </span>
-        <button
-          type="button"
-          onClick={onClose}
-          className="text-muted-foreground hover:text-foreground"
-          aria-label="Fermer"
-        >
-          <X className="size-4" />
-        </button>
+        {onClose ? (
+          <button
+            type="button"
+            onClick={onClose}
+            className="text-muted-foreground hover:text-foreground"
+            aria-label="Fermer"
+          >
+            <X className="size-4" />
+          </button>
+        ) : null}
       </div>
 
       {/* Modèle */}
@@ -154,60 +172,98 @@ export function SurMesureCalc({
       {/* Éléments / options avec face */}
       <div className="rounded-lg border border-border bg-white p-3">
         <div className="text-eyebrow mb-2 text-muted-foreground">
-          Options — ajouter un élément (précise la face)
+          Options de la pergola — clique une option, précise la face et les dimensions
         </div>
 
-        {/* En-têtes */}
-        <div className="hidden grid-cols-[1fr_9rem_4.5rem_4.5rem_3.5rem_5rem_2rem] gap-2 pb-1 text-[0.65rem] font-semibold uppercase tracking-wide text-muted-foreground sm:grid">
-          <span>Option</span>
-          <span>Face</span>
-          <span className="text-right">Largeur (m)</span>
-          <span className="text-right">Hauteur (m)</span>
-          <span className="text-right">Qté</span>
-          <span className="text-right">Prix</span>
-          <span />
+        {/* Vignettes d'options dimensionnées */}
+        <div className="grid grid-cols-2 gap-2 sm:grid-cols-3 lg:grid-cols-4">
+          {OPTIONS.map((o) => {
+            const sel = o.id === optId;
+            return (
+              <button
+                key={o.id}
+                type="button"
+                onClick={() => setOptId(o.id)}
+                className={`flex flex-col items-start gap-0.5 rounded-lg border px-2.5 py-2 text-left transition-colors ${
+                  sel
+                    ? "border-primary bg-primary/10 ring-1 ring-primary"
+                    : "border-border bg-white hover:border-primary/40 hover:bg-primary/5"
+                }`}
+              >
+                <span className="text-sm font-medium leading-tight text-foreground">
+                  {o.label}
+                </span>
+                <span className="text-[0.7rem] text-muted-foreground">
+                  {indicPrix(o)}
+                </span>
+              </button>
+            );
+          })}
         </div>
 
-        {/* Ligne d'ajout */}
-        <div className="grid grid-cols-2 gap-2 sm:grid-cols-[1fr_9rem_4.5rem_4.5rem_3.5rem_5rem_2rem] sm:items-center">
-          <select
-            value={optId}
-            onChange={(e) => setOptId(e.target.value)}
-            className="col-span-2 h-9 rounded-md border border-border bg-white px-2 text-sm outline-none focus:border-primary sm:col-span-1"
-          >
-            {OPTIONS.map((o) => (
-              <option key={o.id} value={o.id}>
-                {o.label}
-              </option>
-            ))}
-          </select>
-          <select
-            value={face}
-            onChange={(e) => setFace(e.target.value)}
-            className="h-9 rounded-md border border-border bg-white px-1 text-sm outline-none focus:border-primary"
-            aria-label="Face"
-          >
-            {FACES.map((f) => (
-              <option key={f} value={f}>
-                {f}
-              </option>
-            ))}
-          </select>
+        {/* Paramètres de l'option choisie */}
+        <div className="mt-3 grid grid-cols-2 gap-2 rounded-lg border border-border bg-muted/30 p-2.5 sm:grid-cols-[9rem_5rem_5rem_3.5rem_6rem_2.25rem] sm:items-end">
+          <label className="col-span-2 sm:col-span-1">
+            <span className="text-[0.65rem] uppercase tracking-wide text-muted-foreground">
+              Face
+            </span>
+            <select
+              value={face}
+              onChange={(e) => setFace(e.target.value)}
+              className="h-9 w-full rounded-md border border-border bg-white px-1 text-sm outline-none focus:border-primary"
+            >
+              {FACES.map((f) => (
+                <option key={f} value={f}>
+                  {f}
+                </option>
+              ))}
+            </select>
+          </label>
           {surfacique ? (
             <>
-              <Mini label="Largeur" value={addL} onChange={setAddL} />
-              <Mini label="Hauteur" value={addH} onChange={setAddH} />
+              <label className="block">
+                <span className="text-[0.65rem] uppercase tracking-wide text-muted-foreground">
+                  Longueur (mm)
+                </span>
+                <Mini label="Longueur (mm)" value={addLmm} onChange={setAddLmm} />
+              </label>
+              <label className="block">
+                <span className="text-[0.65rem] uppercase tracking-wide text-muted-foreground">
+                  Hauteur (mm)
+                </span>
+                <Mini label="Hauteur (mm)" value={addHmm} onChange={setAddHmm} />
+              </label>
             </>
           ) : (
             <>
-              <span className="hidden text-center text-xs text-muted-foreground sm:block">—</span>
-              <span className="hidden text-center text-xs text-muted-foreground sm:block">—</span>
+              <div className="hidden text-center sm:block">
+                <span className="text-[0.65rem] uppercase tracking-wide text-muted-foreground">
+                  Longueur
+                </span>
+                <div className="h-9 pt-2 text-xs text-muted-foreground">—</div>
+              </div>
+              <div className="hidden text-center sm:block">
+                <span className="text-[0.65rem] uppercase tracking-wide text-muted-foreground">
+                  Hauteur
+                </span>
+                <div className="h-9 pt-2 text-xs text-muted-foreground">—</div>
+              </div>
             </>
           )}
-          <Mini label="Qté" value={addQte} onChange={setAddQte} />
-          <span className="hidden text-right text-sm tabular-nums text-muted-foreground sm:block">
-            {apercuPrix > 0 ? eur(apercuPrix) : "—"}
-          </span>
+          <label className="block">
+            <span className="text-[0.65rem] uppercase tracking-wide text-muted-foreground">
+              Qté
+            </span>
+            <Mini label="Qté" value={addQte} onChange={setAddQte} />
+          </label>
+          <div className="text-right text-sm">
+            <div className="text-[0.65rem] uppercase tracking-wide text-muted-foreground">
+              Prix
+            </div>
+            <div className="tabular-nums text-foreground">
+              {apercuPrix > 0 ? eur(apercuPrix) : "—"}
+            </div>
+          </div>
           <button
             type="button"
             onClick={ajouterElement}
@@ -227,7 +283,7 @@ export function SurMesureCalc({
               const dims =
                 o.type === "unite"
                   ? `×${el.qte}`
-                  : `${el.L}×${el.H} m · ×${el.qte}`;
+                  : `${Math.round(el.L * 1000)} L × ${Math.round(el.H * 1000)} H mm · ×${el.qte}`;
               return (
                 <li key={el.key} className="flex items-center gap-2 py-1.5 text-sm">
                   <span className="flex-1 text-foreground">
@@ -254,13 +310,40 @@ export function SurMesureCalc({
             Aucun élément ajouté. Choisis une option, sa face et ses dimensions puis « + ».
           </p>
         )}
+
+        {/* Produits & forfaits (menuiserie, énergie, forfaits) : ajout direct */}
+        {catalogue.length > 0 && onAjouterProduit ? (
+          <div className="mt-3 border-t border-border pt-3">
+            <div className="text-eyebrow mb-2 text-muted-foreground">
+              Produits &amp; forfaits — clique pour ajouter au devis
+            </div>
+            <div className="grid grid-cols-2 gap-2 sm:grid-cols-3 lg:grid-cols-4">
+              {catalogue.map((p) => (
+                <button
+                  key={p.id}
+                  type="button"
+                  onClick={() => onAjouterProduit(p)}
+                  className="flex flex-col items-start gap-0.5 rounded-lg border border-border bg-white px-2.5 py-2 text-left transition-colors hover:border-primary/40 hover:bg-primary/5"
+                >
+                  <span className="text-sm font-medium leading-tight text-foreground">
+                    {p.nom}
+                  </span>
+                  <span className="text-[0.7rem] text-muted-foreground">
+                    {p.categorie ? `${p.categorie} · ` : ""}
+                    {p.prixHt > 0 ? eur(p.prixHt) : "prix à définir"}
+                  </span>
+                </button>
+              ))}
+            </div>
+          </div>
+        ) : null}
       </div>
 
       {/* Aperçu des lignes envoyées au devis (kit + options) */}
       {lignesDevis.length > 0 ? (
         <div className="rounded-lg border border-border bg-white p-3">
           <div className="text-eyebrow mb-1.5 text-muted-foreground">
-            Lignes ajoutées au devis
+            Aperçu des lignes à ajouter
           </div>
           <ul className="divide-y divide-border">
             {lignesDevis.map((l, i) => (
@@ -278,7 +361,7 @@ export function SurMesureCalc({
       {/* Total + action */}
       <div className="flex flex-wrap items-center justify-between gap-3">
         <div className="text-sm">
-          <span className="text-muted-foreground">Total HT : </span>
+          <span className="text-muted-foreground">Sous-total pergola : </span>
           <span className="text-lg font-bold tabular-nums text-foreground">
             {eur(total)}
           </span>
@@ -331,18 +414,22 @@ function Mini({
   label,
   value,
   onChange,
+  dec = false,
 }: {
   label: string;
   value: number;
   onChange: (v: number) => void;
+  dec?: boolean; // autorise les décimales (dimensions en m, ex. 4,76)
 }) {
   return (
     <input
       type="number"
       min={0}
-      step={1}
+      step={dec ? 0.01 : 1}
       value={value}
-      onChange={(e) => onChange(entier(e.target.value))}
+      onChange={(e) =>
+        onChange(dec ? Math.max(0, Number(e.target.value) || 0) : entier(e.target.value))
+      }
       aria-label={label}
       placeholder={label}
       className="h-9 w-full rounded-md border border-border bg-white px-1.5 text-right text-sm outline-none focus:border-primary"
