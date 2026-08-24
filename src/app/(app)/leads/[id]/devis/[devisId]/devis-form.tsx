@@ -7,7 +7,7 @@ import { Plus, Trash2, FileText, Download, ExternalLink, RefreshCw, Calculator, 
 import { toast } from "sonner";
 import { formatEuros } from "@/lib/format";
 import { SurMesureCalc } from "./sur-mesure-calc";
-import { construireLignesDevis, type ConfigSM } from "./sur-mesure";
+import { MODELES, FACES, type ConfigSM } from "./sur-mesure";
 import type { ProduitCatalogueDTO } from "@/app/(app)/reglages/actions";
 import { sendDevisParGmail } from "../../email-actions";
 import {
@@ -37,6 +37,26 @@ const TVA_OPTIONS = [20, 10, 5.5, 0];
 // pas dans les lignes éditables pour éviter un doublon quand Pennylane la renvoie.
 const estClause = (l: Line) =>
   l.designation.trim().toLowerCase().startsWith("clause suspensive");
+
+// Reconnaît une ligne issue du CONFIGURATEUR (kit pergola « Pergola <Gamme> … »
+// ou option posée « <Option> — <Face> (…) ») à partir de son libellé. Nécessaire
+// car Pennylane ne renvoie pas le drapeau `config` : sans ça, en reconfigurant un
+// devis existant, l'ancienne pergola reste en double (jamais supprimée).
+const GAMME_RE = new RegExp(
+  `^Pergola\\s+(${MODELES.map(
+    (m) => m.code.charAt(0) + m.code.slice(1).toLowerCase(),
+  ).join("|")})`,
+  "i",
+);
+const FACE_RE = new RegExp(
+  ` — (${FACES.map((f) => f.replace(/[.*+?^${}()|[\]\\]/g, "\\$&")).join("|")}) \\(`,
+);
+const estLigneConfig = (designation: string): boolean => {
+  const d = designation.trim();
+  return GAMME_RE.test(d) || FACE_RE.test(d);
+};
+const taguerConfig = (ls: Line[]): Line[] =>
+  ls.map((l) => (estLigneConfig(l.designation) ? { ...l, config: true } : l));
 const eur = (n: number) => formatEuros(String(Math.round(n * 100) / 100));
 
 // La (les) ligne(s) « Pergola » toujours en tête, les options après.
@@ -143,7 +163,8 @@ export function DevisForm({
   useEffect(() => {
     if (!quoteId) return;
     getDevisLines(quoteId).then((r) => {
-      if (r.ok && r.lines?.length) setLines(ordonner(r.lines as Line[]));
+      if (r.ok && r.lines?.length)
+        setLines(ordonner(taguerConfig(r.lines as Line[])));
     });
     devisPdfUrl(quoteId).then((r) => {
       if (r.ok && r.url) setPdfUrl(r.url);
@@ -174,15 +195,6 @@ export function DevisForm({
   const removeLine = (i: number) =>
     setLines((ls) => ls.filter((_, j) => j !== i));
 
-  // Après un rechargement Pennylane, les lignes perdent le drapeau `config` :
-  // on le remet en comparant aux désignations que produit la config courante.
-  const retag = (ls: Line[]): Line[] => {
-    if (!smConfig) return ls;
-    const gen = new Set(
-      construireLignesDevis(smConfig, surMesureDescriptions).map((l) => l.designation),
-    );
-    return ls.map((l) => (gen.has(l.designation) ? { ...l, config: true } : l));
-  };
 
   // Applique la config : REMPLACE toutes les lignes du configurateur (kit +
   // options) par les nouvelles, en tête. Les lignes libres/catalogue sont gardées.
@@ -232,7 +244,7 @@ export function DevisForm({
           // (sinon un 2e enregistrement les recréerait en double).
           const fresh = await getDevisLines(quoteId);
           if (fresh.ok && fresh.lines?.length)
-            setLines(ordonner(retag(fresh.lines as Line[])));
+            setLines(ordonner(taguerConfig(fresh.lines as Line[])));
           // Laisse Pennylane régénérer le PDF avant de recharger l'aperçu.
           rafraichirPdf(2500);
           router.refresh();
