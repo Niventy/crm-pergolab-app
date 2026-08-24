@@ -34,9 +34,25 @@ function isClauseLine(l: DevisLine): boolean {
   return l.designation.trim().toLowerCase().startsWith("clause suspensive");
 }
 
-// Garantit exactement une ligne clause (0 €), en fin de devis, sur chaque devis.
+// La pergola (kit) reste toujours en tête du devis.
+function isPergolaKit(l: DevisLine): boolean {
+  return /^Pergola\s+\S/i.test(l.designation.trim());
+}
+
+// Ligne de remise commerciale (montant négatif), placée avant la clause.
+function isRemiseLine(l: DevisLine): boolean {
+  return l.designation.trim().toLowerCase().startsWith("remise commerciale");
+}
+
+// Ordonne et normalise les lignes envoyées à Pennylane :
+// 1) pergola (kit) · 2) options / produits (ordre conservé) · 3) remise
+// commerciale · 4) clause suspensive TOUJOURS en dernier. Une seule clause.
 function withClause(lines: DevisLine[]): DevisLine[] {
-  return lines.some(isClauseLine) ? lines : [...lines, CLAUSE_LINE];
+  const sansClause = lines.filter((l) => !isClauseLine(l));
+  const pergola = sansClause.filter(isPergolaKit);
+  const remise = sansClause.filter(isRemiseLine);
+  const reste = sansClause.filter((l) => !isPergolaKit(l) && !isRemiseLine(l));
+  return [...pergola, ...reste, ...remise, CLAUSE_LINE];
 }
 
 export type DevisLine = {
@@ -136,23 +152,6 @@ function toLinePayload(l: DevisLine) {
         vat_rate: vatCode(l.tva),
         ...discountPayload(l.remisePct),
       };
-}
-
-// Une ligne existante → payload de MISE À JOUR (id + valeurs éditables).
-function toLineUpdatePayload(l: DevisLine) {
-  return {
-    id: l.id,
-    label: l.designation || "Prestation",
-    // Idem : pas de description sur une ligne-produit (gérée par Pennylane).
-    ...(l.productId
-      ? {}
-      : { description: l.description?.trim() || undefined }),
-    quantity: l.quantite || 1,
-    raw_currency_unit_price: String(l.prixHt ?? 0),
-    unit: "pièce",
-    vat_rate: vatCode(l.tva),
-    ...discountPayload(l.remisePct),
-  };
 }
 
 function toInvoiceLines(lines: DevisLine[]) {
@@ -445,29 +444,23 @@ export async function updateQuotePennylane(
     return { ok: false, error: "Pennylane non configuré." };
   if (!lines.length) return { ok: false, error: "Ajoute au moins une ligne." };
 
-  // La clause (0 €) doit rester présente sur chaque devis.
+  // Pergola en tête · options/produits · clause en dernier.
   const lignes = withClause(lines);
 
-  // Pennylane attend un OBJET { create, update, delete }, pas un tableau.
-  // On diffe contre l'état réel du devis pour savoir quoi supprimer.
+  // Pennylane ne garantit pas l'ordre d'affichage des lignes (souvent par id).
+  // Pour forcer « pergola d'abord, clause en dernier », on RECRÉE toutes les
+  // lignes dans l'ordre voulu et on supprime les anciennes : les nouveaux id
+  // sont ainsi attribués dans le bon ordre. On ne diffe plus.
   const actuel = await getQuoteLines(quoteId);
   const idsActuels = (actuel.lines ?? [])
     .map((l) => l.id)
     .filter((id): id is number => typeof id === "number");
-  const idsGardes = new Set(
-    lignes.map((l) => l.id).filter((id): id is number => typeof id === "number"),
-  );
 
-  const create = lignes.filter((l) => !l.id).map(toLinePayload);
-  const update = lignes.filter((l) => l.id).map(toLineUpdatePayload);
-  const supprime = idsActuels
-    .filter((id) => !idsGardes.has(id))
-    .map((id) => ({ id }));
-
-  const invoice_lines: Record<string, unknown> = {};
-  if (create.length) invoice_lines.create = create;
-  if (update.length) invoice_lines.update = update;
-  if (supprime.length) invoice_lines.delete = supprime;
+  const invoice_lines: Record<string, unknown> = {
+    create: lignes.map(toLinePayload),
+  };
+  if (idsActuels.length)
+    invoice_lines.delete = idsActuels.map((id) => ({ id }));
 
   const res = await fetch(`${BASE}/quotes/${quoteId}`, {
     method: "PUT",

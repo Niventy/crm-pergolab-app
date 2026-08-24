@@ -40,6 +40,12 @@ const TVA_OPTIONS = [20, 10, 5.5];
 const estClause = (l: Line) =>
   l.designation.trim().toLowerCase().startsWith("clause suspensive");
 
+// Remise commerciale globale : ligne dédiée (montant négatif) gérée par un champ
+// à part, placée en fin de devis (avant la clause).
+const REMISE_LABEL = "Remise commerciale";
+const estRemise = (l: Line) =>
+  l.designation.trim().toLowerCase().startsWith("remise commerciale");
+
 // Reconnaît une ligne issue du CONFIGURATEUR (kit pergola « Pergola <Gamme> … »
 // ou option posée « <Option> — <Face> (…) ») à partir de son libellé. Nécessaire
 // car Pennylane ne renvoie pas le drapeau `config` : sans ça, en reconfigurant un
@@ -160,13 +166,22 @@ export function DevisForm({
   // Le devis démarre VIDE : la pergola vient du configurateur, les extras du
   // catalogue. Plus de ligne pré-remplie (qui prêtait à confusion).
   const [lines, setLines] = useState<Line[]>([]);
+  // Remise commerciale globale (€, montant positif saisi ; ligne à -montant).
+  const [remiseMontant, setRemiseMontant] = useState(0);
+
+  // Applique des lignes chargées : extrait la remise commerciale (champ à part)
+  // et retire sa ligne de la liste éditable.
+  const appliquerChargement = (raw: Line[]) => {
+    const rem = raw.find(estRemise);
+    setRemiseMontant(rem ? Math.abs(rem.prixHt || 0) : 0);
+    setLines(ordonner(taguerConfig(raw.filter((l) => !estRemise(l)))));
+  };
 
   // Devis existant : charge ses lignes + son PDF.
   useEffect(() => {
     if (!quoteId) return;
     getDevisLines(quoteId).then((r) => {
-      if (r.ok && r.lines?.length)
-        setLines(ordonner(taguerConfig(r.lines as Line[])));
+      if (r.ok && r.lines?.length) appliquerChargement(r.lines as Line[]);
     });
     devisPdfUrl(quoteId).then((r) => {
       if (r.ok && r.url) setPdfUrl(r.url);
@@ -226,17 +241,34 @@ export function DevisForm({
     return r > 0 ? brut * (1 - r / 100) : brut;
   };
   const brut = lines.reduce((a, l) => a + (l.quantite || 0) * (l.prixHt || 0), 0);
-  const ht = lines.reduce((a, l) => a + netLigne(l), 0);
-  const remiseTotale = brut - ht;
-  const tvaAmt = lines.reduce((a, l) => a + netLigne(l) * ((l.tva || 0) / 100), 0);
+  const htLignes = lines.reduce((a, l) => a + netLigne(l), 0);
+  // Remise commerciale globale déduite du HT (ligne à -montant, TVA 20 %).
+  const ht = htLignes - remiseMontant;
+  const remiseTotale = brut - ht; // remises par ligne + remise commerciale
+  const tvaAmt =
+    lines.reduce((a, l) => a + netLigne(l) * ((l.tva || 0) / 100), 0) -
+    remiseMontant * 0.2;
   const ttc = ht + tvaAmt;
 
   function enregistrer() {
-    const utiles = remplies();
-    if (!utiles.length) {
+    const base = remplies();
+    if (!base.length) {
       toast.error("Ajoute au moins une désignation.");
       return;
     }
+    // Injecte la remise commerciale en ligne (montant négatif) si renseignée.
+    const utiles: Line[] =
+      remiseMontant > 0
+        ? [
+            ...base,
+            {
+              designation: REMISE_LABEL,
+              quantite: 1,
+              prixHt: -Math.abs(remiseMontant),
+              tva: 20,
+            },
+          ]
+        : base;
     start(async () => {
       if (quoteId && devisId) {
         const r = await modifierDevis(leadId, devisId, quoteId, utiles);
@@ -246,7 +278,7 @@ export function DevisForm({
           // (sinon un 2e enregistrement les recréerait en double).
           const fresh = await getDevisLines(quoteId);
           if (fresh.ok && fresh.lines?.length)
-            setLines(ordonner(taguerConfig(fresh.lines as Line[])));
+            appliquerChargement(fresh.lines as Line[]);
           // Laisse Pennylane régénérer le PDF avant de recharger l'aperçu.
           rafraichirPdf(2500);
           router.refresh();
@@ -435,6 +467,30 @@ export function DevisForm({
           <span className="text-sm font-medium tabular-nums text-muted-foreground">
             0 €
           </span>
+        </div>
+
+        {/* Remise commerciale (globale) : ligne à -montant, avant la clause. */}
+        <div className="flex items-center gap-2 rounded-lg border border-orange-300 bg-orange-50/60 px-3 py-2">
+          <span className="flex-1 text-sm text-foreground">
+            Remise commerciale
+            <span className="ml-1 text-xs text-muted-foreground">
+              · geste commercial, en bas du devis
+            </span>
+          </span>
+          <div className="flex items-center gap-1">
+            <span className="text-muted-foreground">−</span>
+            <input
+              type="number"
+              min={0}
+              step="0.01"
+              value={remiseMontant || ""}
+              onChange={(e) => setRemiseMontant(Math.max(0, Number(e.target.value) || 0))}
+              placeholder="0"
+              className="h-9 w-24 rounded-md border border-border bg-white px-2 text-right text-sm outline-none focus:border-primary"
+              aria-label="Remise commerciale en euros"
+            />
+            <span className="text-sm text-muted-foreground">€ HT</span>
+          </div>
         </div>
 
         <div className="flex flex-col items-end gap-0.5 border-t border-border pt-2 text-sm">
