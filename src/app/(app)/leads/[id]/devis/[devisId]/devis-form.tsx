@@ -110,7 +110,9 @@ export function DevisForm({
 }) {
   const router = useRouter();
   const [pending, start] = useTransition();
-  const [smOpen, setSmOpen] = useState(false);
+  // Le configurateur est le SEUL moyen de créer la pergola : sur un nouveau
+  // devis, on l'ouvre directement (inutile de cliquer « Configurer »).
+  const [smOpen, setSmOpen] = useState(!quoteId);
   // Config du configurateur, conservée tant que le devis est ouvert (pour
   // rouvrir sans tout ressaisir et pour remplacer proprement ses lignes).
   const [smConfig, setSmConfig] = useState<ConfigSM | null>(null);
@@ -312,7 +314,7 @@ export function DevisForm({
           />
         ) : null}
 
-        {lines.length === 0 ? (
+        {lines.length === 0 && !smOpen ? (
           <div className="rounded-lg border border-dashed border-border px-4 py-6 text-center text-sm text-muted-foreground">
             Aucune ligne pour l&apos;instant.
             <br />

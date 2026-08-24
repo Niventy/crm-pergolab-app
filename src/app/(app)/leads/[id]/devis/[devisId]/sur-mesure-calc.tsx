@@ -33,8 +33,8 @@ export function SurMesureCalc({
   onAjouter: (lignes: Ligne[], cfg: ConfigSM) => void;
   onClose: () => void;
 }) {
-  // Une pergola a TOUJOURS un toit (qté 1) et au moins 4 poteaux → valeurs par
-  // défaut, avec 4 poteaux en minimum.
+  // Une pergola a TOUJOURS un toit (qté 1). Poteaux : 4 par défaut (autoportée),
+  // mais minimum 2 car les pergolas adossées à l'existant n'en ont que 2.
   const [modele, setModele] = useState(initial?.modele ?? MODELES[0].code);
   const [toitL, setToitL] = useState(initial?.toitL ?? 0);
   const [toitW, setToitW] = useState(initial?.toitW ?? 0);
@@ -142,7 +142,7 @@ export function SurMesureCalc({
           <Champ label="Largeur (m)" value={toitL} onChange={setToitL} />
           <Champ label="Avancée (m)" value={toitW} onChange={setToitW} />
           <Champ label="Qté toit" value={toitQte} onChange={setToitQte} min={1} />
-          <Champ label="Poteaux" value={poteaux} onChange={setPoteaux} min={4} />
+          <Champ label="Poteaux" value={poteaux} onChange={setPoteaux} min={2} />
           <Champ label="Éclairage" value={eclairage} onChange={setEclairage} />
         </div>
         <p className="mt-2 text-xs text-muted-foreground">

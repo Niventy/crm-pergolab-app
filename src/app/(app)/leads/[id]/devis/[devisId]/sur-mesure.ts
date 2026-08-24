@@ -43,7 +43,7 @@ export type OptionSM = {
 
 export const OPTIONS: OptionSM[] = [
   { id: "sheer", label: "Rideaux voile", type: "surface", prix: 50.75, defL: 4.63, defH: 2.33 },
-  { id: "zip", label: "Screen zip motorisé", type: "surface_forfait", prix: 189, forfait: 255.5, defL: 4.76, defH: 2.33 },
+  { id: "zip", label: "Store Motorisé", type: "surface_forfait", prix: 189, forfait: 255.5, defL: 4.76, defH: 2.33 },
   { id: "baie", label: "Baie vitrée coulissante", type: "surface", prix: 413, defL: 2.76, defH: 2.33 },
   { id: "volet_fixe", label: "Volet alu fixe", type: "surface", prix: 420, defL: 4.63, defH: 2.33 },
   { id: "volet_coul", label: "Volet alu coulissant", type: "surface", prix: 476, defL: 4.63, defH: 2.33 },
