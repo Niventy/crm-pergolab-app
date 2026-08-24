@@ -150,16 +150,21 @@ export function DevisForm({
     });
   }, [quoteId]);
 
-  function rafraichirPdf() {
+  // Pennylane régénère le PDF de façon asynchrone après une modif : on laisse un
+  // délai avant de recharger l'aperçu, sinon on récupère l'ancien PDF.
+  function rafraichirPdf(delayMs = 0) {
     if (!quoteId) return;
     setPdfLoading(true);
-    devisPdfUrl(quoteId).then((r) => {
-      if (r.ok && r.url) {
-        setPdfUrl(r.url);
-        setPdfKey((k) => k + 1);
-      } else toast.error(r.error ?? "PDF indisponible");
-      setPdfLoading(false);
-    });
+    const run = () =>
+      devisPdfUrl(quoteId).then((r) => {
+        if (r.ok && r.url) {
+          setPdfUrl(r.url);
+          setPdfKey((k) => k + 1); // change aussi le cache-buster de l'iframe
+        } else toast.error(r.error ?? "PDF indisponible");
+        setPdfLoading(false);
+      });
+    if (delayMs > 0) setTimeout(run, delayMs);
+    else run();
   }
 
   const setLine = (i: number, patch: Partial<Line>) =>
@@ -228,7 +233,8 @@ export function DevisForm({
           const fresh = await getDevisLines(quoteId);
           if (fresh.ok && fresh.lines?.length)
             setLines(ordonner(retag(fresh.lines as Line[])));
-          rafraichirPdf();
+          // Laisse Pennylane régénérer le PDF avant de recharger l'aperçu.
+          rafraichirPdf(2500);
           router.refresh();
         } else {
           toast.error(r.error ?? "Échec de la mise à jour");
@@ -677,7 +683,7 @@ export function DevisForm({
           {quoteId ? (
             <button
               type="button"
-              onClick={rafraichirPdf}
+              onClick={() => rafraichirPdf()}
               disabled={pdfLoading}
               className="inline-flex items-center gap-1 text-xs text-muted-foreground hover:text-foreground disabled:opacity-50"
             >
@@ -691,7 +697,9 @@ export function DevisForm({
           // #navpanes=0 masque les vignettes, #view=Fit affiche la page entière.
           <iframe
             key={pdfKey}
-            src={`${pdfUrl}#navpanes=0&toolbar=1&view=Fit`}
+            // _cb (cache-buster) force le navigateur à recharger le PDF régénéré,
+            // le public_file_url Pennylane étant stable d'une version à l'autre.
+            src={`${pdfUrl}${pdfUrl.includes("?") ? "&" : "?"}_cb=${pdfKey}#navpanes=0&toolbar=1&view=Fit`}
             title="Aperçu du devis"
             className="h-[calc(100vh-11rem)] min-h-[600px] w-full rounded-xl border border-border bg-white"
           />
