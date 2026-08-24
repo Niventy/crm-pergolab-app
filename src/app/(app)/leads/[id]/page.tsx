@@ -203,277 +203,220 @@ export default async function LeadPage({
   const emailConfigured =
     !!process.env.GOOGLE_CLIENT_ID && !!process.env.GOOGLE_CLIENT_SECRET && !!senderFrom;
 
-  return (
-    <main className="mx-auto w-full max-w-4xl flex-1 space-y-4 px-6 py-6">
-      <div className="flex items-center justify-between">
-        <Link
-          href="/kanban"
-          className="text-sm text-muted-foreground hover:text-foreground"
-        >
-          ← Retour au Kanban
-        </Link>
-        <Link
-          href={`/leads/${lead.id}/modifier`}
-          className={buttonVariants({ variant: "outline", size: "sm" })}
-        >
-          Modifier
-        </Link>
-      </div>
+  // ----- Blocs de la fiche, extraits pour une mise en page pleine largeur -----
 
-      {/* Alerte : lead non attribué */}
-      {!lead.assignedTo ? (
-        <div className="flex flex-wrap items-center gap-3 rounded-xl border border-amber-300 bg-amber-50 px-4 py-3">
-          <span className="text-sm font-semibold text-amber-800">
-            ⚠ Ce lead n&apos;est pas attribué.
-          </span>
-          {user?.id ? (
-            <form action={assignLead.bind(null, lead.id, user.id)}>
-              <Button
-                type="submit"
-                size="sm"
-                className="bg-amber-600 text-white hover:bg-amber-700"
-              >
-                M&apos;attribuer
-              </Button>
-            </form>
-          ) : null}
-          <span className="text-xs text-amber-700">
-            ou choisis un responsable en haut de la fiche.
-          </span>
-        </div>
-      ) : null}
-
-      {/* Bandeau informations principales */}
-      <Card>
-        <CardHeader>
-          <div className="flex flex-wrap items-start justify-between gap-3">
-            <div className="space-y-1">
-              <div className="flex flex-wrap items-center gap-2">
-                <CardTitle className="text-display text-2xl">{lead.nom}</CardTitle>
-                <StatutBadge statut={lead.statut} />
-                {lead.resoumission ? (
-                  <span className="inline-flex items-center gap-1 rounded-full bg-violet-100 px-2.5 py-1 text-[11px] font-bold uppercase tracking-wide text-violet-700">
-                    📩 2ᵉ formulaire
-                  </span>
-                ) : null}
-              </div>
-              {lead.entreprise ? (
-                <div className="text-sm text-muted-foreground">
-                  {lead.entreprise}
-                </div>
+  // Bandeau : identité + prise d'info + coordonnées/besoin.
+  const headerCard = (
+    <Card>
+      <CardHeader>
+        <div className="flex flex-wrap items-start justify-between gap-3">
+          <div className="space-y-1">
+            <div className="flex flex-wrap items-center gap-2">
+              <CardTitle className="text-display text-2xl">{lead.nom}</CardTitle>
+              <StatutBadge statut={lead.statut} />
+              {lead.resoumission ? (
+                <span className="inline-flex items-center gap-1 rounded-full bg-violet-100 px-2.5 py-1 text-[11px] font-bold uppercase tracking-wide text-violet-700">
+                  📩 2ᵉ formulaire
+                </span>
               ) : null}
             </div>
-            {/* Attribution — bien visible */}
-            <div className="flex items-center gap-2 rounded-lg border border-border bg-muted/40 px-3 py-1.5">
-              <span className="text-eyebrow text-muted-foreground">Géré par</span>
-              <AssignSelect
-                leadId={lead.id}
-                profiles={profiles}
-                assignedTo={lead.assignedTo}
-                currentUserId={user?.id ?? null}
-              />
-            </div>
-          </div>
-        </CardHeader>
-        <CardContent className="space-y-4">
-          {/* PRISE D'INFO — essentiels de l'appel, bien en évidence */}
-          <div className="grid grid-cols-1 gap-3 sm:grid-cols-3">
-            <BigField
-              label="Téléphone"
-              value={
-                lead.telephone ? (
-                  <a
-                    href={`tel:${lead.telephone.replace(/[^+\d]/g, "")}`}
-                    className="text-primary hover:underline"
-                  >
-                    {lead.telephone}
-                  </a>
-                ) : null
-              }
-            />
-            <BigField
-              label="Email"
-              value={
-                lead.email ? (
-                  <a href={`mailto:${lead.email}`} className="text-primary hover:underline">
-                    {lead.email}
-                  </a>
-                ) : null
-              }
-            />
-            <BigField
-              label="Type de projet"
-              value={humanise(lead.typeProjet) || humanise(lead.dimensions)}
-            />
-          </div>
-
-          {/* Coordonnées client (éditables) OU besoin prospect selon le statut */}
-          {isClient ? (
-            <div className="rounded-lg border border-border bg-muted/30 p-3">
-              <div className="text-eyebrow text-muted-foreground">
-                Coordonnées &amp; localisation
+            {lead.entreprise ? (
+              <div className="text-sm text-muted-foreground">
+                {lead.entreprise}
               </div>
-              <ChampsEditables
-                leadId={lead.id}
-                champs={[
-                  { key: "telephone", label: "Téléphone", value: lead.telephone, type: "tel" },
-                  { key: "email", label: "Email", value: lead.email, type: "email" },
-                  { key: "ville", label: "Ville", value: lead.ville },
-                  { key: "adresse", label: "Adresse", value: lead.adresse, full: true },
-                  { key: "codePostal", label: "Code postal", value: lead.codePostal },
-                ]}
-              />
-            </div>
-          ) : (
-            <div className="rounded-lg border border-border bg-muted/30 p-3">
-              <div className="text-eyebrow mb-2 text-muted-foreground">
-                Besoin client
-              </div>
-              <div className="grid grid-cols-1 gap-3 sm:grid-cols-3">
-                <Field label="Code postal" value={lead.codePostal} />
-                <Field
-                  label="Appel souhaité (créneau)"
-                  value={humanise(lead.dateSouhaiteeAppel)}
-                />
-                <Field
-                  label="Installation souhaitée"
-                  value={humanise(lead.dateInstallation)}
-                />
-              </div>
-            </div>
-          )}
-        </CardContent>
-      </Card>
-
-      {/* Suivi — pipeline + activité regroupés (le cœur du travail) */}
-      <Card className="border-l-4 border-l-primary">
-        <CardHeader>
-          <CardTitle className="text-base font-semibold text-foreground">
-            Suivi
-          </CardTitle>
-        </CardHeader>
-        <CardContent className="space-y-4">
-          <div>
-            <div className="text-eyebrow mb-2 text-muted-foreground">
-              Pipeline — déplacer la fiche
-            </div>
-            <StageMover
-              leadId={lead.id}
-              stages={stages}
-              currentStageId={lead.stageId}
-            />
-          </div>
-          <Separator />
-          <div>
-            <div className="text-eyebrow mb-2 text-muted-foreground">Activité</div>
-            <ActivitePills leadId={lead.id} cycle={cycle} activites={lead.echanges} />
-          </div>
-          <Separator />
-          <EmailCompose
-            leadId={lead.id}
-            nom={lead.nom}
-            email={lead.email}
-            configured={emailConfigured}
-            connectedEmail={connectedEmail}
-            senderFrom={senderFrom}
-          />
-        </CardContent>
-      </Card>
-
-      {/* Emails (Gmail) — fil envois + réponses */}
-      {emailConfigured && lead.email ? (
-        <Card>
-          <CardHeader>
-            <CardTitle className="text-eyebrow text-muted-foreground">Emails</CardTitle>
-          </CardHeader>
-          <CardContent>
-            <EmailThread leadEmail={lead.email} />
-          </CardContent>
-        </Card>
-      ) : null}
-
-      {/* Conversation d'équipe — mis en avant */}
-      <Card className="border-l-4 border-l-brand">
-        <CardHeader>
-          <CardTitle className="text-base font-semibold text-foreground">
-            Conversation
-          </CardTitle>
-        </CardHeader>
-        <CardContent>
-          <Conversation
-            leadId={lead.id}
-            profiles={profiles}
-            messages={lead.notes}
-            currentUserId={user?.id ?? null}
-          />
-        </CardContent>
-      </Card>
-
-      {/* RDV + Relance — cycles prospection & devis (masqué en mode client) */}
-      {cycle <= 2 && !isClient ? (
-      <div className="grid grid-cols-1 gap-4 sm:grid-cols-2">
-        <Card>
-          <CardHeader>
-            <CardTitle className="text-eyebrow text-muted-foreground">Rendez-vous</CardTitle>
-          </CardHeader>
-          <CardContent className="grid grid-cols-2 gap-4 sm:grid-cols-4">
-            <Field label="Date" value={formatDate(lead.rdvDate)} />
-            <Field label="Heure" value={lead.rdvHeure} />
-            <Field
-              label="Type"
-              value={lead.rdvType ? RDV_TYPE_LABEL[lead.rdvType] : "—"}
-            />
-            <Field
-              label="Statut"
-              value={lead.rdvStatut ? RDV_STATUT_LABEL[lead.rdvStatut] : "—"}
-            />
-            {lead.rdvDate ? (
-              <Field
-                label="Google Agenda"
-                value={
-                  lead.rdvEventId ? (
-                    <span className="text-green-700">✓ synchronisé</span>
-                  ) : (
-                    <span className="text-muted-foreground">non synchronisé</span>
-                  )
-                }
-              />
             ) : null}
-          </CardContent>
-        </Card>
+          </div>
+          {/* Attribution — bien visible */}
+          <div className="flex items-center gap-2 rounded-lg border border-border bg-muted/40 px-3 py-1.5">
+            <span className="text-eyebrow text-muted-foreground">Géré par</span>
+            <AssignSelect
+              leadId={lead.id}
+              profiles={profiles}
+              assignedTo={lead.assignedTo}
+              currentUserId={user?.id ?? null}
+            />
+          </div>
+        </div>
+      </CardHeader>
+      <CardContent className="space-y-4">
+        {/* PRISE D'INFO — essentiels de l'appel, bien en évidence */}
+        <div className="grid grid-cols-1 gap-3 sm:grid-cols-3">
+          <BigField
+            label="Téléphone"
+            value={
+              lead.telephone ? (
+                <a
+                  href={`tel:${lead.telephone.replace(/[^+\d]/g, "")}`}
+                  className="text-primary hover:underline"
+                >
+                  {lead.telephone}
+                </a>
+              ) : null
+            }
+          />
+          <BigField
+            label="Email"
+            value={
+              lead.email ? (
+                <a href={`mailto:${lead.email}`} className="text-primary hover:underline">
+                  {lead.email}
+                </a>
+              ) : null
+            }
+          />
+          <BigField
+            label="Type de projet"
+            value={humanise(lead.typeProjet) || humanise(lead.dimensions)}
+          />
+        </div>
 
-        <Card>
-          <CardHeader>
-            <CardTitle className="text-eyebrow text-muted-foreground">Relance</CardTitle>
-          </CardHeader>
-          <CardContent className="grid grid-cols-2 gap-4">
+        {/* Coordonnées client (éditables) OU besoin prospect selon le statut */}
+        {isClient ? (
+          <div className="rounded-lg border border-border bg-muted/30 p-3">
+            <div className="text-eyebrow text-muted-foreground">
+              Coordonnées &amp; localisation
+            </div>
+            <ChampsEditables
+              leadId={lead.id}
+              champs={[
+                { key: "telephone", label: "Téléphone", value: lead.telephone, type: "tel" },
+                { key: "email", label: "Email", value: lead.email, type: "email" },
+                { key: "ville", label: "Ville", value: lead.ville },
+                { key: "adresse", label: "Adresse", value: lead.adresse, full: true },
+                { key: "codePostal", label: "Code postal", value: lead.codePostal },
+              ]}
+            />
+          </div>
+        ) : (
+          <div className="rounded-lg border border-border bg-muted/30 p-3">
+            <div className="text-eyebrow mb-2 text-muted-foreground">
+              Besoin client
+            </div>
+            <div className="grid grid-cols-1 gap-3 sm:grid-cols-3">
+              <Field label="Code postal" value={lead.codePostal} />
+              <Field
+                label="Appel souhaité (créneau)"
+                value={humanise(lead.dateSouhaiteeAppel)}
+              />
+              <Field
+                label="Installation souhaitée"
+                value={humanise(lead.dateInstallation)}
+              />
+            </div>
+          </div>
+        )}
+      </CardContent>
+    </Card>
+  );
+
+  // Suivi — pipeline + activité + email (le cœur du travail).
+  const suiviCard = (
+    <Card className="border-l-4 border-l-primary">
+      <CardHeader>
+        <CardTitle className="text-base font-semibold text-foreground">
+          Suivi
+        </CardTitle>
+      </CardHeader>
+      <CardContent className="space-y-4">
+        <div>
+          <div className="text-eyebrow mb-2 text-muted-foreground">
+            {isClient
+              ? "Pipeline client — pose & technique"
+              : "Pipeline — déplacer la fiche"}
+          </div>
+          <StageMover
+            leadId={lead.id}
+            stages={stages}
+            currentStageId={lead.stageId}
+            isClient={isClient}
+          />
+        </div>
+        <Separator />
+        <div>
+          <div className="text-eyebrow mb-2 text-muted-foreground">Activité</div>
+          <ActivitePills leadId={lead.id} cycle={cycle} activites={lead.echanges} />
+        </div>
+        <Separator />
+        <EmailCompose
+          leadId={lead.id}
+          nom={lead.nom}
+          email={lead.email}
+          configured={emailConfigured}
+          connectedEmail={connectedEmail}
+          senderFrom={senderFrom}
+        />
+      </CardContent>
+    </Card>
+  );
+
+  // RDV + Relance — prospect uniquement (cycles 1 & 2).
+  const rdvCard =
+    cycle <= 2 && !isClient ? (
+      <Card>
+        <CardHeader>
+          <CardTitle className="text-eyebrow text-muted-foreground">Rendez-vous</CardTitle>
+        </CardHeader>
+        <CardContent className="grid grid-cols-2 gap-4">
+          <Field label="Date" value={formatDate(lead.rdvDate)} />
+          <Field label="Heure" value={lead.rdvHeure} />
+          <Field
+            label="Type"
+            value={lead.rdvType ? RDV_TYPE_LABEL[lead.rdvType] : "—"}
+          />
+          <Field
+            label="Statut"
+            value={lead.rdvStatut ? RDV_STATUT_LABEL[lead.rdvStatut] : "—"}
+          />
+          {lead.rdvDate ? (
             <Field
-              label="Prochaine relance"
+              label="Google Agenda"
               value={
-                hasRelance ? (
-                  <span className="text-orange-700">
-                    {formatDate(lead.nextRelanceDate)}
-                  </span>
+                lead.rdvEventId ? (
+                  <span className="text-green-700">✓ synchronisé</span>
                 ) : (
-                  "—"
+                  <span className="text-muted-foreground">non synchronisé</span>
                 )
               }
             />
-            <Field label="Nombre de relances" value={String(lead.relanceCount)} />
-          </CardContent>
-        </Card>
-      </div>
-      ) : null}
+          ) : null}
+        </CardContent>
+      </Card>
+    ) : null;
 
-      {/* Suivi commercial — dès le cycle devis */}
-      {cycle >= 2 ? (
+  const relanceCard =
+    cycle <= 2 && !isClient ? (
+      <Card>
+        <CardHeader>
+          <CardTitle className="text-eyebrow text-muted-foreground">Relance</CardTitle>
+        </CardHeader>
+        <CardContent className="grid grid-cols-2 gap-4">
+          <Field
+            label="Prochaine relance"
+            value={
+              hasRelance ? (
+                <span className="text-orange-700">
+                  {formatDate(lead.nextRelanceDate)}
+                </span>
+              ) : (
+                "—"
+              )
+            }
+          />
+          <Field label="Nombre de relances" value={String(lead.relanceCount)} />
+        </CardContent>
+      </Card>
+    ) : null;
+
+  // Suivi commercial — dès le cycle devis.
+  const suiviCommercialCard =
+    cycle >= 2 ? (
       <Card>
         <CardHeader>
           <CardTitle className="text-eyebrow text-muted-foreground">
             Suivi commercial
           </CardTitle>
         </CardHeader>
-        <CardContent className="grid grid-cols-2 gap-4 sm:grid-cols-4">
+        <CardContent className="grid grid-cols-2 gap-4">
           <Field
             label="1er contact"
             value={
@@ -497,15 +440,16 @@ export default async function LeadPage({
           />
         </CardContent>
       </Card>
-      ) : null}
+    ) : null;
 
-      {/* Produit — dès le cycle devis */}
-      {cycle >= 2 ? (
+  // Produit — dès le cycle devis.
+  const produitCard =
+    cycle >= 2 ? (
       <Card>
         <CardHeader>
           <CardTitle className="text-eyebrow text-muted-foreground">Produit</CardTitle>
         </CardHeader>
-        <CardContent className="grid grid-cols-2 gap-4 sm:grid-cols-3">
+        <CardContent className="grid grid-cols-2 gap-4">
           <Field label="Gamme" value={lead.gamme} />
           <Field label="Dimensions" value={lead.dimensions} />
           <Field label="Finition" value={lead.finition} />
@@ -534,17 +478,18 @@ export default async function LeadPage({
           ) : null}
         </CardContent>
       </Card>
-      ) : null}
+    ) : null;
 
-      {/* Pose & technique — cycle 3 uniquement */}
-      {cycle === 3 ? (
+  // Pose & technique — cycle 3 uniquement.
+  const poseCard =
+    cycle === 3 ? (
       <Card>
         <CardHeader>
           <CardTitle className="text-eyebrow text-muted-foreground">
             Pose & technique
           </CardTitle>
         </CardHeader>
-        <CardContent className="grid grid-cols-2 gap-4 sm:grid-cols-4">
+        <CardContent className="grid grid-cols-2 gap-4">
           <Field
             label="Poseur / métreur"
             value={lead.poseur?.nom ?? lead.poseur?.email ?? "Non assigné"}
@@ -560,179 +505,327 @@ export default async function LeadPage({
           <Field label="Adresse de pose" value={lead.adressePose} />
         </CardContent>
       </Card>
-      ) : null}
+    ) : null;
 
-      {/* Encaissement & administratif — dossier client (fiches gagnées) */}
-      {lead.statut === "gagnee" ? (
-        <Card>
-          <CardHeader>
-            <CardTitle className="text-eyebrow text-muted-foreground">
-              Encaissement &amp; administratif
-            </CardTitle>
-          </CardHeader>
-          <CardContent>
-            <EncaissementForm
-              leadId={lead.id}
-              montantHt={lead.montant ? Number(lead.montant) : null}
-              montantTtc={lead.montantTtc}
-              acompteEncaisse={lead.acompteEncaisse}
-              paiementEspece={lead.paiementEspece}
-              financeur={lead.financeur}
-              equipePose={lead.equipePose}
-              mesure={lead.mesure}
-              factureSoldeClient={lead.factureSoldeClient}
-              factureSoldePoseur={lead.factureSoldePoseur}
-              dossierDateEnvoi={lead.dossierDateEnvoi}
-            />
-          </CardContent>
-        </Card>
-      ) : null}
+  // Encaissement & administratif — dossier client (fiches gagnées).
+  const encaissementCard = isClient ? (
+    <Card>
+      <CardHeader>
+        <CardTitle className="text-eyebrow text-muted-foreground">
+          Encaissement &amp; administratif
+        </CardTitle>
+      </CardHeader>
+      <CardContent>
+        <EncaissementForm
+          leadId={lead.id}
+          montantHt={lead.montant ? Number(lead.montant) : null}
+          montantTtc={lead.montantTtc}
+          acompteEncaisse={lead.acompteEncaisse}
+          paiementEspece={lead.paiementEspece}
+          financeur={lead.financeur}
+          equipePose={lead.equipePose}
+          mesure={lead.mesure}
+          factureSoldeClient={lead.factureSoldeClient}
+          factureSoldePoseur={lead.factureSoldePoseur}
+          dossierDateEnvoi={lead.dossierDateEnvoi}
+        />
+      </CardContent>
+    </Card>
+  ) : null;
 
-      {/* Garanties — portefeuille client (fiches gagnées) */}
-      {lead.statut === "gagnee"
-        ? (() => {
-            const g = computeGaranties({
-              datePoseReelle: lead.datePoseReelle,
-              dateSignature: lead.dateSignature,
-            });
-            return (
-              <Card>
-                <CardHeader>
-                  <CardTitle className="text-eyebrow text-muted-foreground">
-                    Garanties
-                  </CardTitle>
-                </CardHeader>
-                <CardContent className="space-y-2">
-                  <div className="text-xs text-muted-foreground">
-                    Point de départ :{" "}
-                    {g.source === "pose"
-                      ? `pose du ${formatDate(g.depart)}`
-                      : g.source === "signature"
-                        ? `signature du ${formatDate(g.depart)} (pose non datée)`
-                        : "à définir (aucune date de pose ni de signature)"}
-                  </div>
-                  <GarantieLigne
-                    titre="Structure aluminium"
-                    ans={GARANTIE_STRUCTURE_ANS}
-                    fin={g.structureFin}
-                    statut={g.structureStatut}
-                  />
-                  <GarantieLigne
-                    titre="Motorisation"
-                    ans={GARANTIE_MOTORISATION_ANS}
-                    fin={g.motorisationFin}
-                    statut={g.motorisationStatut}
-                  />
-                </CardContent>
-              </Card>
-            );
-          })()
-        : null}
+  // Garanties — portefeuille client (fiches gagnées).
+  const garantiesCard = isClient
+    ? (() => {
+        const g = computeGaranties({
+          datePoseReelle: lead.datePoseReelle,
+          dateSignature: lead.dateSignature,
+        });
+        return (
+          <Card>
+            <CardHeader>
+              <CardTitle className="text-eyebrow text-muted-foreground">
+                Garanties
+              </CardTitle>
+            </CardHeader>
+            <CardContent className="space-y-2">
+              <div className="text-xs text-muted-foreground">
+                Point de départ :{" "}
+                {g.source === "pose"
+                  ? `pose du ${formatDate(g.depart)}`
+                  : g.source === "signature"
+                    ? `signature du ${formatDate(g.depart)} (pose non datée)`
+                    : "à définir (aucune date de pose ni de signature)"}
+              </div>
+              <GarantieLigne
+                titre="Structure aluminium"
+                ans={GARANTIE_STRUCTURE_ANS}
+                fin={g.structureFin}
+                statut={g.structureStatut}
+              />
+              <GarantieLigne
+                titre="Motorisation"
+                ans={GARANTIE_MOTORISATION_ANS}
+                fin={g.motorisationFin}
+                statut={g.motorisationStatut}
+              />
+            </CardContent>
+          </Card>
+        );
+      })()
+    : null;
 
-      {/* Devis — composés dans le CRM puis créés dans Pennylane */}
+  // Devis — composés dans le CRM puis créés dans Pennylane.
+  const devisCard = (
+    <Card>
+      <CardHeader>
+        <CardTitle className="text-eyebrow text-muted-foreground">Devis</CardTitle>
+      </CardHeader>
+      <CardContent>
+        <DevisEditor
+          leadId={lead.id}
+          devisExistants={lead.devis}
+          pennylaneConfigured={!!process.env.PENNYLANE_API_KEY}
+        />
+      </CardContent>
+    </Card>
+  );
+
+  // Facturation Pennylane — acompte + solde (fiches gagnées).
+  const facturationCard = isClient ? (
+    <Card>
+      <CardHeader>
+        <CardTitle className="text-eyebrow text-muted-foreground">
+          Facturation
+        </CardTitle>
+      </CardHeader>
+      <CardContent>
+        <Facturation
+          leadId={lead.id}
+          pennylaneConfigured={!!process.env.PENNYLANE_API_KEY}
+          montantHt={Number(lead.montant ?? 0)}
+          factures={lead.factures.map((f) => ({
+            id: f.id,
+            type: f.type,
+            numero: f.numero,
+            externalId: f.externalId,
+            montantHt: f.montantHt ? Number(f.montantHt) : null,
+            statut: f.statut,
+          }))}
+        />
+      </CardContent>
+    </Card>
+  ) : null;
+
+  // Conversation d'équipe.
+  const conversationCard = (
+    <Card className="border-l-4 border-l-brand">
+      <CardHeader>
+        <CardTitle className="text-base font-semibold text-foreground">
+          Conversation
+        </CardTitle>
+      </CardHeader>
+      <CardContent>
+        <Conversation
+          leadId={lead.id}
+          profiles={profiles}
+          messages={lead.notes}
+          currentUserId={user?.id ?? null}
+        />
+      </CardContent>
+    </Card>
+  );
+
+  // Emails (Gmail) — fil envois + réponses.
+  const emailsCard =
+    emailConfigured && lead.email ? (
       <Card>
         <CardHeader>
-          <CardTitle className="text-eyebrow text-muted-foreground">Devis</CardTitle>
+          <CardTitle className="text-eyebrow text-muted-foreground">Emails</CardTitle>
         </CardHeader>
         <CardContent>
-          <DevisEditor
-            leadId={lead.id}
-            devisExistants={lead.devis}
-            pennylaneConfigured={!!process.env.PENNYLANE_API_KEY}
-          />
+          <EmailThread leadEmail={lead.email} />
         </CardContent>
       </Card>
+    ) : null;
 
-      {/* Facturation Pennylane — acompte + solde (fiches gagnées) */}
-      {lead.statut === "gagnee" ? (
-        <Card>
-          <CardHeader>
-            <CardTitle className="text-eyebrow text-muted-foreground">
-              Facturation
-            </CardTitle>
-          </CardHeader>
-          <CardContent>
-            <Facturation
-              leadId={lead.id}
-              pennylaneConfigured={!!process.env.PENNYLANE_API_KEY}
-              montantHt={Number(lead.montant ?? 0)}
-              factures={lead.factures.map((f) => ({
-                id: f.id,
-                type: f.type,
-                numero: f.numero,
-                externalId: f.externalId,
-                montantHt: f.montantHt ? Number(f.montantHt) : null,
-                statut: f.statut,
-              }))}
-            />
-          </CardContent>
-        </Card>
-      ) : null}
+  // Documents — factures, plans, PV, photos (Supabase Storage).
+  const documentsCard = (
+    <Card>
+      <CardHeader>
+        <CardTitle className="text-eyebrow text-muted-foreground">
+          Documents
+        </CardTitle>
+      </CardHeader>
+      <CardContent>
+        <Documents
+          leadId={lead.id}
+          docs={lead.documents.map((d) => ({
+            id: d.id,
+            nom: d.nom,
+            mime: d.mime,
+            taille: d.taille,
+            createdAt: d.createdAt,
+            auteur: d.auteur?.nom ?? d.auteur?.email ?? null,
+          }))}
+        />
+      </CardContent>
+    </Card>
+  );
 
-      {/* Documents — factures, plans, PV, photos (Supabase Storage) */}
-      <Card>
-        <CardHeader>
-          <CardTitle className="text-eyebrow text-muted-foreground">
-            Documents
-          </CardTitle>
-        </CardHeader>
-        <CardContent>
-          <Documents
-            leadId={lead.id}
-            docs={lead.documents.map((d) => ({
-              id: d.id,
-              nom: d.nom,
-              mime: d.mime,
-              taille: d.taille,
-              createdAt: d.createdAt,
-              auteur: d.auteur?.nom ?? d.auteur?.email ?? null,
-            }))}
-          />
-        </CardContent>
-      </Card>
+  // Autres informations — secondaire.
+  const autresInfosCard = (
+    <Card>
+      <CardHeader>
+        <CardTitle className="text-eyebrow text-muted-foreground">
+          Autres informations
+        </CardTitle>
+      </CardHeader>
+      <CardContent className="grid grid-cols-2 gap-4">
+        <Field label="Source" value={lead.source} />
+        <Field label="Campagne" value={lead.campagne} />
+        <Field label="Montant" value={formatEuros(lead.montant)} />
+        <Field
+          label="Probabilité"
+          value={lead.probabilite !== null ? `${lead.probabilite} %` : "—"}
+        />
+        <Field label="Objectif" value={formatDate(lead.objectifDate)} />
+        <Field
+          label="Reçu le"
+          value={new Date(lead.createdAt).toLocaleString("fr-FR", {
+            dateStyle: "short",
+            timeStyle: "short",
+            timeZone: "Europe/Paris",
+          })}
+        />
+        <Field
+          label="Dernière modification"
+          value={
+            lead.modifiePar
+              ? `${lead.modifiePar.nom ?? lead.modifiePar.email} · ${tempsRelatif(lead.updatedAt)}`
+              : tempsRelatif(lead.updatedAt) || "—"
+          }
+        />
+      </CardContent>
+    </Card>
+  );
 
-      {/* Autres informations — secondaire, en bas */}
-      <Card>
-        <CardHeader>
-          <CardTitle className="text-eyebrow text-muted-foreground">
-            Autres informations
-          </CardTitle>
-        </CardHeader>
-        <CardContent className="grid grid-cols-2 gap-4 sm:grid-cols-4">
-          <Field label="Source" value={lead.source} />
-          <Field label="Campagne" value={lead.campagne} />
-          <Field label="Montant" value={formatEuros(lead.montant)} />
-          <Field
-            label="Probabilité"
-            value={lead.probabilite !== null ? `${lead.probabilite} %` : "—"}
-          />
-          <Field label="Objectif" value={formatDate(lead.objectifDate)} />
-          <Field
-            label="Reçu le"
-            value={new Date(lead.createdAt).toLocaleString("fr-FR", {
-              dateStyle: "short",
-              timeStyle: "short",
-              timeZone: "Europe/Paris",
-            })}
-          />
-          <Field
-            label="Dernière modification"
-            value={
-              lead.modifiePar
-                ? `${lead.modifiePar.nom ?? lead.modifiePar.email} · ${tempsRelatif(lead.updatedAt)}`
-                : tempsRelatif(lead.updatedAt) || "—"
-            }
-          />
-        </CardContent>
-      </Card>
+  const detailsBand = poseCard || suiviCommercialCard || produitCard;
 
-      <div className="flex justify-center pt-2">
-        <Link
-          href={`/leads/${lead.id}/modifier`}
-          className={buttonVariants({ variant: "outline" })}
-        >
-          Modifier la fiche
-        </Link>
+  return (
+    <main className="w-full flex-1 px-4 py-6 lg:px-6">
+      <div className="mx-auto w-full max-w-[1500px] space-y-4">
+        {/* Barre supérieure */}
+        <div className="flex items-center justify-between">
+          <Link
+            href="/kanban"
+            className="text-sm text-muted-foreground hover:text-foreground"
+          >
+            ← Retour au Kanban
+          </Link>
+          <Link
+            href={`/leads/${lead.id}/modifier`}
+            className={buttonVariants({ variant: "outline", size: "sm" })}
+          >
+            Modifier
+          </Link>
+        </div>
+
+        {/* Alerte : lead non attribué */}
+        {!lead.assignedTo ? (
+          <div className="flex flex-wrap items-center gap-3 rounded-xl border border-amber-300 bg-amber-50 px-4 py-3">
+            <span className="text-sm font-semibold text-amber-800">
+              ⚠ Ce lead n&apos;est pas attribué.
+            </span>
+            {user?.id ? (
+              <form action={assignLead.bind(null, lead.id, user.id)}>
+                <Button
+                  type="submit"
+                  size="sm"
+                  className="bg-amber-600 text-white hover:bg-amber-700"
+                >
+                  M&apos;attribuer
+                </Button>
+              </form>
+            ) : null}
+            <span className="text-xs text-amber-700">
+              ou choisis un responsable en haut de la fiche.
+            </span>
+          </div>
+        ) : null}
+
+        {headerCard}
+
+        {isClient ? (
+          <>
+            {/* Client : Suivi 75% + Conversation 25% */}
+            <div className="grid grid-cols-1 items-start gap-4 lg:grid-cols-4">
+              <div className="lg:col-span-3">{suiviCard}</div>
+              <div className="lg:col-span-1">{conversationCard}</div>
+            </div>
+
+            {/* Dossier administratif client */}
+            {encaissementCard}
+
+            {/* Facturation 50% / Devis 50% */}
+            <div className="grid grid-cols-1 items-start gap-4 lg:grid-cols-2">
+              {facturationCard}
+              {devisCard}
+            </div>
+
+            {/* Documents 100% */}
+            {documentsCard}
+            {emailsCard}
+
+            {/* Détails métier — secondaire, 2 à 3 de front */}
+            {detailsBand ? (
+              <div className="grid grid-cols-1 items-start gap-4 md:grid-cols-2 2xl:grid-cols-3">
+                {poseCard}
+                {suiviCommercialCard}
+                {produitCard}
+                {autresInfosCard}
+              </div>
+            ) : (
+              autresInfosCard
+            )}
+
+            {/* Garanties — tout en bas */}
+            {garantiesCard}
+          </>
+        ) : (
+          <>
+            {/* Prospect : Suivi (large) + colonne de contexte */}
+            <div className="grid grid-cols-1 items-start gap-4 lg:grid-cols-3">
+              <div className="space-y-4 lg:col-span-2">{suiviCard}</div>
+              <div className="space-y-4">
+                {rdvCard}
+                {relanceCard}
+                {autresInfosCard}
+              </div>
+            </div>
+
+            {/* Détails métier : cartes compactes, 2 à 3 de front */}
+            {detailsBand ? (
+              <div className="grid grid-cols-1 items-start gap-4 md:grid-cols-2 2xl:grid-cols-3">
+                {suiviCommercialCard}
+                {produitCard}
+              </div>
+            ) : null}
+
+            {devisCard}
+            {conversationCard}
+            {emailsCard}
+            {documentsCard}
+          </>
+        )}
+
+        <div className="flex justify-center pt-2">
+          <Link
+            href={`/leads/${lead.id}/modifier`}
+            className={buttonVariants({ variant: "outline" })}
+          >
+            Modifier la fiche
+          </Link>
+        </div>
       </div>
     </main>
   );

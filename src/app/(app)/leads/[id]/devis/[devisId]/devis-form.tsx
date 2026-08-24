@@ -28,6 +28,7 @@ type Line = {
   prixHt: number;
   tva: number;
   productId?: number | null;
+  remisePct?: number | null; // remise en % sur la ligne (ex. 10 = -10%)
   config?: boolean; // ligne issue du configurateur (kit ou option)
 };
 const TVA_OPTIONS = [20, 10, 5.5, 0];
@@ -192,11 +193,16 @@ export function DevisForm({
     ]);
 
   const remplies = () => lines.filter((l) => l.designation.trim());
-  const ht = lines.reduce((a, l) => a + (l.quantite || 0) * (l.prixHt || 0), 0);
-  const tvaAmt = lines.reduce(
-    (a, l) => a + (l.quantite || 0) * (l.prixHt || 0) * ((l.tva || 0) / 100),
-    0,
-  );
+  // HT d'une ligne, remise (%) déduite.
+  const netLigne = (l: Line) => {
+    const brut = (l.quantite || 0) * (l.prixHt || 0);
+    const r = Number(l.remisePct ?? 0);
+    return r > 0 ? brut * (1 - r / 100) : brut;
+  };
+  const brut = lines.reduce((a, l) => a + (l.quantite || 0) * (l.prixHt || 0), 0);
+  const ht = lines.reduce((a, l) => a + netLigne(l), 0);
+  const remiseTotale = brut - ht;
+  const tvaAmt = lines.reduce((a, l) => a + netLigne(l) * ((l.tva || 0) / 100), 0);
   const ttc = ht + tvaAmt;
 
   function enregistrer() {
@@ -320,10 +326,11 @@ export function DevisForm({
         ) : null}
 
         {lines.length > 0 ? (
-          <div className="hidden grid-cols-[1fr_3.5rem_6rem_5rem_2rem] gap-2 text-[0.7rem] font-semibold uppercase tracking-wide text-muted-foreground sm:grid">
+          <div className="hidden grid-cols-[1fr_3.5rem_6rem_4rem_5rem_2rem] gap-2 text-[0.7rem] font-semibold uppercase tracking-wide text-muted-foreground sm:grid">
             <span>Désignation</span>
             <span className="text-right">Qté</span>
             <span className="text-right">Prix HT</span>
+            <span className="text-right">Remise %</span>
             <span className="text-right">TVA</span>
             <span />
           </div>
@@ -331,7 +338,7 @@ export function DevisForm({
 
         {lines.map((l, i) => (
           <div key={i} className="space-y-1">
-          <div className="grid grid-cols-2 gap-2 sm:grid-cols-[1fr_3.5rem_6rem_5rem_2rem]">
+          <div className="grid grid-cols-2 gap-2 sm:grid-cols-[1fr_3.5rem_6rem_4rem_5rem_2rem]">
             <input
               value={l.designation}
               onChange={(e) => setLine(i, { designation: e.target.value })}
@@ -354,6 +361,22 @@ export function DevisForm({
               onChange={(e) => setLine(i, { prixHt: Number(e.target.value) })}
               className="h-9 rounded-md border border-border bg-white px-2 text-right text-sm outline-none focus:border-primary"
               aria-label="Prix HT"
+            />
+            <input
+              type="number"
+              min={0}
+              max={100}
+              step="1"
+              value={l.remisePct ?? ""}
+              onChange={(e) =>
+                setLine(i, {
+                  remisePct: e.target.value === "" ? null : Number(e.target.value),
+                })
+              }
+              placeholder="0"
+              className="h-9 rounded-md border border-border bg-white px-2 text-right text-sm outline-none focus:border-primary"
+              aria-label="Remise %"
+              title="Remise en % sur cette ligne (ex. 10 = -10%)"
             />
             <select
               value={l.tva}
@@ -401,6 +424,17 @@ export function DevisForm({
         </button>
 
         <div className="flex flex-col items-end gap-0.5 border-t border-border pt-2 text-sm">
+          {remiseTotale > 0.005 ? (
+            <>
+              <div className="text-muted-foreground">
+                Sous-total HT :{" "}
+                <span className="tabular-nums text-foreground">{eur(brut)}</span>
+              </div>
+              <div className="text-orange-700">
+                Remise : <span className="tabular-nums">−{eur(remiseTotale)}</span>
+              </div>
+            </>
+          ) : null}
           <div className="text-muted-foreground">
             Total HT : <span className="tabular-nums text-foreground">{eur(ht)}</span>
           </div>

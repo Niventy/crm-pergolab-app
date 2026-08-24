@@ -8,6 +8,36 @@ import { leads, devis, factures, type Lead } from "@/db/schema";
 
 const BASE = "https://app.pennylane.com/api/external/v2";
 
+// Clause légale ajoutée comme OPTION à 0 € sur CHAQUE devis (ligne dédiée).
+// Le libellé (surchargeable via PENNYLANE_CLAUSE_LABEL) et le texte détaillé
+// (PENNYLANE_CLAUSE) apparaissent tels quels sur le PDF.
+const CLAUSE_LABEL =
+  process.env.PENNYLANE_CLAUSE_LABEL ?? "Clause suspensive – faisabilité technique";
+const CLAUSE_TEXTE =
+  process.env.PENNYLANE_CLAUSE ??
+  `Le présent devis est établi sous réserve de la validation des conditions techniques lors de la visite sur site et de la prise de cotes définitives.
+La réalisation du projet dépend notamment de la nature des supports, des contraintes de pose et de l'accessibilité.
+En cas de contraintes techniques imprévues nécessitant une adaptation, un devis modificatif pourra être proposé.
+Si aucune solution ne peut être mise en œuvre, le devis pourra être annulé sans frais, avec remboursement des sommes éventuellement versées.`;
+
+// La ligne « clause » : quantité 1, 0 € HT, TVA 0.
+const CLAUSE_LINE: DevisLine = {
+  designation: CLAUSE_LABEL,
+  description: CLAUSE_TEXTE,
+  quantite: 1,
+  prixHt: 0,
+  tva: 0,
+};
+
+function isClauseLine(l: DevisLine): boolean {
+  return l.designation.trim().toLowerCase().startsWith("clause suspensive");
+}
+
+// Garantit exactement une ligne clause (0 €), en fin de devis, sur chaque devis.
+function withClause(lines: DevisLine[]): DevisLine[] {
+  return lines.some(isClauseLine) ? lines : [...lines, CLAUSE_LINE];
+}
+
 export type DevisLine = {
   id?: number | null; // id de la ligne côté Pennylane (si elle existe déjà)
   designation: string;
@@ -16,7 +46,31 @@ export type DevisLine = {
   prixHt: number;
   tva: number; // en % (20, 10, 5.5, 0…)
   productId?: number | null; // si issu d'une présélection produit Pennylane
+  remisePct?: number | null; // remise en % sur la ligne (ex. 10 = -10%)
 };
+
+// Remise Pennylane : { type: "relative" (=%), value } — omise si nulle/zéro.
+function discountPayload(remisePct?: number | null) {
+  const r = Number(remisePct ?? 0);
+  if (!r || r <= 0) return {};
+  return { discount: { type: "relative", value: String(r) } };
+}
+
+// HT d'une ligne, remise (%) déduite.
+function ligneHt(l: DevisLine): number {
+  const brut = (l.quantite || 0) * (l.prixHt || 0);
+  const r = Number(l.remisePct ?? 0);
+  return r > 0 ? brut * (1 - r / 100) : brut;
+}
+
+// Lit une remise Pennylane → % (on ne gère que les remises "relative"/%).
+function parseRemise(d: unknown): number | null {
+  if (!d || typeof d !== "object") return null;
+  const o = d as { type?: string; value?: string | number };
+  if (o.type !== "relative") return null;
+  const v = Number(o.value ?? 0);
+  return v > 0 ? v : null;
+}
 
 export type ProduitPL = {
   id: number;
@@ -65,6 +119,7 @@ function toLinePayload(l: DevisLine) {
         raw_currency_unit_price: String(l.prixHt ?? 0),
         unit: "pièce",
         vat_rate: vatCode(l.tva),
+        ...discountPayload(l.remisePct),
       }
     : {
         label: l.designation || "Prestation",
@@ -73,6 +128,7 @@ function toLinePayload(l: DevisLine) {
         raw_currency_unit_price: String(l.prixHt ?? 0),
         unit: "pièce",
         vat_rate: vatCode(l.tva),
+        ...discountPayload(l.remisePct),
       };
 }
 
@@ -89,6 +145,7 @@ function toLineUpdatePayload(l: DevisLine) {
     raw_currency_unit_price: String(l.prixHt ?? 0),
     unit: "pièce",
     vat_rate: vatCode(l.tva),
+    ...discountPayload(l.remisePct),
   };
 }
 
@@ -206,7 +263,7 @@ async function createQuote(
     deadline: ymd(deadline),
     customer_id: customerId,
     currency: "EUR",
-    invoice_lines: toInvoiceLines(lines),
+    invoice_lines: toInvoiceLines(withClause(lines)), // + clause à 0 €
   };
 
   const res = await fetch(`${BASE}/quotes`, {
@@ -290,7 +347,7 @@ export async function creerDevisPennylane(
   if (!q.id) return { ok: false, error: q.error };
 
   const totalHt = useLines.reduce(
-    (a, l) => a + (l.quantite || 0) * (l.prixHt || 0),
+    (a, l) => a + ligneHt(l),
     0,
   );
 
@@ -352,6 +409,7 @@ export async function getQuoteLines(
       ) || 0,
     tva: vatToNumber(l.vat_rate as string),
     productId: l.product_id ? Number(l.product_id) : null,
+    remisePct: parseRemise(l.discount),
   }));
   return { ok: true, lines };
 }
@@ -381,6 +439,9 @@ export async function updateQuotePennylane(
     return { ok: false, error: "Pennylane non configuré." };
   if (!lines.length) return { ok: false, error: "Ajoute au moins une ligne." };
 
+  // La clause (0 €) doit rester présente sur chaque devis.
+  const lignes = withClause(lines);
+
   // Pennylane attend un OBJET { create, update, delete }, pas un tableau.
   // On diffe contre l'état réel du devis pour savoir quoi supprimer.
   const actuel = await getQuoteLines(quoteId);
@@ -388,11 +449,11 @@ export async function updateQuotePennylane(
     .map((l) => l.id)
     .filter((id): id is number => typeof id === "number");
   const idsGardes = new Set(
-    lines.map((l) => l.id).filter((id): id is number => typeof id === "number"),
+    lignes.map((l) => l.id).filter((id): id is number => typeof id === "number"),
   );
 
-  const create = lines.filter((l) => !l.id).map(toLinePayload);
-  const update = lines.filter((l) => l.id).map(toLineUpdatePayload);
+  const create = lignes.filter((l) => !l.id).map(toLinePayload);
+  const update = lignes.filter((l) => l.id).map(toLineUpdatePayload);
   const supprime = idsActuels
     .filter((id) => !idsGardes.has(id))
     .map((id) => ({ id }));
@@ -411,8 +472,8 @@ export async function updateQuotePennylane(
     const t = await res.text();
     return { ok: false, error: `Maj devis ${res.status} — ${t.slice(0, 200)}` };
   }
-  const totalHt = lines.reduce(
-    (a, l) => a + (l.quantite || 0) * (l.prixHt || 0),
+  const totalHt = lignes.reduce(
+    (a, l) => a + ligneHt(l),
     0,
   );
   return { ok: true, totalHt };

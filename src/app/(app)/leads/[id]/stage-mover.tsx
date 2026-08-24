@@ -25,10 +25,13 @@ export function StageMover({
   leadId,
   stages,
   currentStageId,
+  isClient = false,
 }: {
   leadId: string;
   stages: StageLite[];
   currentStageId: string | null;
+  /** Fiche « client » (gagnée) : on n'affiche QUE le cycle pose & technique. */
+  isClient?: boolean;
 }) {
   const [target, setTarget] = useState<StageLite | null>(null);
   const [commentaire, setCommentaire] = useState("");
@@ -41,6 +44,16 @@ export function StageMover({
     setTarget(s);
     setCommentaire("");
   }
+
+  // Base prospect = cycles 1 & 2 · Base client = cycle 3 uniquement. Un lead
+  // gagné change de base : on ne montre plus la prospection ni le closing.
+  const cyclesVisibles = isClient ? [3] : [1, 2];
+  const stagesVisibles = stages.filter((s) => cyclesVisibles.includes(s.cycle));
+
+  // Client fraîchement signé encore sur « Signée » (cycle 2) : son étape actuelle
+  // n'est pas dans le cycle pose → on l'invite à choisir la 1ère étape.
+  const etapeActuelleVisible = stagesVisibles.some((s) => s.id === currentStageId);
+  const clientSansPose = isClient && !etapeActuelleVisible;
 
   function confirmer() {
     if (!target) return;
@@ -60,17 +73,24 @@ export function StageMover({
     });
   }
 
-  const cycles = [...new Set(stages.map((s) => s.cycle))].sort();
+  const cycles = [...new Set(stagesVisibles.map((s) => s.cycle))].sort();
 
   return (
     <div className="space-y-3">
+      {clientSansPose ? (
+        <div className="rounded-lg border border-green-600/30 bg-green-50 px-3 py-2 text-xs text-green-800">
+          Fiche <strong>signée (client)</strong> : elle a quitté la prospection.
+          Choisis la 1<sup>re</sup> étape de pose ci-dessous pour démarrer le
+          chantier.
+        </div>
+      ) : null}
       {cycles.map((cy) => (
         <div key={cy} className="space-y-1.5">
           <div className="text-eyebrow text-muted-foreground">
             {CYCLE_LABEL[cy] ?? `Cycle ${cy}`}
           </div>
           <div className="flex flex-wrap gap-1.5">
-            {stages
+            {stagesVisibles
               .filter((s) => s.cycle === cy)
               .sort((a, b) => a.position - b.position)
               .map((s) => {
@@ -150,8 +170,9 @@ export function StageMover({
         </div>
       ) : (
         <p className="text-xs text-muted-foreground">
-          Clique sur une étape pour y déplacer le lead (un commentaire sera
-          demandé, sauf pour « Pas de réponse »).
+          {isClient
+            ? "Clique sur une étape pour faire avancer le chantier (un commentaire sera demandé)."
+            : "Clique sur une étape pour y déplacer le lead (un commentaire sera demandé, sauf pour « Pas de réponse »)."}
         </p>
       )}
     </div>
