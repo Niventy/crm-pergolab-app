@@ -55,6 +55,47 @@ function withClause(lines: DevisLine[]): DevisLine[] {
   return [...pergola, ...reste, ...remise, CLAUSE_LINE];
 }
 
+// Échéancier de règlement (acompte / livraison / solde), surchargeable via
+// PENNYLANE_ECHEANCIER = "40,40,20". Doit totaliser 100.
+function echeancierPct(): [number, number, number] {
+  const raw = (process.env.PENNYLANE_ECHEANCIER ?? "40,40,20")
+    .split(",")
+    .map((s) => Number(s.trim()) || 0);
+  const [a = 40, l = 40, s = 20] = raw;
+  return [a, l, s];
+}
+
+const eurFr = (n: number) =>
+  new Intl.NumberFormat("fr-FR", { style: "currency", currency: "EUR" }).format(
+    Math.round(n * 100) / 100,
+  );
+
+// Bloc « Modalités et conditions de règlement » (champ special_mention du devis),
+// avec les montants calculés depuis le total TTC.
+function modalitesReglement(ttc: number): string {
+  const [pa, pl, ps] = echeancierPct();
+  const a = (ttc * pa) / 100;
+  const l = (ttc * pl) / 100;
+  const s = (ttc * ps) / 100;
+  return `MODALITÉS ET CONDITIONS DE RÈGLEMENT
+
+Acompte : ${pa} % à la commande, soit ${eurFr(a)}.
+Le règlement du montant total du présent devis (TTC ${eurFr(ttc)}) s'effectuera selon l'échéancier suivant :
+
+1. Acompte à la commande : ${pa} % du montant total (${eurFr(a)}). Ce premier versement est exigible à la signature du devis et vaut validation définitive de la commande. La production ne pourra débuter qu'après encaissement de cet acompte.
+
+2. Paiement à la livraison : ${pl} % du montant total (${eurFr(l)}). Ce second versement est exigible le jour de la livraison des matériaux sur site, avant le démarrage des travaux d'installation.
+
+3. Solde à la réception : ${ps} % du montant total (${eurFr(s)}). Le solde est exigible immédiatement après la réception des travaux, sous réserve qu'elle soit prononcée sans réserve de la part du client.
+
+Ce devis est valable 30 jours. Toute commande est soumise à l'acceptation préalable de nos conditions générales de vente.`;
+}
+
+// Total TTC d'une liste de lignes (HT remise déduite × TVA de chaque ligne).
+function totalTtc(lines: DevisLine[]): number {
+  return lines.reduce((a, l) => a + ligneHt(l) * (1 + (l.tva || 0) / 100), 0);
+}
+
 export type DevisLine = {
   id?: number | null; // id de la ligne côté Pennylane (si elle existe déjà)
   designation: string;
@@ -263,12 +304,14 @@ async function createQuote(
   const now = new Date();
   const deadline = new Date(now.getTime() + 30 * 86400000);
 
+  const lignes = withClause(lines); // pergola → options → remise → clause
   const body = {
     date: ymd(now),
     deadline: ymd(deadline),
     customer_id: customerId,
     currency: "EUR",
-    invoice_lines: toInvoiceLines(withClause(lines)), // + clause à 0 €
+    special_mention: modalitesReglement(totalTtc(lignes)), // échéancier
+    invoice_lines: toInvoiceLines(lignes),
   };
 
   const res = await fetch(`${BASE}/quotes`, {
@@ -465,7 +508,11 @@ export async function updateQuotePennylane(
   const res = await fetch(`${BASE}/quotes/${quoteId}`, {
     method: "PUT",
     headers: plHeaders(),
-    body: JSON.stringify({ invoice_lines }),
+    // On réaffirme aussi l'échéancier (montants recalculés) à chaque édition.
+    body: JSON.stringify({
+      special_mention: modalitesReglement(totalTtc(lignes)),
+      invoice_lines,
+    }),
   });
   if (!res.ok) {
     const t = await res.text();
