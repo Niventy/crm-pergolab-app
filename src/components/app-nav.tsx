@@ -23,6 +23,7 @@ function buildUnivers(admin: boolean): Univers[] {
         { href: "/kanban", label: "Kanban" },
         { href: "/liste", label: "Liste" },
         { href: "/devis", label: "Devis" },
+        { href: "/commentaires", label: "Commentaires" },
       ],
     },
     {
