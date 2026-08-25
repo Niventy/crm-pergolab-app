@@ -56,6 +56,7 @@ CYCLE 1 — Prospection :
 4. RDV Téléphonique
 5. Devis à envoyer
 6. Hors Zone KO  → marque la fiche « Perdue » (is_perdue), sortie prospection
+7. Non qualifié KO → marque la fiche « Perdue » (is_perdue), sortie prospection
 CYCLE 2 — Devis & closing :
 - Rendez-vous (déplacé en cycle 2 : un RDV fait partie du closing)
 6. Devis envoyé

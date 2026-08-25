@@ -17,19 +17,20 @@ const DEFAULT_STAGES = [
   { nom: "RDV Téléphonique", position: 4, couleur: "#7c3aed", cycle: 1, isGagnee: false, isPerdue: false },
   { nom: "Devis à envoyer", position: 5, couleur: "#06b6d4", cycle: 1, isGagnee: false, isPerdue: false },
   { nom: "Hors Zone KO", position: 6, couleur: "#b91c1c", cycle: 1, isGagnee: false, isPerdue: true },
+  { nom: "Non qualifié KO", position: 7, couleur: "#9f1239", cycle: 1, isGagnee: false, isPerdue: true },
   // Cycle 2 — devis & closing.
-  { nom: "Rendez-vous", position: 7, couleur: "#8b5cf6", cycle: 2, isGagnee: false, isPerdue: false },
-  { nom: "Devis envoyé", position: 8, couleur: "#0ea5e9", cycle: 2, isGagnee: false, isPerdue: false },
-  { nom: "Signée", position: 9, couleur: "#22c55e", cycle: 2, isGagnee: true, isPerdue: false },
-  { nom: "KO", position: 10, couleur: "#ef4444", cycle: 2, isGagnee: false, isPerdue: true },
+  { nom: "Rendez-vous", position: 8, couleur: "#8b5cf6", cycle: 2, isGagnee: false, isPerdue: false },
+  { nom: "Devis envoyé", position: 9, couleur: "#0ea5e9", cycle: 2, isGagnee: false, isPerdue: false },
+  { nom: "Signée", position: 10, couleur: "#22c55e", cycle: 2, isGagnee: true, isPerdue: false },
+  { nom: "KO", position: 11, couleur: "#ef4444", cycle: 2, isGagnee: false, isPerdue: true },
   // Cycle 3 — pose & technique (après signature). Le statut « gagnée » reste.
-  { nom: "À métrer", position: 11, couleur: "#a855f7", cycle: 3, isGagnee: false, isPerdue: false },
-  { nom: "Métré réalisé", position: 12, couleur: "#8b5cf6", cycle: 3, isGagnee: false, isPerdue: false },
-  { nom: "Commande fournisseur", position: 13, couleur: "#6366f1", cycle: 3, isGagnee: false, isPerdue: false },
-  { nom: "En livraison", position: 14, couleur: "#0ea5e9", cycle: 3, isGagnee: false, isPerdue: false },
-  { nom: "Pose planifiée", position: 15, couleur: "#14b8a6", cycle: 3, isGagnee: false, isPerdue: false },
-  { nom: "Posée", position: 16, couleur: "#22c55e", cycle: 3, isGagnee: false, isPerdue: false },
-  { nom: "SAV", position: 17, couleur: "#f59e0b", cycle: 3, isGagnee: false, isPerdue: false },
+  { nom: "À métrer", position: 12, couleur: "#a855f7", cycle: 3, isGagnee: false, isPerdue: false },
+  { nom: "Métré réalisé", position: 13, couleur: "#8b5cf6", cycle: 3, isGagnee: false, isPerdue: false },
+  { nom: "Commande fournisseur", position: 14, couleur: "#6366f1", cycle: 3, isGagnee: false, isPerdue: false },
+  { nom: "En livraison", position: 15, couleur: "#0ea5e9", cycle: 3, isGagnee: false, isPerdue: false },
+  { nom: "Pose planifiée", position: 16, couleur: "#14b8a6", cycle: 3, isGagnee: false, isPerdue: false },
+  { nom: "Posée", position: 17, couleur: "#22c55e", cycle: 3, isGagnee: false, isPerdue: false },
+  { nom: "SAV", position: 18, couleur: "#f59e0b", cycle: 3, isGagnee: false, isPerdue: false },
 ];
 
 async function main() {
