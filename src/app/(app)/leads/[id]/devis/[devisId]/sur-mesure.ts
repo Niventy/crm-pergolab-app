@@ -42,12 +42,11 @@ export type OptionSM = {
 };
 
 export const OPTIONS: OptionSM[] = [
-  { id: "sheer", label: "Rideaux voile", type: "surface", prix: 50.75, defL: 4.63, defH: 2.33 },
   { id: "zip", label: "Store Motorisé", type: "surface_forfait", prix: 189, forfait: 255.5, defL: 4.76, defH: 2.33 },
-  { id: "baie", label: "Baie vitrée coulissante", type: "surface", prix: 413, defL: 2.76, defH: 2.33 },
-  { id: "volet_fixe", label: "Volet alu fixe", type: "surface", prix: 420, defL: 4.63, defH: 2.33 },
-  { id: "volet_coul", label: "Volet alu coulissant", type: "surface", prix: 476, defL: 4.63, defH: 2.33 },
-  { id: "volet_pliant", label: "Volet alu pliant (bi-folding)", type: "surface", prix: 518, defL: 4.63, defH: 2.33 },
+  { id: "baie", label: "Rideau Verre", type: "surface", prix: 413, defL: 2.76, defH: 2.33 },
+  { id: "volet_fixe", label: "Persienne fixe", type: "surface", prix: 420, defL: 4.63, defH: 2.33 },
+  { id: "volet_coul", label: "Persienne coulissante", type: "surface", prix: 476, defL: 4.63, defH: 2.33 },
+  { id: "volet_pliant", label: "Persienne pliante (bi-folding)", type: "surface", prix: 518, defL: 4.63, defH: 2.33 },
   { id: "mur_fixe", label: "Mur alu fixe", type: "surface", prix: 333, defL: 4.63, defH: 2.33 },
   { id: "lames_motor", label: "Lames alu motorisées", type: "surface_forfait", prix: 437.5, forfait: 595, defL: 4.63, defH: 2.33 },
   { id: "chauffage", label: "Chauffage (1500 W)", type: "unite", prix: 875 },

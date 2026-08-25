@@ -22,10 +22,10 @@ type Seed = {
 // à 0 € sur chaque devis → tous deux retirés de ce catalogue (plus de doublon).
 const PRODUITS: Seed[] = [
   {
-    nom: "VR Rénobloc® ADP 55",
+    nom: "Volet Roulant AR55",
     categorie: "Menuiserie",
     position: 20,
-    description: `VOLET ROULANT RÉNOBLOC® ADP 55
+    description: `VOLET ROULANT AR55
 
 Coffre pan coupé ou 1/4 de rond.
 
@@ -35,49 +35,6 @@ Coffre pan coupé ou 1/4 de rond.
 •  Verrous automatiques (hors sangle et tirage direct)
 •  Produit certifié NF : classe au vent C3 minimum (voir documentation technique)
 •  Lames ADP 55 / isolante`,
-  },
-  {
-    nom: "Rideau de verre série Standard",
-    categorie: "Menuiserie",
-    position: 30,
-    description: `RIDEAU DE VERRE — SÉRIE STANDARD
-
-Mesures : 3330 x 2450 mm (largeur x hauteur depuis le sol).
-
-•  Profil compensateur, rail inférieur en saillie (option)
-•  Châssis latéraux gauche et droit 40 x 20 mm
-•  3 vantaux coulissants et 1 ouvrant, ouverture vers l'intérieur
-•  Sans verrouillage supplémentaire
-•  Verre trempé 10 mm clair
-•  Profils finition RAL Standard 7016 (voir nuancier), accessoires noirs`,
-  },
-  {
-    nom: "Solution de stockage AURA 5KWh",
-    categorie: "Énergie",
-    position: 40,
-    description: `SOLUTION DE STOCKAGE AURA 5 kWh-BG
-La gamme de stockage « tout en un »
-
-Une conception à l'épreuve du temps qui garantit fiabilité, efficience, sécurité et longévité.
-
-POINTS FORTS
-
-•  Fiabilité : partenariat avec un leader mondial des batteries
-•  Durabilité : garantie 10 ans ou 10 000 cycles, 80 % de décharge ; cellules prismatiques industrielles
-•  Flexibilité : système modulaire, pack de 5,1 kWh, jusqu'à 25,5 kWh
-•  Performance : gestion des tarifs dynamiques du marché, optimisation par données météo
-•  Simplicité : solution complète, installation plug & play
-•  Sécurité : disjoncteur de protection intégré, alimentation de secours ultra rapide
-•  Supervision : connexion filaire ou wifi, pilotage via l'application (iOS / Android)
-•  Élégance : design exclusif, version ultra fine de 24 cm d'épaisseur
-
-SPÉCIFICATIONS
-
-•  Sortie AC : 6 000 W
-•  Batterie : LFP (LiFePO4), tension nominale 51,2 V
-•  Profondeur de décharge : 90 %
-•  Indice de protection : IP65
-•  Plage de fonctionnement : -10 à +50 °C`,
   },
   {
     nom: "Forfait livraison sur site",

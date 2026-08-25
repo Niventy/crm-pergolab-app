@@ -166,15 +166,26 @@ export function DevisForm({
   // Le devis démarre VIDE : la pergola vient du configurateur, les extras du
   // catalogue. Plus de ligne pré-remplie (qui prêtait à confusion).
   const [lines, setLines] = useState<Line[]>([]);
-  // Remise commerciale globale (€, montant positif saisi ; ligne à -montant).
-  const [remiseMontant, setRemiseMontant] = useState(0);
+  // Remise commerciale globale, en % du HT des lignes (ligne à -montant).
+  const [remisePct, setRemisePct] = useState(0);
 
-  // Applique des lignes chargées : extrait la remise commerciale (champ à part)
-  // et retire sa ligne de la liste éditable.
+  // Applique des lignes chargées : extrait la remise commerciale (champ à part,
+  // reconvertie en % du HT des autres lignes) et retire sa ligne de la liste.
   const appliquerChargement = (raw: Line[]) => {
     const rem = raw.find(estRemise);
-    setRemiseMontant(rem ? Math.abs(rem.prixHt || 0) : 0);
-    setLines(ordonner(taguerConfig(raw.filter((l) => !estRemise(l)))));
+    const autres = raw.filter((l) => !estRemise(l));
+    const htAutres = autres.reduce((a, l) => {
+      const b = (l.quantite || 0) * (l.prixHt || 0);
+      const r = Number(l.remisePct ?? 0);
+      return a + (r > 0 ? b * (1 - r / 100) : b);
+    }, 0);
+    const remAbs = rem ? Math.abs(rem.prixHt || 0) : 0;
+    setRemisePct(
+      remAbs > 0 && htAutres > 0
+        ? Math.round((remAbs / htAutres) * 1000) / 10
+        : 0,
+    );
+    setLines(ordonner(taguerConfig(autres)));
   };
 
   // Devis existant : charge ses lignes + son PDF.
@@ -242,7 +253,8 @@ export function DevisForm({
   };
   const brut = lines.reduce((a, l) => a + (l.quantite || 0) * (l.prixHt || 0), 0);
   const htLignes = lines.reduce((a, l) => a + netLigne(l), 0);
-  // Remise commerciale globale déduite du HT (ligne à -montant, TVA 20 %).
+  // Remise commerciale globale = % du HT des lignes (ligne à -montant, TVA 20 %).
+  const remiseMontant = remisePct > 0 ? htLignes * (remisePct / 100) : 0;
   const ht = htLignes - remiseMontant;
   const remiseTotale = brut - ht; // remises par ligne + remise commerciale
   const tvaAmt =
@@ -482,14 +494,19 @@ export function DevisForm({
             <input
               type="number"
               min={0}
-              step="0.01"
-              value={remiseMontant || ""}
-              onChange={(e) => setRemiseMontant(Math.max(0, Number(e.target.value) || 0))}
+              max={100}
+              step="0.5"
+              value={remisePct || ""}
+              onChange={(e) =>
+                setRemisePct(Math.min(100, Math.max(0, Number(e.target.value) || 0)))
+              }
               placeholder="0"
-              className="h-9 w-24 rounded-md border border-border bg-white px-2 text-right text-sm outline-none focus:border-primary"
-              aria-label="Remise commerciale en euros"
+              className="h-9 w-20 rounded-md border border-border bg-white px-2 text-right text-sm outline-none focus:border-primary"
+              aria-label="Remise commerciale en pourcent"
             />
-            <span className="text-sm text-muted-foreground">€ HT</span>
+            <span className="text-sm text-muted-foreground">
+              % {remiseMontant > 0 ? `(−${eur(remiseMontant)})` : ""}
+            </span>
           </div>
         </div>
 
