@@ -299,6 +299,23 @@ export async function creerDevis(leadId: string, lines: DevisLine[]) {
   return { ...r, appUrl };
 }
 
+// Duplique un devis : recrée un NOUVEAU devis avec les mêmes lignes (utile pour
+// proposer 2 variantes, ex. avec / sans options). La clause est retirée puis
+// ré-ajoutée automatiquement pour éviter tout doublon.
+export async function dupliquerDevis(leadId: string, quoteId: string) {
+  const src = await getQuoteLines(quoteId);
+  if (!src.ok || !src.lines?.length)
+    return {
+      ok: false as const,
+      error: src.error ?? "Lignes du devis introuvables.",
+      devisId: null as string | null,
+    };
+  const lignes = src.lines.filter(
+    (l) => !l.designation.trim().toLowerCase().startsWith("clause suspensive"),
+  );
+  return creerDevis(leadId, lignes);
+}
+
 // Catalogue de présélections (produits Pennylane) pour l'éditeur de devis.
 export async function fetchProduits() {
   return listProduitsPennylane();

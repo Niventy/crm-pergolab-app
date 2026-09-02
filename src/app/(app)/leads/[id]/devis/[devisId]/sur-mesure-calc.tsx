@@ -11,6 +11,7 @@ import {
   PRIX_ECLAIRAGE,
   construireLignes,
   construireLignesDevis,
+  construireLigneUnique,
   prixOption,
   type ConfigSM,
   type Element,
@@ -39,6 +40,7 @@ export function SurMesureCalc({
   onClose,
   catalogue = [],
   onAjouterProduit,
+  onAjouterSupplement,
 }: {
   descriptions: Record<string, string>;
   initial?: ConfigSM | null;
@@ -46,6 +48,9 @@ export function SurMesureCalc({
   onClose?: () => void;
   catalogue?: ProduitCatalogueDTO[];
   onAjouterProduit?: (p: ProduitCatalogueDTO) => void;
+  // Ajoute la pergola configurée comme 2ᵉ pergola (1 ligne combinée), sans
+  // remplacer la pergola principale.
+  onAjouterSupplement?: (lignes: Ligne[]) => void;
 }) {
   // Une pergola a TOUJOURS un toit (qté 1). Poteaux : 4 par défaut (autoportée),
   // mais minimum 2 car les pergolas adossées à l'existant n'en ont que 2.
@@ -157,10 +162,18 @@ export function SurMesureCalc({
       <div className="rounded-lg border border-border bg-white p-3">
         <div className="text-eyebrow mb-2 text-muted-foreground">Base (le toit)</div>
         <div className="grid grid-cols-2 gap-2 sm:grid-cols-5">
-          <Champ label="Largeur (m)" value={toitL} onChange={setToitL} />
-          <Champ label="Avancée (m)" value={toitW} onChange={setToitW} />
+          <Champ
+            label="Largeur (mm)"
+            value={Math.round(toitL * 1000)}
+            onChange={(v) => setToitL(v / 1000)}
+          />
+          <Champ
+            label="Avancée (mm)"
+            value={Math.round(toitW * 1000)}
+            onChange={(v) => setToitW(v / 1000)}
+          />
           <Champ label="Qté toit" value={toitQte} onChange={setToitQte} min={1} />
-          <Champ label="Poteaux" value={poteaux} onChange={setPoteaux} min={2} />
+          <Champ label="Poteaux" value={poteaux} onChange={setPoteaux} min={1} />
           <Champ label="Éclairage" value={eclairage} onChange={setEclairage} />
         </div>
         <p className="mt-2 text-xs text-muted-foreground">
@@ -369,14 +382,27 @@ export function SurMesureCalc({
             → {lignesDevis.length} ligne{lignesDevis.length > 1 ? "s" : ""} de devis
           </span>
         </div>
-        <button
-          type="button"
-          onClick={() => onAjouter(lignesDevis, cfg)}
-          disabled={lignesDevis.length === 0}
-          className="inline-flex items-center gap-1.5 rounded-md bg-primary px-3 py-1.5 text-sm font-semibold text-primary-foreground hover:bg-primary/90 disabled:opacity-50"
-        >
-          {initial ? "Mettre à jour la pergola" : "Ajouter au devis"}
-        </button>
+        <div className="flex flex-wrap items-center gap-2">
+          {onAjouterSupplement ? (
+            <button
+              type="button"
+              onClick={() => onAjouterSupplement(construireLigneUnique(cfg, descriptions))}
+              disabled={lignesDevis.length === 0}
+              className="inline-flex items-center gap-1.5 rounded-md border border-primary px-3 py-1.5 text-sm font-semibold text-primary hover:bg-primary/10 disabled:opacity-50"
+              title="Ajoute cette pergola en plus (2ᵉ pergola), sans remplacer la première"
+            >
+              <Plus className="size-4" /> Ajouter une 2ᵉ pergola
+            </button>
+          ) : null}
+          <button
+            type="button"
+            onClick={() => onAjouter(lignesDevis, cfg)}
+            disabled={lignesDevis.length === 0}
+            className="inline-flex items-center gap-1.5 rounded-md bg-primary px-3 py-1.5 text-sm font-semibold text-primary-foreground hover:bg-primary/90 disabled:opacity-50"
+          >
+            {initial ? "Mettre à jour la pergola" : "Ajouter au devis"}
+          </button>
+        </div>
       </div>
     </div>
   );

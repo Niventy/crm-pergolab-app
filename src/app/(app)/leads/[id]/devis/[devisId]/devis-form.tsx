@@ -3,7 +3,7 @@
 import { useEffect, useState, useTransition } from "react";
 import Link from "next/link";
 import { useRouter } from "next/navigation";
-import { Plus, Trash2, FileText, Download, ExternalLink, RefreshCw, Calculator, PenLine, Mail, Send, X, User } from "lucide-react";
+import { Plus, Trash2, FileText, Download, ExternalLink, RefreshCw, Calculator, PenLine, Mail, Send, X, User, Copy } from "lucide-react";
 import { toast } from "sonner";
 import { formatEuros } from "@/lib/format";
 import { SurMesureCalc } from "./sur-mesure-calc";
@@ -18,6 +18,7 @@ import {
   devisPdfUrl,
   devisSignatureUrl,
   creerContactSignataire,
+  dupliquerDevis,
 } from "../../actions";
 
 type Line = {
@@ -59,12 +60,24 @@ const GAMME_RE = new RegExp(
 const FACE_RE = new RegExp(
   ` — (${FACES.map((f) => f.replace(/[.*+?^${}()|[\]\\]/g, "\\$&")).join("|")}) \\(`,
 );
-const estLigneConfig = (designation: string): boolean => {
-  const d = designation.trim();
-  return GAMME_RE.test(d) || FACE_RE.test(d);
+// Ne tague `config` (= réconfigurable, remplacé à la reconfiguration) que la
+// 1ʳᵉ pergola et ses options. Une 2ᵉ pergola (kit suivant) est laissée telle
+// quelle pour survivre à une reconfiguration de la première.
+const taguerConfig = (ls: Line[]): Line[] => {
+  let kitVu = false;
+  return ls.map((l) => {
+    const d = l.designation.trim();
+    if (GAMME_RE.test(d)) {
+      if (!kitVu) {
+        kitVu = true;
+        return { ...l, config: true };
+      }
+      return { ...l, config: false };
+    }
+    if (FACE_RE.test(d)) return { ...l, config: true };
+    return l;
+  });
 };
-const taguerConfig = (ls: Line[]): Line[] =>
-  ls.map((l) => (estLigneConfig(l.designation) ? { ...l, config: true } : l));
 const eur = (n: number) => formatEuros(String(Math.round(n * 100) / 100));
 
 // La (les) ligne(s) « Pergola » toujours en tête, les options après.
@@ -163,6 +176,7 @@ export function DevisForm({
   );
   const [mailPending, startMail] = useTransition();
   const [contactPending, startContact] = useTransition();
+  const [dupPending, startDup] = useTransition();
   // Le devis démarre VIDE : la pergola vient du configurateur, les extras du
   // catalogue. Plus de ligne pré-remplie (qui prêtait à confusion).
   const [lines, setLines] = useState<Line[]>([]);
@@ -229,6 +243,16 @@ export function DevisForm({
   const appliquerConfig = (ls: Line[], cfg: ConfigSM) => {
     setSmConfig(cfg);
     setLines((cur) => ordonner([...ls, ...cur.filter((l) => !l.config)]));
+  };
+
+  // Ajoute une 2ᵉ pergola (ligne combinée), SANS remplacer la principale ni la
+  // configuration en cours : ce sont des lignes non `config`.
+  const ajouterPergolaSupplement = (ls: Line[]) => {
+    if (!ls.length) return;
+    setLines((cur) =>
+      ordonner([...cur, ...ls.map((l) => ({ ...l, config: false }))]),
+    );
+    toast.success("2ᵉ pergola ajoutée au devis");
   };
 
   // Ajoute une ligne à partir d'une option du catalogue (nom + prix + description).
@@ -328,6 +352,7 @@ export function DevisForm({
             descriptions={surMesureDescriptions}
             initial={smConfig}
             catalogue={catalogue}
+            onAjouterSupplement={ajouterPergolaSupplement}
             onAjouterProduit={(p) => {
               addCatalogue(p);
               toast.success(`« ${p.nom} » ajouté au devis`);
@@ -562,6 +587,28 @@ export function DevisForm({
                 className="inline-flex items-center gap-1 text-sm font-medium text-muted-foreground hover:text-foreground"
               >
                 <ExternalLink className="size-3.5" /> Pennylane
+              </button>
+              <button
+                type="button"
+                disabled={dupPending}
+                onClick={() =>
+                  startDup(async () => {
+                    const r = await dupliquerDevis(leadId, quoteId);
+                    if (r.ok && r.devisId) {
+                      toast.success("Devis dupliqué");
+                      router.push(`/leads/${leadId}/devis/${r.devisId}`);
+                    } else toast.error(r.error ?? "Échec de la duplication");
+                  })
+                }
+                className="inline-flex items-center gap-1 text-sm font-medium text-primary hover:underline disabled:opacity-50"
+                title="Crée un nouveau devis identique (ex. variante avec / sans options)"
+              >
+                {dupPending ? (
+                  <RefreshCw className="size-3.5 animate-spin" />
+                ) : (
+                  <Copy className="size-3.5" />
+                )}
+                Dupliquer
               </button>
               <button
                 type="button"

@@ -86,6 +86,10 @@ const r2 = (n: number) => Math.round(n * 100) / 100;
 const dimsMM = (L: number, H: number) =>
   `${Math.round((L || 0) * 1000)} L × ${Math.round((H || 0) * 1000)} H mm`;
 
+// 2 poteaux = pergola autoportée (mention à afficher sur le devis).
+const estAutoportee = (cfg: ConfigSM) => (cfg.poteaux || 0) === 2;
+const suffixePose = (cfg: ConfigSM) => (estAutoportee(cfg) ? " — Autoportée" : "");
+
 // Prix d'une option (formule selon son type).
 export function prixOption(o: OptionSM, c: OptionConfig): number {
   const q = c.qte || 0;
@@ -267,7 +271,11 @@ export function construireDescription(
 
     const struct: string[] = [];
     if ((cfg.poteaux || 0) > 0)
-      struct.push(`${cfg.poteaux} poteau${cfg.poteaux > 1 ? "x" : ""}`);
+      struct.push(
+        `${cfg.poteaux} poteau${cfg.poteaux > 1 ? "x" : ""}${
+          estAutoportee(cfg) ? " (autoportée)" : ""
+        }`,
+      );
     if (perimetre > 0)
       struct.push(`bandeau LED périmétrique (${fr(perimetre)} m)`);
     if ((cfg.eclairage || 0) > 0)
@@ -321,7 +329,7 @@ export function construireLigneUnique(
 
   return [
     {
-      designation: `Pergola ${gamme}${dims}`,
+      designation: `Pergola ${gamme}${dims}${suffixePose(cfg)}`,
       description: construireDescription(cfg, descriptions),
       quantite: 1,
       prixHt: total,
@@ -351,7 +359,7 @@ export function construireLignesDevis(
     const gamme = m.code.charAt(0) + m.code.slice(1).toLowerCase();
     const dims = L > 0 && W > 0 ? ` ${fr(L)}x${fr(W)} (longueur x largeur)` : "";
     lignes.push({
-      designation: `Pergola ${gamme}${dims}`,
+      designation: `Pergola ${gamme}${dims}${suffixePose(cfg)}`,
       description: construireDescription(cfgBase, descriptions),
       quantite: 1,
       prixHt: baseTotal,
