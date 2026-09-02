@@ -102,22 +102,24 @@ export function EnTete({
 
       <div className="flex flex-wrap items-center gap-2">
         <PeriodSelect value={moisSel} options={periodOptions} basePath={basePath} />
-        <div className="inline-flex flex-wrap rounded-lg border border-border bg-muted/50 p-0.5">
-          {scopes.map((s) => (
-            <Link
-              key={s.value}
-              href={href(s.value)}
-              className={cn(
-                "rounded-md px-3 py-1.5 text-xs font-semibold transition-colors",
-                scopeSel === s.value
-                  ? "bg-primary text-primary-foreground shadow-sm"
-                  : "text-muted-foreground hover:text-foreground",
-              )}
-            >
-              {s.label}
-            </Link>
-          ))}
-        </div>
+        {scopes.length > 0 ? (
+          <div className="inline-flex flex-wrap rounded-lg border border-border bg-muted/50 p-0.5">
+            {scopes.map((s) => (
+              <Link
+                key={s.value}
+                href={href(s.value)}
+                className={cn(
+                  "rounded-md px-3 py-1.5 text-xs font-semibold transition-colors",
+                  scopeSel === s.value
+                    ? "bg-primary text-primary-foreground shadow-sm"
+                    : "text-muted-foreground hover:text-foreground",
+                )}
+              >
+                {s.label}
+              </Link>
+            ))}
+          </div>
+        ) : null}
       </div>
     </div>
   );

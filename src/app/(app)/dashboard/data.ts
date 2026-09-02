@@ -55,7 +55,11 @@ export async function getStats(sp: StatsParams) {
   const month = now.getMonth();
 
   // --- Périmètre (responsable) ---
-  const scopeSel = sp.adv ?? "all";
+  // Un MEMBRE (ADV) est verrouillé sur SON propre périmètre : il ne voit jamais
+  // le CA / pipeline de l'équipe, et ne peut pas changer de périmètre. Seul un
+  // admin peut voir « Toute l'équipe » ou filtrer par ADV.
+  const myId = user?.id ?? "none";
+  const scopeSel = admin ? (sp.adv ?? "all") : myId;
   const scoped =
     scopeSel === "all"
       ? allLeads
@@ -68,13 +72,16 @@ export async function getStats(sp: StatsParams) {
     if (l.assignedTo && l.responsable)
       respMap.set(l.assignedTo, l.responsable.nom ?? l.responsable.email);
   }
-  const scopes = [
-    { value: "all", label: "Toute l'équipe" },
-    ...[...respMap.entries()].map(([id, nom]) => ({
-      value: id,
-      label: id === user?.id ? `${nom} (moi)` : nom,
-    })),
-  ];
+  // Sélecteur de périmètre : réservé à l'admin. Vide pour un membre.
+  const scopes = admin
+    ? [
+        { value: "all", label: "Toute l'équipe" },
+        ...[...respMap.entries()].map(([id, nom]) => ({
+          value: id,
+          label: id === user?.id ? `${nom} (moi)` : nom,
+        })),
+      ]
+    : [];
 
   // --- Période (date de RÉCEPTION du lead) ---
   const moisSel = sp.mois && /^\d{4}-\d{2}$/.test(sp.mois) ? sp.mois : "annee";
