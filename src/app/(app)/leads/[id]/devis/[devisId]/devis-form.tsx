@@ -1,13 +1,13 @@
 "use client";
 
-import { useEffect, useState, useTransition } from "react";
+import { useEffect, useRef, useState, useTransition } from "react";
 import Link from "next/link";
 import { useRouter } from "next/navigation";
 import { Plus, Trash2, FileText, Download, ExternalLink, RefreshCw, Calculator, PenLine, Mail, Send, X, User, Copy } from "lucide-react";
 import { toast } from "sonner";
 import { formatEuros } from "@/lib/format";
 import { SurMesureCalc } from "./sur-mesure-calc";
-import { MODELES, FACES, type ConfigSM } from "./sur-mesure";
+import { MODELES, FACES, construireLigneUnique, type ConfigSM } from "./sur-mesure";
 import type { ProduitCatalogueDTO } from "@/app/(app)/reglages/actions";
 import { sendDevisParGmail } from "../../email-actions";
 import {
@@ -31,6 +31,7 @@ type Line = {
   productId?: number | null;
   remisePct?: number | null; // remise en % sur la ligne (ex. 10 = -10%)
   config?: boolean; // ligne issue du configurateur (kit ou option)
+  suppKey?: number; // pergola supplémentaire : clé du configurateur d'origine
 };
 // Pennylane ne gère pas de TVA à 0 % (taux mini FR_1_05) → on ne propose que
 // les taux valides. Un 0 € (ex. clause) passe en 20 % côté Pennylane sans effet.
@@ -162,6 +163,12 @@ export function DevisForm({
   // Config du configurateur, conservée tant que le devis est ouvert (pour
   // rouvrir sans tout ressaisir et pour remplacer proprement ses lignes).
   const [smConfig, setSmConfig] = useState<ConfigSM | null>(null);
+  // Pergolas SUPPLÉMENTAIRES : chacune a son propre configurateur (config
+  // indépendante) et produit UNE ligne combinée, identifiée par sa clé.
+  const [supplements, setSupplements] = useState<
+    { key: number; cfg: ConfigSM | null }[]
+  >([]);
+  const suppKeyRef = useRef(1);
   const [pdfUrl, setPdfUrl] = useState<string | null>(null);
   const [pdfLoading, setPdfLoading] = useState(false);
   const [pdfKey, setPdfKey] = useState(0); // force le rechargement de l'iframe
@@ -245,14 +252,32 @@ export function DevisForm({
     setLines((cur) => ordonner([...ls, ...cur.filter((l) => !l.config)]));
   };
 
-  // Ajoute une 2ᵉ pergola (ligne combinée), SANS remplacer la principale ni la
-  // configuration en cours : ce sont des lignes non `config`.
-  const ajouterPergolaSupplement = (ls: Line[]) => {
-    if (!ls.length) return;
+  // Ouvre un configurateur supplémentaire (pergola avec sa propre config).
+  const ajouterConfigurateurSupplement = () => {
+    setSupplements((s) => [...s, { key: suppKeyRef.current++, cfg: null }]);
+    toast.success("2ᵉ configurateur ajouté — configure cette pergola");
+  };
+
+  // Applique la config d'une pergola supplémentaire : UNE ligne combinée,
+  // identifiée par sa clé (remplace la précédente ligne de cette pergola).
+  const appliquerSupplement = (key: number, cfg: ConfigSM) => {
+    const ligne = construireLigneUnique(cfg, surMesureDescriptions);
+    setSupplements((s) => s.map((x) => (x.key === key ? { ...x, cfg } : x)));
     setLines((cur) =>
-      ordonner([...cur, ...ls.map((l) => ({ ...l, config: false }))]),
+      ordonner([
+        ...cur.filter((l) => l.suppKey !== key),
+        ...ligne.map((l) => ({ ...l, config: false, suppKey: key })),
+      ]),
     );
-    toast.success("2ᵉ pergola ajoutée au devis");
+    toast.success(
+      ligne.length ? "Pergola supplémentaire ajoutée" : "Configure la pergola",
+    );
+  };
+
+  // Retire un configurateur supplémentaire + sa ligne.
+  const retirerSupplement = (key: number) => {
+    setSupplements((s) => s.filter((x) => x.key !== key));
+    setLines((cur) => cur.filter((l) => l.suppKey !== key));
   };
 
   // Ajoute une ligne à partir d'une option du catalogue (nom + prix + description).
@@ -348,11 +373,13 @@ export function DevisForm({
             directement. Sur un devis déjà créé on peut le replier/rouvrir, mais
             sans bouton « Fermer » : un simple lien « Modifier la pergola ». */}
         {smOpen ? (
+          <>
           <SurMesureCalc
             descriptions={surMesureDescriptions}
             initial={smConfig}
             catalogue={catalogue}
-            onAjouterSupplement={ajouterPergolaSupplement}
+            titre="1 · Configurer la pergola"
+            onNouvellePergola={ajouterConfigurateurSupplement}
             onAjouterProduit={(p) => {
               addCatalogue(p);
               toast.success(`« ${p.nom} » ajouté au devis`);
@@ -366,6 +393,19 @@ export function DevisForm({
               );
             }}
           />
+          {/* Pergolas supplémentaires : un configurateur indépendant chacune */}
+          {supplements.map((sup, i) => (
+            <SurMesureCalc
+              key={sup.key}
+              descriptions={surMesureDescriptions}
+              initial={sup.cfg}
+              titre={`${i + 2} · Pergola supplémentaire`}
+              ctaLabel={sup.cfg ? "Mettre à jour cette pergola" : "Ajouter cette pergola"}
+              onClose={() => retirerSupplement(sup.key)}
+              onAjouter={(_ls, cfg) => appliquerSupplement(sup.key, cfg)}
+            />
+          ))}
+          </>
         ) : (
           <button
             type="button"

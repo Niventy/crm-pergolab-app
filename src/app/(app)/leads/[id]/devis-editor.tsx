@@ -1,10 +1,12 @@
 "use client";
 
 import Link from "next/link";
-import { Plus, FileText, Download, ExternalLink, Pencil } from "lucide-react";
+import { useState, useTransition } from "react";
+import { useRouter } from "next/navigation";
+import { Plus, FileText, Download, ExternalLink, Pencil, Copy, RefreshCw } from "lucide-react";
 import { toast } from "sonner";
 import { formatEuros } from "@/lib/format";
-import { devisAppUrl, devisPdfUrl } from "./actions";
+import { devisAppUrl, devisPdfUrl, dupliquerDevis } from "./actions";
 
 type DevisRow = {
   id: string;
@@ -39,6 +41,22 @@ export function DevisEditor({
   devisExistants: DevisRow[];
   pennylaneConfigured: boolean;
 }) {
+  const router = useRouter();
+  const [pending, start] = useTransition();
+  const [dupId, setDupId] = useState<string | null>(null);
+
+  const dupliquer = (quoteId: string, id: string) => {
+    setDupId(id);
+    start(async () => {
+      const r = await dupliquerDevis(leadId, quoteId);
+      setDupId(null);
+      if (r.ok && r.devisId) {
+        toast.success("Devis dupliqué");
+        router.push(`/leads/${leadId}/devis/${r.devisId}`);
+      } else toast.error(r.error ?? "Échec de la duplication");
+    });
+  };
+
   return (
     <div className="space-y-4">
       {devisExistants.length > 0 ? (
@@ -64,6 +82,20 @@ export function DevisEditor({
                 </Link>
                 {d.externalId ? (
                   <>
+                    <button
+                      type="button"
+                      disabled={pending}
+                      onClick={() => dupliquer(d.externalId!, d.id)}
+                      className="inline-flex items-center gap-1 text-xs font-medium text-primary hover:underline disabled:opacity-50"
+                      title="Créer un nouveau devis identique (variante avec / sans options)"
+                    >
+                      {pending && dupId === d.id ? (
+                        <RefreshCw className="size-3.5 animate-spin" />
+                      ) : (
+                        <Copy className="size-3.5" />
+                      )}
+                      Dupliquer
+                    </button>
                     <button
                       type="button"
                       onClick={() => ouvrirDans(() => devisAppUrl(d.externalId!))}

@@ -11,7 +11,6 @@ import {
   PRIX_ECLAIRAGE,
   construireLignes,
   construireLignesDevis,
-  construireLigneUnique,
   prixOption,
   type ConfigSM,
   type Element,
@@ -40,7 +39,9 @@ export function SurMesureCalc({
   onClose,
   catalogue = [],
   onAjouterProduit,
-  onAjouterSupplement,
+  onNouvellePergola,
+  titre = "1 · Configurer la pergola",
+  ctaLabel,
 }: {
   descriptions: Record<string, string>;
   initial?: ConfigSM | null;
@@ -48,9 +49,10 @@ export function SurMesureCalc({
   onClose?: () => void;
   catalogue?: ProduitCatalogueDTO[];
   onAjouterProduit?: (p: ProduitCatalogueDTO) => void;
-  // Ajoute la pergola configurée comme 2ᵉ pergola (1 ligne combinée), sans
-  // remplacer la pergola principale.
-  onAjouterSupplement?: (lignes: Ligne[]) => void;
+  // Ouvre un NOUVEAU configurateur (pergola supplémentaire, config indépendante).
+  onNouvellePergola?: () => void;
+  titre?: string;
+  ctaLabel?: string;
 }) {
   // Une pergola a TOUJOURS un toit (qté 1). Poteaux : 4 par défaut (autoportée),
   // mais minimum 2 car les pergolas adossées à l'existant n'en ont que 2.
@@ -126,7 +128,7 @@ export function SurMesureCalc({
     <div className="space-y-4 rounded-xl border border-primary/30 bg-primary/[0.03] p-4">
       <div className="flex items-center justify-between">
         <span className="text-eyebrow flex items-center gap-1.5 text-primary">
-          <Calculator className="size-4" /> 1 · Configurer la pergola
+          <Calculator className="size-4" /> {titre}
         </span>
         {onClose ? (
           <button
@@ -383,13 +385,12 @@ export function SurMesureCalc({
           </span>
         </div>
         <div className="flex flex-wrap items-center gap-2">
-          {onAjouterSupplement ? (
+          {onNouvellePergola ? (
             <button
               type="button"
-              onClick={() => onAjouterSupplement(construireLigneUnique(cfg, descriptions))}
-              disabled={lignesDevis.length === 0}
-              className="inline-flex items-center gap-1.5 rounded-md border border-primary px-3 py-1.5 text-sm font-semibold text-primary hover:bg-primary/10 disabled:opacity-50"
-              title="Ajoute cette pergola en plus (2ᵉ pergola), sans remplacer la première"
+              onClick={onNouvellePergola}
+              className="inline-flex items-center gap-1.5 rounded-md border border-primary px-3 py-1.5 text-sm font-semibold text-primary hover:bg-primary/10"
+              title="Ouvre un 2ᵉ configurateur pour une pergola avec une configuration différente"
             >
               <Plus className="size-4" /> Ajouter une 2ᵉ pergola
             </button>
@@ -400,7 +401,7 @@ export function SurMesureCalc({
             disabled={lignesDevis.length === 0}
             className="inline-flex items-center gap-1.5 rounded-md bg-primary px-3 py-1.5 text-sm font-semibold text-primary-foreground hover:bg-primary/90 disabled:opacity-50"
           >
-            {initial ? "Mettre à jour la pergola" : "Ajouter au devis"}
+            {ctaLabel ?? (initial ? "Mettre à jour la pergola" : "Ajouter au devis")}
           </button>
         </div>
       </div>
