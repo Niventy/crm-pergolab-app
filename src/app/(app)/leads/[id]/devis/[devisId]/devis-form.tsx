@@ -193,14 +193,16 @@ export function DevisForm({
   // Applique des lignes chargées : extrait la remise commerciale (champ à part,
   // reconvertie en % du HT des autres lignes) et retire sa ligne de la liste.
   const appliquerChargement = (raw: Line[]) => {
-    const rem = raw.find(estRemise);
+    const rems = raw.filter(estRemise);
     const autres = raw.filter((l) => !estRemise(l));
     const htAutres = autres.reduce((a, l) => {
       const b = (l.quantite || 0) * (l.prixHt || 0);
       const r = Number(l.remisePct ?? 0);
       return a + (r > 0 ? b * (1 - r / 100) : b);
     }, 0);
-    const remAbs = rem ? Math.abs(rem.prixHt || 0) : 0;
+    // La remise commerciale peut être répartie sur plusieurs lignes (une par taux
+    // de TVA) : on somme toutes ces lignes pour retrouver le % global.
+    const remAbs = rems.reduce((a, r) => a + Math.abs(r.prixHt || 0), 0);
     setRemisePct(
       remAbs > 0 && htAutres > 0
         ? Math.round((remAbs / htAutres) * 1000) / 10
@@ -302,13 +304,52 @@ export function DevisForm({
   };
   const brut = lines.reduce((a, l) => a + (l.quantite || 0) * (l.prixHt || 0), 0);
   const htLignes = lines.reduce((a, l) => a + netLigne(l), 0);
-  // Remise commerciale globale = % du HT des lignes (ligne à -montant, TVA 20 %).
+  // Remise commerciale globale = % du HT des lignes.
   const remiseMontant = remisePct > 0 ? htLignes * (remisePct / 100) : 0;
   const ht = htLignes - remiseMontant;
   const remiseTotale = brut - ht; // remises par ligne + remise commerciale
+
+  // Net HT des lignes réparti PAR TAUX de TVA (base sur laquelle la remise
+  // commerciale s'applique proportionnellement, à chaque taux).
+  const netParTaux = (base: Line[]): Map<number, number> => {
+    const m = new Map<number, number>();
+    for (const l of base) {
+      const net = netLigne(l);
+      if (net <= 0) continue;
+      const t = l.tva || 0;
+      m.set(t, (m.get(t) ?? 0) + net);
+    }
+    return m;
+  };
+
+  // Lignes de remise commerciale : UNE par taux de TVA présent, au MÊME taux que
+  // les produits réduits (sinon la TVA totale est fausse quand les taux diffèrent).
+  const construireRemises = (base: Line[]): Line[] => {
+    if (remisePct <= 0) return [];
+    const m = netParTaux(base);
+    const taux = [...m.keys()].filter((t) => (m.get(t) ?? 0) > 0);
+    const multi = taux.length > 1;
+    return taux.map((t) => ({
+      designation: multi
+        ? `${REMISE_LABEL} (TVA ${String(t).replace(".", ",")} %)`
+        : REMISE_LABEL,
+      quantite: 1,
+      prixHt: -Math.abs((m.get(t) ?? 0) * (remisePct / 100)),
+      tva: t,
+    }));
+  };
+
+  // TVA de la remise, retirée AU TAUX de chaque part (et non forfaitairement 20 %).
+  const remiseTvaAmt =
+    remisePct > 0
+      ? [...netParTaux(lines).entries()].reduce(
+          (a, [t, net]) => a + net * (remisePct / 100) * (t / 100),
+          0,
+        )
+      : 0;
   const tvaAmt =
     lines.reduce((a, l) => a + netLigne(l) * ((l.tva || 0) / 100), 0) -
-    remiseMontant * 0.2;
+    remiseTvaAmt;
   const ttc = ht + tvaAmt;
 
   function enregistrer() {
@@ -317,19 +358,10 @@ export function DevisForm({
       toast.error("Ajoute au moins une désignation.");
       return;
     }
-    // Injecte la remise commerciale en ligne (montant négatif) si renseignée.
+    // Injecte la remise commerciale en ligne(s) — une par taux de TVA — si
+    // renseignée, pour que la TVA soit retirée au bon taux.
     const utiles: Line[] =
-      remiseMontant > 0
-        ? [
-            ...base,
-            {
-              designation: REMISE_LABEL,
-              quantite: 1,
-              prixHt: -Math.abs(remiseMontant),
-              tva: 20,
-            },
-          ]
-        : base;
+      remiseMontant > 0 ? [...base, ...construireRemises(base)] : base;
     start(async () => {
       if (quoteId && devisId) {
         const r = await modifierDevis(leadId, devisId, quoteId, utiles);
