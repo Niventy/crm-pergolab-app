@@ -469,3 +469,93 @@ export function construireLignesDevis(
 
   return lignes;
 }
+
+// ---------------------------------------------------------------------------
+// RECONSTRUCTION de la config depuis les lignes d'un devis (devis créés avant la
+// persistance de `devis.config`, ou dupliqués depuis l'un d'eux). Le but : que
+// « Modifier la pergola » rouvre le configurateur PRÉ-REMPLI au lieu de vide.
+// On lit le libellé du kit (gamme, dimensions, autoportée), on retrouve poteaux
+// et spots par le prix, puis chaque ligne d'option (face, dimensions, qté).
+// ---------------------------------------------------------------------------
+export type LigneBrute = { designation: string; prixHt: number; quantite?: number };
+
+// « Pergola Horizon 5x3 (longueur x largeur) — Autoportée » ou l'ancien
+// « Pergola HORIZON — toit 5×3 m » : gamme + 2 dimensions.
+const KIT_RE = /^Pergola\s+(ESSENTIA|HORIZON|SIGNATURE)\b\D*?(\d+(?:[.,]\d+)?)\s*[x×]\s*(\d+(?:[.,]\d+)?)/i;
+const OPTION_RE = /^(.*?)(?: — (.*?))? \((?:(\d+) L × (\d+) H mm · )?×(\d+)\)\s*$/;
+const COULEUR_RE = /^Option couleur — (.*?)(?: \(offerte\))?\s*$/i;
+
+const num = (s: string) => Number(s.replace(",", "."));
+
+// Kit : retrouve (poteaux, spots) dont le prix colle au mieux au HT de la ligne.
+function deduireKit(designation: string, prixHt: number): ConfigSM | null {
+  const m = KIT_RE.exec(designation.trim());
+  if (!m) return null;
+  const modele = MODELES.find((x) => x.code.toLowerCase() === m[1].toLowerCase()) ?? MODELES[0];
+  const L = num(m[2]);
+  const W = num(m[3]);
+  if (!(L > 0 && W > 0)) return null;
+  const autoportee = /autoport/i.test(designation);
+  const base: ConfigSM = {
+    modele: modele.code,
+    toitL: L,
+    toitW: W,
+    toitQte: 1,
+    poteaux: autoportee ? 2 : 4,
+    eclairage: 0,
+    elements: [],
+  };
+  if (!(prixHt > 0)) return base;
+  // Cherche la combinaison poteaux × spots la plus proche du prix (±1 €).
+  let best = { poteaux: base.poteaux, eclairage: 0, ecart: Infinity };
+  for (const poteaux of autoportee ? [2] : [4, 3, 5, 6, 8, 2]) {
+    for (let ecl = 0; ecl <= 12; ecl++) {
+      const p = construireLignes({ ...base, poteaux, eclairage: ecl }).reduce(
+        (a, l) => a + l.prixHt,
+        0,
+      );
+      const ecart = Math.abs(p - prixHt);
+      if (ecart < best.ecart) best = { poteaux, eclairage: ecl, ecart };
+    }
+  }
+  return best.ecart <= 1
+    ? { ...base, poteaux: best.poteaux, eclairage: best.eclairage }
+    : base;
+}
+
+// Déduit UNE config par kit rencontré (la 1ʳᵉ = pergola principale, les suivantes
+// = pergolas supplémentaires) ; les options qui suivent un kit lui sont rattachées.
+export function deduireConfigs(lignes: LigneBrute[]): ConfigSM[] {
+  const configs: ConfigSM[] = [];
+  let courante: ConfigSM | null = null;
+  for (const l of lignes) {
+    const d = l.designation.trim();
+    const kit = deduireKit(d, l.prixHt);
+    if (kit) {
+      courante = kit;
+      configs.push(kit);
+      continue;
+    }
+    if (!courante) continue;
+
+    const c = COULEUR_RE.exec(d);
+    if (c) {
+      courante.couleur = c[1].trim();
+      courante.couleurPrix = Math.max(0, l.prixHt || 0);
+      continue;
+    }
+
+    const o = OPTION_RE.exec(d);
+    if (!o) continue;
+    const opt = OPTIONS.find((x) => x.label.toLowerCase() === o[1].trim().toLowerCase());
+    if (!opt) continue;
+    courante.elements.push({
+      optionId: opt.id,
+      face: o[2]?.trim() || FACES[0],
+      L: o[3] ? Number(o[3]) / 1000 : 0,
+      H: o[4] ? Number(o[4]) / 1000 : 0,
+      qte: Number(o[5]) || 1,
+    });
+  }
+  return configs;
+}

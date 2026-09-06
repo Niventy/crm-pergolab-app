@@ -21,7 +21,7 @@ import { cn } from "@/lib/utils";
 import { ouvrirDans } from "@/lib/ouvrir-dans";
 import { ChampsEditables } from "../../champs-editables";
 import { SurMesureCalc } from "./sur-mesure-calc";
-import { MODELES, FACES, construireLigneUnique, type ConfigSM } from "./sur-mesure";
+import { MODELES, FACES, construireLigneUnique, deduireConfigs, type ConfigSM } from "./sur-mesure";
 import type { ProduitCatalogueDTO } from "@/app/(app)/reglages/actions";
 import { sendDevisParGmail } from "../../email-actions";
 import {
@@ -260,6 +260,17 @@ export function DevisForm({
     setRemisePct(remAbs > 0 && htAutres > 0 ? Math.round((remAbs / htAutres) * 1000) / 10 : 0);
     setTauxDefaut(tauxDominant(autres));
     setLines(ordonner(taguerConfig(autres)));
+    // Devis sans config mémorisée (créé avant la persistance, ou dupliqué depuis
+    // l'un d'eux) : on RECONSTRUIT la config depuis les lignes pour que
+    // « Modifier la pergola » rouvre le configurateur pré-rempli.
+    if (!config?.pergola) {
+      const cfgs = deduireConfigs(autres);
+      if (cfgs.length) {
+        setSmConfig(cfgs[0]);
+        if (cfgs.length > 1 && !config?.supplements?.length)
+          setSupplements(cfgs.slice(1).map((cfg) => ({ key: suppKeyRef.current++, cfg })));
+      }
+    }
   };
 
   const changerTauxDefaut = (t: number) => {
