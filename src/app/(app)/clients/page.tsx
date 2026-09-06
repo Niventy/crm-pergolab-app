@@ -1,29 +1,25 @@
-import { CommandesTable } from "./clients-table";
+import { ClientsBoard } from "./clients-board";
 import { ClientsNav } from "./clients-nav";
-import { getClients, PHASES } from "./phases";
+import { getClients } from "./phases";
 
 export const dynamic = "force-dynamic";
 
+// Espace Clients = Kanban des chantiers (étapes du cycle 3). L'état
+// d'encaissement est un badge / filtre sur chaque carte.
 export default async function ClientsPage() {
-  const { rows, counts, stageOptions, admin, userId } = await getClients();
-  const meta = PHASES.find((p) => p.key === "commande")!;
-  const list = rows.filter((r) => r.phase === "commande");
+  const { rows, stageOptions, userId } = await getClients();
+  const clients = rows.filter((r) => r.statut === "gagnee").length;
 
   return (
     <main className="flex flex-1 flex-col overflow-hidden">
-      <ClientsNav counts={counts} />
-      <div className="flex items-baseline gap-3 px-6 pt-4 pb-3">
-        <h1 className="text-display text-2xl">{meta.titre}</h1>
+      <ClientsNav total={clients} />
+      <div className="flex items-baseline gap-3 px-6 pt-4">
+        <h1 className="text-display text-2xl">Clients</h1>
         <span className="text-sm text-muted-foreground">
-          {meta.sousTitre} · {list.length}
+          Chantiers signés, du métré au SAV
         </span>
       </div>
-      <CommandesTable
-        rows={list}
-        admin={admin}
-        currentUserId={userId}
-        stages={stageOptions}
-      />
+      <ClientsBoard rows={rows} stages={stageOptions} currentUserId={userId} />
     </main>
   );
 }

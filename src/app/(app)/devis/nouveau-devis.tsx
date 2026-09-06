@@ -1,6 +1,6 @@
 "use client";
 
-import { useMemo, useState } from "react";
+import { useEffect, useMemo, useState } from "react";
 import { useRouter } from "next/navigation";
 import { Plus, Search, X, Loader2 } from "lucide-react";
 import { cn } from "@/lib/utils";
@@ -42,6 +42,16 @@ export function NouveauDevisButton({ leads }: { leads: LeadPick[] }) {
     router.push(`/leads/${id}/devis/nouveau`);
   }
 
+  // Échap ferme la modale.
+  useEffect(() => {
+    if (!open) return;
+    function onKey(e: KeyboardEvent) {
+      if (e.key === "Escape" && goingTo === null) setOpen(false);
+    }
+    window.addEventListener("keydown", onKey);
+    return () => window.removeEventListener("keydown", onKey);
+  }, [open, goingTo]);
+
   return (
     <>
       <button
@@ -53,7 +63,14 @@ export function NouveauDevisButton({ leads }: { leads: LeadPick[] }) {
       </button>
 
       {open ? (
-        <div className="fixed inset-0 z-50 flex items-start justify-center bg-black/30 p-4 pt-24">
+        <div
+          role="dialog"
+          aria-modal="true"
+          className="fixed inset-0 z-50 flex items-start justify-center bg-black/30 p-4 pt-24"
+          onClick={(e) => {
+            if (e.target === e.currentTarget && goingTo === null) setOpen(false);
+          }}
+        >
           <div className="w-full max-w-lg overflow-hidden rounded-xl border border-border bg-white shadow-xl">
             <div className="flex items-center justify-between border-b border-border px-4 py-3">
               <div>

@@ -1,15 +1,23 @@
 import Link from "next/link";
 import { notFound } from "next/navigation";
-import { eq } from "drizzle-orm";
+import { and, eq, isNull, ne, or, sql } from "drizzle-orm";
 import { db } from "@/db";
 import { leads as leadsTable } from "@/db/schema";
 import { createClient } from "@/lib/supabase/server";
 import { isAdmin } from "@/lib/current-user";
 import { resolveSender } from "@/lib/email-sender";
+import { etatFacturation } from "@/lib/facturation";
 import { Button, buttonVariants } from "@/components/ui/button";
 import { Card, CardContent, CardHeader, CardTitle } from "@/components/ui/card";
-import { Separator } from "@/components/ui/separator";
-import { formatEuros, formatDate, tempsRelatif, humanise } from "@/lib/format";
+import {
+  formatEuros,
+  formatEurosCents,
+  formatDate,
+  formatTelephone,
+  tempsRelatif,
+  humanise,
+  todayParis,
+} from "@/lib/format";
 import {
   computeGaranties,
   GARANTIE_STATUT_LABEL,
@@ -17,56 +25,35 @@ import {
   GARANTIE_MOTORISATION_ANS,
   type GarantieStatut,
 } from "@/lib/garanties";
+import { phaseDe } from "@/app/(app)/clients/phases-meta";
 import { assignLead } from "./actions";
-import { AssignSelect } from "./assign-select";
 import { StageMover } from "./stage-mover";
 import { DevisEditor } from "./devis-editor";
 import { ActivitePills } from "./activite-pills";
+import { ActionsRapides } from "./actions-rapides";
 import { EmailCompose } from "./email-compose";
 import { EmailThread } from "./email-thread";
-import { Conversation } from "./conversation";
-import { EncaissementForm } from "./encaissement-form";
 import { ChampsEditables } from "./champs-editables";
 import { Documents } from "./documents";
 import { Facturation } from "./facturation";
+import { CorbeilleBanner } from "./corbeille-banner";
+import { Chantier } from "./chantier";
+import { Paiements } from "./paiements";
+import { DossierAdmin } from "./dossier-admin";
+import { FicheHeader } from "./fiche-header";
+import { NoteComposer } from "./note-composer";
+import { handleOf } from "./mentions";
+import { FilActivite, type FilItem } from "./fil-activite";
+import { MetaReponses, extraireReponsesMeta } from "./meta-reponses";
 
 export const dynamic = "force-dynamic";
 
-const RDV_TYPE_LABEL: Record<string, string> = {
-  physique: "physique",
-  visio: "visio",
-};
-const RDV_STATUT_LABEL: Record<string, string> = {
-  prevu: "prévu",
-  a_reprogrammer: "à reprogrammer",
-  honore: "honoré",
-};
-const RAISON_PERTE_LABEL: Record<string, string> = {
-  prix: "Prix",
-  delai: "Délai",
-  concurrent: "Concurrent",
-  injoignable: "Injoignable",
-  annule: "Projet annulé",
-  non_qualifie: "Non qualifié",
-  autre: "Autre",
-};
-const MODE_PAIEMENT_LABEL: Record<string, string> = {
-  comptant: "Comptant",
-  financement_60: "Financement 60 mois",
-  financement_120: "Financement 120 mois",
-};
 const TYPE_POSE_LABEL: Record<string, string> = {
   autoportee: "Autoportée",
   adossee: "Adossée",
 };
 
-function Field({
-  label,
-  value,
-}: {
-  label: string;
-  value: React.ReactNode;
-}) {
+function Field({ label, value }: { label: string; value: React.ReactNode }) {
   return (
     <div className="space-y-0.5">
       <div className="text-xs text-muted-foreground">{label}</div>
@@ -75,37 +62,34 @@ function Field({
   );
 }
 
-// Champ mis en avant pour la prise d'info pendant l'appel (gros, lisible).
-function BigField({
-  label,
-  value,
+// Carte compacte de la colonne Contexte : titre + compteur optionnel.
+function Bloc({
+  titre,
+  compteur,
+  id,
+  accent,
+  children,
 }: {
-  label: string;
-  value: React.ReactNode;
+  titre: string;
+  compteur?: string | number | null;
+  id?: string;
+  accent?: boolean;
+  children: React.ReactNode;
 }) {
   return (
-    <div className="rounded-lg bg-muted/40 px-3 py-2">
-      <div className="text-eyebrow text-muted-foreground">{label}</div>
-      <div className="mt-0.5 text-lg font-semibold break-words text-foreground">
-        {value || "—"}
-      </div>
-    </div>
-  );
-}
-
-function StatutBadge({ statut }: { statut: string }) {
-  const map: Record<string, { label: string; cls: string }> = {
-    en_cours: { label: "En cours", cls: "bg-slate-200 text-slate-700" },
-    gagnee: { label: "Gagnée", cls: "bg-green-600 text-white" },
-    perdue: { label: "Perdue", cls: "bg-red-600 text-white" },
-  };
-  const s = map[statut] ?? map.en_cours;
-  return (
-    <span
-      className={`rounded-md px-2 py-0.5 text-[11px] font-bold uppercase tracking-wide ${s.cls}`}
-    >
-      {s.label}
-    </span>
+    <Card id={id} className={accent ? "border-l-4 border-l-primary" : undefined}>
+      <CardHeader className="pb-2">
+        <CardTitle className="text-eyebrow flex items-center gap-2 text-muted-foreground">
+          {titre}
+          {compteur != null && compteur !== "" ? (
+            <span className="rounded-full bg-primary/10 px-1.5 text-[10px] font-bold text-primary">
+              {compteur}
+            </span>
+          ) : null}
+        </CardTitle>
+      </CardHeader>
+      <CardContent>{children}</CardContent>
+    </Card>
   );
 }
 
@@ -116,34 +100,6 @@ const GARANTIE_CLS: Record<GarantieStatut, string> = {
   inconnue: "bg-slate-100 text-slate-500",
 };
 
-function GarantieLigne({
-  titre,
-  ans,
-  fin,
-  statut,
-}: {
-  titre: string;
-  ans: number;
-  fin: string | null;
-  statut: GarantieStatut;
-}) {
-  return (
-    <div className="flex items-center justify-between rounded-lg border border-border bg-muted/30 px-3 py-2">
-      <div>
-        <div className="text-sm font-medium text-foreground">{titre}</div>
-        <div className="text-xs text-muted-foreground">
-          {ans} ans · {fin ? `jusqu'au ${formatDate(fin)}` : "date de départ inconnue"}
-        </div>
-      </div>
-      <span
-        className={`rounded px-1.5 py-0.5 text-[10px] font-bold uppercase tracking-wide ${GARANTIE_CLS[statut]}`}
-      >
-        {GARANTIE_STATUT_LABEL[statut]}
-      </span>
-    </div>
-  );
-}
-
 export default async function LeadPage({
   params,
 }: {
@@ -151,7 +107,7 @@ export default async function LeadPage({
 }) {
   const { id } = await params;
 
-  const [lead, profiles] = await Promise.all([
+  const [lead, profiles, stages] = await Promise.all([
     db.query.leads.findFirst({
       where: eq(leadsTable.id, id),
       with: {
@@ -159,41 +115,29 @@ export default async function LeadPage({
         responsable: true,
         modifiePar: true,
         poseur: true,
-        notes: {
+        notes: { with: { auteur: true }, orderBy: (n, { desc }) => [desc(n.createdAt)] },
+        echanges: { with: { auteur: true }, orderBy: (e, { desc }) => [desc(e.date)] },
+        devis: { orderBy: (d, { desc }) => [desc(d.createdAt)] },
+        documents: { with: { auteur: true }, orderBy: (d, { desc }) => [desc(d.createdAt)] },
+        factures: { orderBy: (f, { asc }) => [asc(f.createdAt)] },
+        paiements: {
           with: { auteur: true },
-          orderBy: (n, { desc }) => [desc(n.createdAt)],
-        },
-        echanges: {
-          with: { auteur: true },
-          orderBy: (e, { desc }) => [desc(e.date)],
-        },
-        devis: {
-          orderBy: (d, { desc }) => [desc(d.createdAt)],
-        },
-        documents: {
-          with: { auteur: true },
-          orderBy: (d, { desc }) => [desc(d.createdAt)],
-        },
-        factures: {
-          orderBy: (f, { asc }) => [asc(f.createdAt)],
+          orderBy: (p, { desc }) => [desc(p.date), desc(p.createdAt)],
         },
       },
     }),
     db.query.profiles.findMany({ orderBy: (p, { asc }) => [asc(p.nom)] }),
+    db.query.stages.findMany({ orderBy: (s, { asc }) => [asc(s.position)] }),
   ]);
-
-  const stages = await db.query.stages.findMany({
-    orderBy: (s, { asc }) => [asc(s.position)],
-  });
 
   if (!lead) notFound();
 
   const cycle = lead.stage?.cycle ?? 1;
-  const hasRelance = lead.relanceCount > 0 || !!lead.nextRelanceDate;
-  const admin = await isAdmin(); // masque coût fournisseur + marge aux ADV
-  const isClient = lead.statut === "gagnee"; // fiche « mode client » (post-signature)
+  const admin = await isAdmin();
+  // Fiche « client » : signée (gagnée) OU sur une étape de chantier (dont Annulée).
+  const isClient = lead.statut === "gagnee" || cycle === 3;
+  const today = todayParis();
 
-  // Email : qui est connecté + depuis quelle adresse il enverra (diagnostic + UX).
   const supabase = await createClient();
   const {
     data: { user },
@@ -203,492 +147,187 @@ export default async function LeadPage({
   const emailConfigured =
     !!process.env.GOOGLE_CLIENT_ID && !!process.env.GOOGLE_CLIENT_SECRET && !!senderFrom;
 
-  // ----- Blocs de la fiche, extraits pour une mise en page pleine largeur -----
+  // Facturation (client) + autres fiches du même contact (doublons).
+  const telDigits = lead.telephone ? lead.telephone.replace(/\D/g, "").replace(/^33/, "0") : null;
+  const identites = [
+    ...(lead.email ? [sql`lower(${leadsTable.email}) = ${lead.email.toLowerCase()}`] : []),
+    ...(telDigits && telDigits.length >= 9
+      ? [sql`regexp_replace(regexp_replace(coalesce(${leadsTable.telephone}, ''), '\\D', '', 'g'), '^33', '0') = ${telDigits}`]
+      : []),
+  ];
+  const [facturation, autresFiches] = await Promise.all([
+    isClient ? etatFacturation(lead.id) : Promise.resolve(null),
+    identites.length
+      ? db.query.leads.findMany({
+          where: and(ne(leadsTable.id, lead.id), isNull(leadsTable.deletedAt), or(...identites)),
+          with: { stage: true, responsable: true },
+          orderBy: (l, { desc }) => [desc(l.createdAt)],
+          limit: 5,
+        })
+      : Promise.resolve([]),
+  ]);
+  const devisAccepte = lead.devis.some((d) => d.accepteAt);
+  const choixDevisRequis = isClient && lead.devis.length > 1 && !devisAccepte;
+  const devisRef = facturation?.devisRef ?? null;
 
-  // Bandeau : identité + prise d'info + coordonnées/besoin.
-  const headerCard = (
-    <Card>
-      <CardHeader>
-        <div className="flex flex-wrap items-start justify-between gap-3">
-          <div className="space-y-1">
-            <div className="flex flex-wrap items-center gap-2">
-              <CardTitle className="text-display text-2xl">{lead.nom}</CardTitle>
-              <StatutBadge statut={lead.statut} />
-              {lead.resoumission ? (
-                <span className="inline-flex items-center gap-1 rounded-full bg-violet-100 px-2.5 py-1 text-[11px] font-bold uppercase tracking-wide text-violet-700">
-                  📩 2ᵉ formulaire
-                </span>
-              ) : null}
-            </div>
-            {lead.entreprise ? (
-              <div className="text-sm text-muted-foreground">
-                {lead.entreprise}
-              </div>
-            ) : null}
-          </div>
-          {/* Attribution — bien visible */}
-          <div className="flex items-center gap-2 rounded-lg border border-border bg-muted/40 px-3 py-1.5">
-            <span className="text-eyebrow text-muted-foreground">Géré par</span>
-            <AssignSelect
-              leadId={lead.id}
-              profiles={profiles}
-              assignedTo={lead.assignedTo}
-              currentUserId={user?.id ?? null}
-            />
-          </div>
-        </div>
-      </CardHeader>
-      <CardContent className="space-y-4">
-        {/* PRISE D'INFO — essentiels de l'appel, bien en évidence */}
-        <div className="grid grid-cols-1 gap-3 sm:grid-cols-3">
-          <BigField
-            label="Téléphone"
-            value={
-              lead.telephone ? (
-                <a
-                  href={`tel:${lead.telephone.replace(/[^+\d]/g, "")}`}
-                  className="text-primary hover:underline"
-                >
-                  {lead.telephone}
-                </a>
-              ) : null
-            }
-          />
-          <BigField
-            label="Email"
-            value={
-              lead.email ? (
-                <a href={`mailto:${lead.email}`} className="text-primary hover:underline">
-                  {lead.email}
-                </a>
-              ) : null
-            }
-          />
-          <BigField
-            label="Type de projet"
-            value={humanise(lead.typeProjet) || humanise(lead.dimensions)}
-          />
-        </div>
+  // ----- Fil chronologique unique (notes + échanges) -----
+  const fil: FilItem[] = [
+    ...lead.notes.map((n) => ({
+      id: `n-${n.id}`,
+      kind: "note" as const,
+      type: "note",
+      date: n.createdAt,
+      auteur: n.auteur?.nom ?? n.auteur?.email ?? null,
+      contenu: n.contenu,
+    })),
+    ...lead.echanges.map((e) => ({
+      id: `e-${e.id}`,
+      kind: "echange" as const,
+      type: e.type,
+      date: e.date,
+      auteur: e.auteur?.nom ?? e.auteur?.email ?? null,
+      contenu: e.contenu ?? "",
+    })),
+  ];
+  const handles = new Set(profiles.map((p) => handleOf(p).toLowerCase()));
 
-        {/* Coordonnées client (éditables) OU besoin prospect selon le statut */}
-        {isClient ? (
-          <div className="rounded-lg border border-border bg-muted/30 p-3">
-            <div className="text-eyebrow text-muted-foreground">
-              Coordonnées &amp; localisation
-            </div>
-            <ChampsEditables
-              leadId={lead.id}
-              champs={[
-                { key: "telephone", label: "Téléphone", value: lead.telephone, type: "tel" },
-                { key: "email", label: "Email", value: lead.email, type: "email" },
-                { key: "ville", label: "Ville", value: lead.ville },
-                { key: "adresse", label: "Adresse", value: lead.adresse, full: true },
-                { key: "codePostal", label: "Code postal", value: lead.codePostal },
-              ]}
-            />
-          </div>
-        ) : (
-          <div className="rounded-lg border border-border bg-muted/30 p-3">
-            <div className="text-eyebrow mb-2 text-muted-foreground">
-              Besoin client
-            </div>
-            <div className="grid grid-cols-1 gap-3 sm:grid-cols-3">
-              <Field label="Code postal" value={lead.codePostal} />
-              <Field
-                label="Appel souhaité (créneau)"
-                value={humanise(lead.dateSouhaiteeAppel)}
-              />
-              <Field
-                label="Installation souhaitée"
-                value={humanise(lead.dateInstallation)}
-              />
-            </div>
-          </div>
-        )}
-      </CardContent>
-    </Card>
-  );
-
-  // Suivi — pipeline + activité + email (le cœur du travail).
-  const suiviCard = (
-    <Card className="border-l-4 border-l-primary">
-      <CardHeader>
-        <CardTitle className="text-base font-semibold text-foreground">
-          Suivi
-        </CardTitle>
-      </CardHeader>
-      <CardContent className="space-y-4">
-        <div>
-          <div className="text-eyebrow mb-2 text-muted-foreground">
-            {isClient
-              ? "Pipeline client — pose & technique"
-              : "Pipeline — déplacer la fiche"}
-          </div>
-          <StageMover
-            leadId={lead.id}
-            stages={stages}
-            currentStageId={lead.stageId}
-            isClient={isClient}
-          />
-        </div>
-        <Separator />
-        <div>
-          <div className="text-eyebrow mb-2 text-muted-foreground">Activité</div>
-          <ActivitePills leadId={lead.id} cycle={cycle} activites={lead.echanges} />
-        </div>
-        <Separator />
-        <EmailCompose
-          leadId={lead.id}
-          nom={lead.nom}
-          email={lead.email}
-          configured={emailConfigured}
-          connectedEmail={connectedEmail}
-          senderFrom={senderFrom}
-        />
-      </CardContent>
-    </Card>
-  );
-
-  // RDV + Relance — prospect uniquement (cycles 1 & 2).
-  const rdvCard =
-    cycle <= 2 && !isClient ? (
-      <Card>
-        <CardHeader>
-          <CardTitle className="text-eyebrow text-muted-foreground">Rendez-vous</CardTitle>
-        </CardHeader>
-        <CardContent className="grid grid-cols-2 gap-4">
-          <Field label="Date" value={formatDate(lead.rdvDate)} />
-          <Field label="Heure" value={lead.rdvHeure} />
-          <Field
-            label="Type"
-            value={lead.rdvType ? RDV_TYPE_LABEL[lead.rdvType] : "—"}
-          />
-          <Field
-            label="Statut"
-            value={lead.rdvStatut ? RDV_STATUT_LABEL[lead.rdvStatut] : "—"}
-          />
-          {lead.rdvDate ? (
-            <Field
-              label="Google Agenda"
-              value={
-                lead.rdvEventId ? (
-                  <span className="text-green-700">✓ synchronisé</span>
-                ) : (
-                  <span className="text-muted-foreground">non synchronisé</span>
-                )
-              }
-            />
-          ) : null}
-        </CardContent>
-      </Card>
-    ) : null;
-
-  const relanceCard =
-    cycle <= 2 && !isClient ? (
-      <Card>
-        <CardHeader>
-          <CardTitle className="text-eyebrow text-muted-foreground">Relance</CardTitle>
-        </CardHeader>
-        <CardContent className="grid grid-cols-2 gap-4">
-          <Field
-            label="Prochaine relance"
-            value={
-              hasRelance ? (
-                <span className="text-orange-700">
-                  {formatDate(lead.nextRelanceDate)}
-                </span>
-              ) : (
-                "—"
-              )
-            }
-          />
-          <Field label="Nombre de relances" value={String(lead.relanceCount)} />
-        </CardContent>
-      </Card>
-    ) : null;
-
-  // Suivi commercial — dès le cycle devis.
-  const suiviCommercialCard =
-    cycle >= 2 ? (
-      <Card>
-        <CardHeader>
-          <CardTitle className="text-eyebrow text-muted-foreground">
-            Suivi commercial
-          </CardTitle>
-        </CardHeader>
-        <CardContent className="grid grid-cols-2 gap-4">
-          <Field
-            label="1er contact"
-            value={
-              lead.datePremierContact
-                ? new Date(lead.datePremierContact).toLocaleString("fr-FR", {
-                    dateStyle: "short",
-                    timeStyle: "short",
-                    timeZone: "Europe/Paris",
-                  })
-                : "—"
-            }
-          />
-          <Field
-            label="Mode de paiement"
-            value={lead.modePaiement ? MODE_PAIEMENT_LABEL[lead.modePaiement] : "—"}
-          />
-          <Field label="Acompte" value={formatEuros(lead.acompte)} />
-          <Field
-            label="Raison de perte"
-            value={lead.raisonPerte ? RAISON_PERTE_LABEL[lead.raisonPerte] : "—"}
-          />
-        </CardContent>
-      </Card>
-    ) : null;
-
-  // Produit — dès le cycle devis.
-  const produitCard =
-    cycle >= 2 ? (
-      <Card>
-        <CardHeader>
-          <CardTitle className="text-eyebrow text-muted-foreground">Produit</CardTitle>
-        </CardHeader>
-        <CardContent className="grid grid-cols-2 gap-4">
-          <Field label="Gamme" value={lead.gamme} />
-          <Field label="Dimensions" value={lead.dimensions} />
-          <Field label="Finition" value={lead.finition} />
-          <Field
-            label="Type de pose"
-            value={lead.typePose ? TYPE_POSE_LABEL[lead.typePose] : "—"}
-          />
-          <Field label="Options" value={humanise(lead.options)} />
-          {/* Coût fournisseur + marge = secrets business → admin uniquement. */}
-          {admin ? (
-            <>
-              <Field label="Coût fournisseur" value={formatEuros(lead.montantAchat)} />
-              <Field
-                label="Marge"
-                value={
-                  lead.montant && lead.montantAchat ? (
-                    <span className="font-medium text-green-700">
-                      {formatEuros(Number(lead.montant) - Number(lead.montantAchat))}
-                    </span>
-                  ) : (
-                    "—"
-                  )
-                }
-              />
-            </>
-          ) : null}
-        </CardContent>
-      </Card>
-    ) : null;
-
-  // Pose & technique — cycle 3 uniquement.
-  const poseCard =
-    cycle === 3 ? (
-      <Card>
-        <CardHeader>
-          <CardTitle className="text-eyebrow text-muted-foreground">
-            Pose & technique
-          </CardTitle>
-        </CardHeader>
-        <CardContent className="grid grid-cols-2 gap-4">
-          <Field
-            label="Poseur / métreur"
-            value={lead.poseur?.nom ?? lead.poseur?.email ?? "Non assigné"}
-          />
-          <Field label="Date du métré" value={formatDate(lead.dateMetre)} />
-          <Field label="Fournisseur" value={lead.fournisseur} />
-          <Field label="Réf. commande" value={lead.refCommande} />
-          <Field label="Date commande" value={formatDate(lead.dateCommande)} />
-          <Field label="Livraison prévue" value={formatDate(lead.dateLivraisonPrevue)} />
-          <Field label="Livraison réelle" value={formatDate(lead.dateLivraisonReelle)} />
-          <Field label="Pose prévue" value={formatDate(lead.datePosePrevue)} />
-          <Field label="Pose réalisée" value={formatDate(lead.datePoseReelle)} />
-          <Field label="Adresse de pose" value={lead.adressePose} />
-        </CardContent>
-      </Card>
-    ) : null;
-
-  // Encaissement & administratif — dossier client (fiches gagnées).
-  const encaissementCard = isClient ? (
-    <Card>
-      <CardHeader>
-        <CardTitle className="text-eyebrow text-muted-foreground">
-          Encaissement &amp; administratif
-        </CardTitle>
-      </CardHeader>
-      <CardContent>
-        <EncaissementForm
-          leadId={lead.id}
-          montantHt={lead.montant ? Number(lead.montant) : null}
-          montantTtc={lead.montantTtc}
-          acompteEncaisse={lead.acompteEncaisse}
-          paiementEspece={lead.paiementEspece}
-          financeur={lead.financeur}
-          equipePose={lead.equipePose}
-          mesure={lead.mesure}
-          factureSoldeClient={lead.factureSoldeClient}
-          factureSoldePoseur={lead.factureSoldePoseur}
-          dossierDateEnvoi={lead.dossierDateEnvoi}
-        />
-      </CardContent>
-    </Card>
-  ) : null;
-
-  // Garanties — portefeuille client (fiches gagnées).
-  const garantiesCard = isClient
-    ? (() => {
-        const g = computeGaranties({
-          datePoseReelle: lead.datePoseReelle,
-          dateSignature: lead.dateSignature,
-        });
-        return (
-          <Card>
-            <CardHeader>
-              <CardTitle className="text-eyebrow text-muted-foreground">
-                Garanties
-              </CardTitle>
-            </CardHeader>
-            <CardContent className="space-y-2">
-              <div className="text-xs text-muted-foreground">
-                Point de départ :{" "}
-                {g.source === "pose"
-                  ? `pose du ${formatDate(g.depart)}`
-                  : g.source === "signature"
-                    ? `signature du ${formatDate(g.depart)} (pose non datée)`
-                    : "à définir (aucune date de pose ni de signature)"}
-              </div>
-              <GarantieLigne
-                titre="Structure aluminium"
-                ans={GARANTIE_STRUCTURE_ANS}
-                fin={g.structureFin}
-                statut={g.structureStatut}
-              />
-              <GarantieLigne
-                titre="Motorisation"
-                ans={GARANTIE_MOTORISATION_ANS}
-                fin={g.motorisationFin}
-                statut={g.motorisationStatut}
-              />
-            </CardContent>
-          </Card>
-        );
-      })()
+  // ----- Bandeau prospection -----
+  const appels = lead.echanges.filter((e) => e.type === "appel");
+  const contacts = lead.echanges.filter((e) => ["appel", "relance", "email", "rdv", "rdv_honore", "devis_envoye"].includes(e.type));
+  const prospection = !isClient
+    ? {
+        tentatives: appels.length,
+        dernierContact: contacts[0]?.date ?? lead.datePremierContact ?? null,
+        premierContact: lead.datePremierContact,
+        rdv: { date: lead.rdvDate, heure: lead.rdvHeure, type: lead.rdvType, statut: lead.rdvStatut },
+        nextRelanceDate: lead.nextRelanceDate,
+        relanceCount: lead.relanceCount,
+      }
     : null;
 
-  // Devis — composés dans le CRM puis créés dans Pennylane.
-  const devisCard = (
-    <Card>
-      <CardHeader>
-        <CardTitle className="text-eyebrow text-muted-foreground">Devis</CardTitle>
-      </CardHeader>
-      <CardContent>
-        <DevisEditor
-          leadId={lead.id}
-          devisExistants={lead.devis}
-          pennylaneConfigured={!!process.env.PENNYLANE_API_KEY}
-        />
-      </CardContent>
-    </Card>
+  // ----- Bandeau client -----
+  const ttc = devisRef?.ttc ?? (lead.montantTtc ? Number(lead.montantTtc) : null);
+  const paiementsItems = lead.paiements.map((p) => ({
+    id: p.id,
+    date: p.date,
+    montant: Number(p.montant),
+    mode: p.mode,
+    reference: p.reference,
+    auteur: p.auteur?.nom ?? p.auteur?.email ?? null,
+  }));
+  const encaisse = paiementsItems.reduce((a, p) => a + p.montant, 0);
+  const echeances: { label: string; date: string; Icon: "metre" | "livraison" | "pose" }[] = [];
+  if (lead.dateMetre && lead.stage?.code === "a_metrer")
+    echeances.push({ label: "Métré", date: lead.dateMetre, Icon: "metre" });
+  if (lead.dateLivraisonPrevue && !lead.dateLivraisonReelle)
+    echeances.push({ label: "Livraison", date: lead.dateLivraisonPrevue, Icon: "livraison" });
+  if (lead.datePosePrevue && !lead.datePoseReelle)
+    echeances.push({ label: "Pose", date: lead.datePosePrevue, Icon: "pose" });
+  echeances.sort((a, b) => a.date.localeCompare(b.date));
+  const clientHeader = isClient
+    ? {
+        phase: phaseDe({ montantTtc: ttc, acompteEncaisse: encaisse, paiementEspece: 0 }),
+        ttc,
+        encaisse,
+        nbPaiements: paiementsItems.length,
+        echeance: echeances[0] ? { ...echeances[0], passe: echeances[0].date < today } : null,
+        poseur: lead.poseur?.nom ?? lead.poseur?.email ?? lead.equipePose ?? null,
+        devisNumero: devisRef?.numero ?? null,
+        dateSignature: lead.dateSignature,
+      }
+    : null;
+
+  const adresseClient =
+    [lead.adresse, [lead.codePostal, lead.ville].filter(Boolean).join(" ")].filter(Boolean).join(", ") || null;
+  const soldeFacture = (facturation?.factures ?? []).some(
+    (f) => f.type === "solde" && f.statut !== "supprimee",
+  );
+  const reponsesMeta = extraireReponsesMeta(lead.rawPayload);
+
+  // ----- Blocs -----
+  const devisBloc = (
+    <Bloc titre="Devis" compteur={lead.devis.length || null}>
+      <DevisEditor
+        leadId={lead.id}
+        devisExistants={lead.devis.map((d) => ({
+          id: d.id,
+          numero: d.numero,
+          montant: d.montant,
+          montantTtc: d.montantTtc,
+          statut: d.statut,
+          lienExterne: d.lienExterne,
+          externalId: d.externalId,
+          accepte: !!d.accepteAt,
+        }))}
+        pennylaneConfigured={!!process.env.PENNYLANE_API_KEY}
+        choixRequis={choixDevisRequis}
+      />
+    </Bloc>
   );
 
-  // Facturation Pennylane — acompte + solde (fiches gagnées).
-  const facturationCard = isClient ? (
-    <Card>
-      <CardHeader>
-        <CardTitle className="text-eyebrow text-muted-foreground">
-          Facturation
-        </CardTitle>
-      </CardHeader>
-      <CardContent>
-        <Facturation
-          leadId={lead.id}
-          pennylaneConfigured={!!process.env.PENNYLANE_API_KEY}
-          montantHt={Number(lead.montant ?? 0)}
-          factures={lead.factures.map((f) => ({
-            id: f.id,
-            type: f.type,
-            numero: f.numero,
-            externalId: f.externalId,
-            montantHt: f.montantHt ? Number(f.montantHt) : null,
-            statut: f.statut,
-          }))}
-        />
-      </CardContent>
-    </Card>
-  ) : null;
-
-  // Conversation d'équipe.
-  const conversationCard = (
-    <Card className="border-l-4 border-l-brand">
-      <CardHeader>
-        <CardTitle className="text-base font-semibold text-foreground">
-          Conversation
-        </CardTitle>
-      </CardHeader>
-      <CardContent>
-        <Conversation
-          leadId={lead.id}
-          profiles={profiles}
-          messages={lead.notes}
-          currentUserId={user?.id ?? null}
-        />
-      </CardContent>
-    </Card>
+  const documentsBloc = (
+    <Bloc titre="Documents" compteur={lead.documents.length || null} id="documents">
+      <Documents
+        leadId={lead.id}
+        docs={lead.documents.map((d) => ({
+          id: d.id,
+          nom: d.nom,
+          mime: d.mime,
+          taille: d.taille,
+          createdAt: d.createdAt,
+          auteur: d.auteur?.nom ?? d.auteur?.email ?? null,
+        }))}
+      />
+    </Bloc>
   );
 
-  // Emails (Gmail) — fil envois + réponses.
-  const emailsCard =
+  const emailsBloc =
     emailConfigured && lead.email ? (
-      <Card>
-        <CardHeader>
-          <CardTitle className="text-eyebrow text-muted-foreground">Emails</CardTitle>
+      <Bloc titre="Emails (Gmail)">
+        <EmailThread leadEmail={lead.email} />
+      </Bloc>
+    ) : null;
+
+  const autresFichesBloc =
+    autresFiches.length > 0 ? (
+      <Card className="border-violet-300 bg-violet-50/40">
+        <CardHeader className="pb-2">
+          <CardTitle className="text-eyebrow text-violet-800">
+            Autres fiches de ce contact ({autresFiches.length})
+          </CardTitle>
         </CardHeader>
-        <CardContent>
-          <EmailThread leadEmail={lead.email} />
+        <CardContent className="space-y-1.5 text-sm">
+          {autresFiches.map((a) => (
+            <Link
+              key={a.id}
+              href={`/leads/${a.id}`}
+              className="flex flex-wrap items-center gap-2 rounded-md bg-white px-2.5 py-1.5 hover:bg-violet-50"
+            >
+              <span className="font-medium text-foreground">{a.nom}</span>
+              {a.stage ? (
+                <span className="inline-flex items-center gap-1 text-xs text-muted-foreground">
+                  <span className="size-2 rounded-full" style={{ backgroundColor: a.stage.couleur }} />
+                  {a.stage.nom}
+                </span>
+              ) : null}
+              <span className="text-xs text-muted-foreground">
+                {a.statut === "gagnee" ? "client" : a.statut === "perdue" ? "perdu" : "en cours"} ·{" "}
+                {a.responsable?.nom ?? a.responsable?.email ?? "non assigné"} · reçu {tempsRelatif(a.createdAt)}
+              </span>
+            </Link>
+          ))}
+          <p className="text-[11px] text-violet-800/80">
+            Même email ou téléphone : vérifie qu&apos;on ne rappelle pas deux fois la même personne.
+          </p>
         </CardContent>
       </Card>
     ) : null;
 
-  // Documents — factures, plans, PV, photos (Supabase Storage).
-  const documentsCard = (
-    <Card>
-      <CardHeader>
-        <CardTitle className="text-eyebrow text-muted-foreground">
-          Documents
-        </CardTitle>
-      </CardHeader>
-      <CardContent>
-        <Documents
-          leadId={lead.id}
-          docs={lead.documents.map((d) => ({
-            id: d.id,
-            nom: d.nom,
-            mime: d.mime,
-            taille: d.taille,
-            createdAt: d.createdAt,
-            auteur: d.auteur?.nom ?? d.auteur?.email ?? null,
-          }))}
-        />
-      </CardContent>
-    </Card>
-  );
-
-  // Autres informations — secondaire.
-  const autresInfosCard = (
-    <Card>
-      <CardHeader>
-        <CardTitle className="text-eyebrow text-muted-foreground">
-          Autres informations
-        </CardTitle>
-      </CardHeader>
-      <CardContent className="grid grid-cols-2 gap-4">
+  const origineBloc = (
+    <Bloc titre="Origine & historique">
+      <div className="grid grid-cols-2 gap-3">
         <Field label="Source" value={lead.source} />
         <Field label="Campagne" value={lead.campagne} />
-        <Field label="Montant" value={formatEuros(lead.montant)} />
-        <Field
-          label="Probabilité"
-          value={lead.probabilite !== null ? `${lead.probabilite} %` : "—"}
-        />
-        <Field label="Objectif" value={formatDate(lead.objectifDate)} />
         <Field
           label="Reçu le"
           value={new Date(lead.createdAt).toLocaleString("fr-FR", {
@@ -705,126 +344,345 @@ export default async function LeadPage({
               : tempsRelatif(lead.updatedAt) || "—"
           }
         />
-      </CardContent>
-    </Card>
+        {admin ? (
+          <>
+            <Field label="Coût fournisseur" value={formatEuros(lead.montantAchat)} />
+            <Field
+              label="Marge"
+              value={
+                lead.montant && lead.montantAchat ? (
+                  <span className="font-medium text-green-700">
+                    {formatEuros(Number(lead.montant) - Number(lead.montantAchat))}
+                  </span>
+                ) : (
+                  "—"
+                )
+              }
+            />
+          </>
+        ) : null}
+      </div>
+    </Bloc>
   );
 
-  const detailsBand = poseCard || suiviCommercialCard || produitCard;
+  // Produit : dérivé du devis signé (client), sinon saisie.
+  const produitBloc =
+    isClient || cycle >= 2 ? (
+      <Bloc titre={`Produit${devisRef?.numero ? ` · devis ${devisRef.numero}` : ""}`}>
+        {devisRef && devisRef.lignes.length ? (
+          <ul className="divide-y divide-border text-sm">
+            {devisRef.lignes
+              .filter((l) => !l.designation.toLowerCase().startsWith("remise"))
+              .slice(0, 8)
+              .map((l, i) => (
+                <li key={i} className="flex items-center justify-between gap-3 py-1.5">
+                  <span className="min-w-0 truncate text-foreground">
+                    {l.quantite > 1 ? `${l.quantite} × ` : ""}
+                    {l.designation}
+                  </span>
+                  <span className="shrink-0 tabular-nums text-muted-foreground">
+                    {formatEurosCents(l.prixHt * l.quantite)} HT
+                  </span>
+                </li>
+              ))}
+          </ul>
+        ) : (
+          <div className="grid grid-cols-2 gap-3">
+            <Field label="Gamme" value={lead.gamme} />
+            <Field label="Dimensions" value={lead.dimensions} />
+            <Field label="Finition" value={lead.finition} />
+            <Field label="Type de pose" value={lead.typePose ? TYPE_POSE_LABEL[lead.typePose] : "—"} />
+            <Field label="Options" value={humanise(lead.options)} />
+          </div>
+        )}
+      </Bloc>
+    ) : null;
+
+  const garantiesBloc = isClient
+    ? (() => {
+        const g = computeGaranties({ datePoseReelle: lead.datePoseReelle, dateSignature: lead.dateSignature });
+        return (
+          <Bloc titre={lead.datePoseReelle ? `Garanties · pose du ${formatDate(g.depart)}` : "Garanties"}>
+            {lead.datePoseReelle ? (
+              <div className="space-y-2">
+                {[
+                  { t: "Structure aluminium", ans: GARANTIE_STRUCTURE_ANS, fin: g.structureFin, st: g.structureStatut },
+                  { t: "Motorisation", ans: GARANTIE_MOTORISATION_ANS, fin: g.motorisationFin, st: g.motorisationStatut },
+                ].map((x) => (
+                  <div key={x.t} className="flex items-center justify-between rounded-lg border border-border bg-muted/30 px-3 py-2">
+                    <div>
+                      <div className="text-sm font-medium text-foreground">{x.t}</div>
+                      <div className="text-xs text-muted-foreground">
+                        {x.ans} ans · {x.fin ? `jusqu'au ${formatDate(x.fin)}` : "—"}
+                      </div>
+                    </div>
+                    <span className={`rounded px-1.5 py-0.5 text-[10px] font-bold uppercase tracking-wide ${GARANTIE_CLS[x.st]}`}>
+                      {GARANTIE_STATUT_LABEL[x.st]}
+                    </span>
+                  </div>
+                ))}
+              </div>
+            ) : (
+              <p className="text-sm text-muted-foreground">
+                Démarrent à la pose : structure {GARANTIE_STRUCTURE_ANS} ans · motorisation{" "}
+                {GARANTIE_MOTORISATION_ANS} ans.
+              </p>
+            )}
+          </Bloc>
+        );
+      })()
+    : null;
 
   return (
-    <main className="w-full flex-1 px-4 py-6 lg:px-6">
+    <main className="w-full flex-1 px-4 pt-4 pb-28 lg:px-6">
       <div className="mx-auto w-full max-w-[1500px] space-y-4">
         {/* Barre supérieure */}
         <div className="flex items-center justify-between">
           <Link
-            href="/kanban"
+            href={isClient ? "/clients" : "/kanban"}
             className="text-sm text-muted-foreground hover:text-foreground"
           >
-            ← Retour au Kanban
+            {isClient ? "← Clients" : "← Kanban"}
           </Link>
           <Link
             href={`/leads/${lead.id}/modifier`}
             className={buttonVariants({ variant: "outline", size: "sm" })}
           >
-            Modifier
+            Tout modifier
           </Link>
         </div>
 
-        {/* Alerte : lead non attribué */}
-        {!lead.assignedTo ? (
+        {lead.deletedAt ? (
+          <CorbeilleBanner leadId={lead.id} deletedAt={lead.deletedAt} admin={admin} />
+        ) : null}
+
+        {!lead.assignedTo && !lead.deletedAt ? (
           <div className="flex flex-wrap items-center gap-3 rounded-xl border border-amber-300 bg-amber-50 px-4 py-3">
-            <span className="text-sm font-semibold text-amber-800">
-              ⚠ Ce lead n&apos;est pas attribué.
-            </span>
+            <span className="text-sm font-semibold text-amber-800">⚠ Ce lead n&apos;est pas attribué.</span>
             {user?.id ? (
               <form action={assignLead.bind(null, lead.id, user.id)}>
-                <Button
-                  type="submit"
-                  size="sm"
-                  className="bg-amber-600 text-white hover:bg-amber-700"
-                >
+                <Button type="submit" size="sm" className="bg-amber-600 text-white hover:bg-amber-700">
                   M&apos;attribuer
                 </Button>
               </form>
             ) : null}
+            <span className="text-xs text-amber-700">ou choisis un responsable dans l&apos;en-tête.</span>
+          </div>
+        ) : null}
+
+        {choixDevisRequis ? (
+          <div className="flex flex-wrap items-center gap-3 rounded-xl border border-amber-300 bg-amber-50 px-4 py-3">
+            <span className="text-sm font-semibold text-amber-800">
+              ⚠ {lead.devis.length} devis : lequel a été signé ?
+            </span>
             <span className="text-xs text-amber-700">
-              ou choisis un responsable en haut de la fiche.
+              Marque-le dans le bloc Devis — il fixe le montant et la base de facturation.
             </span>
           </div>
         ) : null}
 
-        {headerCard}
+        {/* EN-TÊTE : qui, où en est-on, quoi faire */}
+        <FicheHeader
+          lead={lead}
+          stage={lead.stage ? { nom: lead.stage.nom, couleur: lead.stage.couleur, cycle: lead.stage.cycle } : null}
+          isClient={isClient}
+          today={today}
+          prospection={prospection}
+          client={clientHeader}
+          profiles={profiles}
+          currentUserId={user?.id ?? null}
+        />
 
-        {isClient ? (
-          <>
-            {/* Client : Suivi 75% + Conversation 25% */}
-            <div className="grid grid-cols-1 items-start gap-4 lg:grid-cols-4">
-              <div className="lg:col-span-3">{suiviCard}</div>
-              <div className="lg:col-span-1">{conversationCard}</div>
-            </div>
+        {/* TRAVAILLER (gauche) · CONTEXTE (droite) */}
+        <div className="grid grid-cols-1 items-start gap-4 lg:grid-cols-5">
+          {/* ---------------- TRAVAILLER ---------------- */}
+          <div className="space-y-4 lg:col-span-3">
+            <Card className="border-l-4 border-l-primary">
+              <CardHeader className="pb-2">
+                <CardTitle className="text-base font-semibold text-foreground">
+                  {isClient ? "Faire avancer le chantier" : "Travailler ce prospect"}
+                </CardTitle>
+              </CardHeader>
+              <CardContent className="space-y-4">
+                {isClient ? (
+                  <>
+                    <ActivitePills leadId={lead.id} cycle={3} activites={[]} showTimeline={false} />
+                    <p className="-mt-2 text-[11px] text-muted-foreground">
+                      Une pilule date le jalon et avance l&apos;étape.
+                    </p>
+                  </>
+                ) : lead.statut === "en_cours" ? (
+                  <ActionsRapides
+                    leadId={lead.id}
+                    rdv={{ date: lead.rdvDate, heure: lead.rdvHeure, type: lead.rdvType, statut: lead.rdvStatut }}
+                  />
+                ) : null}
+                <details className="group rounded-lg border border-border bg-muted/30 px-3 py-2">
+                  <summary className="cursor-pointer text-xs font-semibold uppercase tracking-wide text-muted-foreground">
+                    Changer d&apos;étape manuellement
+                    <span className="ml-2 font-normal normal-case tracking-normal">
+                      · actuelle : {lead.stage?.nom ?? "—"}
+                    </span>
+                  </summary>
+                  <div className="pt-3">
+                    <StageMover
+                      leadId={lead.id}
+                      stages={stages}
+                      currentStageId={lead.stageId}
+                      isClient={isClient}
+                    />
+                  </div>
+                </details>
+                <EmailCompose
+                  leadId={lead.id}
+                  nom={lead.nom}
+                  email={lead.email}
+                  configured={emailConfigured}
+                  connectedEmail={connectedEmail}
+                  senderFrom={senderFrom}
+                />
+              </CardContent>
+            </Card>
 
-            {/* Dossier administratif client */}
-            {encaissementCard}
+            <Card className="border-l-4 border-l-brand">
+              <CardHeader className="pb-2">
+                <CardTitle className="text-base font-semibold text-foreground">
+                  Fil de la fiche
+                  <span className="ml-2 text-xs font-normal text-muted-foreground">
+                    notes, appels, RDV, étapes, devis, paiements — tout au même endroit
+                  </span>
+                </CardTitle>
+              </CardHeader>
+              <CardContent className="space-y-4">
+                <NoteComposer leadId={lead.id} profiles={profiles} currentUserId={user?.id ?? null} />
+                <FilActivite
+                  items={fil}
+                  handles={handles}
+                  today={today}
+                  recuLe={lead.createdAt}
+                  source={lead.source}
+                />
+              </CardContent>
+            </Card>
+          </div>
 
-            {/* Facturation 50% / Devis 50% */}
-            <div className="grid grid-cols-1 items-start gap-4 lg:grid-cols-2">
-              {facturationCard}
-              {devisCard}
-            </div>
+          {/* ---------------- CONTEXTE ---------------- */}
+          <div className="space-y-4 lg:col-span-2">
+            {autresFichesBloc}
 
-            {/* Documents 100% */}
-            {documentsCard}
-            {emailsCard}
+            <Bloc titre={isClient ? "Coordonnées" : "Coordonnées & projet"}>
+              <ChampsEditables
+                leadId={lead.id}
+                champs={
+                  isClient
+                    ? [
+                        { key: "nom", label: "Nom", value: lead.nom, full: true },
+                        { key: "telephone", label: "Téléphone", value: lead.telephone, type: "tel", format: formatTelephone },
+                        { key: "email", label: "Email", value: lead.email, type: "email" },
+                        { key: "adresse", label: "Adresse", value: lead.adresse, full: true },
+                        { key: "codePostal", label: "Code postal", value: lead.codePostal },
+                        { key: "ville", label: "Ville", value: lead.ville },
+                        // Client professionnel : raison sociale + SIRET + TVA → devis / factures.
+                        { key: "entreprise", label: "Société (si pro)", value: lead.entreprise },
+                        { key: "siret", label: "SIRET", value: lead.siret },
+                        { key: "tvaIntracom", label: "N° TVA intracom", value: lead.tvaIntracom },
+                      ]
+                    : [
+                        // Prospect : pas de ville (seul le code postal est fiable) ;
+                        // « type de projet » = les dimensions de la pergola demandées.
+                        { key: "nom", label: "Nom", value: lead.nom },
+                        { key: "entreprise", label: "Société (si pro)", value: lead.entreprise },
+                        { key: "siret", label: "SIRET", value: lead.siret },
+                        { key: "tvaIntracom", label: "N° TVA intracom", value: lead.tvaIntracom },
+                        { key: "telephone", label: "Téléphone", value: lead.telephone, type: "tel", format: formatTelephone },
+                        { key: "email", label: "Email", value: lead.email, type: "email" },
+                        { key: "codePostal", label: "Code postal", value: lead.codePostal },
+                        // Meta envoie les dimensions dans `dimensions` (type_projet reste vide).
+                        { key: "dimensions", label: "Dimensions de la pergola", value: lead.dimensions ?? lead.typeProjet },
+                        { key: "dateSouhaiteeAppel", label: "Créneau d'appel souhaité", value: lead.dateSouhaiteeAppel },
+                        { key: "dateInstallation", label: "Installation souhaitée", value: lead.dateInstallation },
+                      ]
+                }
+              />
+            </Bloc>
 
-            {/* Détails métier — secondaire, 2 à 3 de front */}
-            {detailsBand ? (
-              <div className="grid grid-cols-1 items-start gap-4 md:grid-cols-2 2xl:grid-cols-3">
-                {poseCard}
-                {suiviCommercialCard}
-                {produitCard}
-                {autresInfosCard}
-              </div>
-            ) : (
-              autresInfosCard
-            )}
-
-            {/* Garanties — tout en bas */}
-            {garantiesCard}
-          </>
-        ) : (
-          <>
-            {/* Prospect : Suivi (large) + colonne de contexte */}
-            <div className="grid grid-cols-1 items-start gap-4 lg:grid-cols-3">
-              <div className="space-y-4 lg:col-span-2">{suiviCard}</div>
-              <div className="space-y-4">
-                {rdvCard}
-                {relanceCard}
-                {autresInfosCard}
-              </div>
-            </div>
-
-            {/* Détails métier : cartes compactes, 2 à 3 de front */}
-            {detailsBand ? (
-              <div className="grid grid-cols-1 items-start gap-4 md:grid-cols-2 2xl:grid-cols-3">
-                {suiviCommercialCard}
-                {produitCard}
-              </div>
+            {!isClient && reponsesMeta.length > 0 ? (
+              <Bloc titre="Autres réponses du formulaire" compteur={reponsesMeta.length}>
+                <MetaReponses payload={lead.rawPayload} />
+              </Bloc>
             ) : null}
 
-            {devisCard}
-            {conversationCard}
-            {emailsCard}
-            {documentsCard}
-          </>
-        )}
-
-        <div className="flex justify-center pt-2">
-          <Link
-            href={`/leads/${lead.id}/modifier`}
-            className={buttonVariants({ variant: "outline" })}
-          >
-            Modifier la fiche
-          </Link>
+            {isClient ? (
+              <>
+                <Bloc titre="Chantier — planning & équipe" id="chantier" accent>
+                  <Chantier
+                    leadId={lead.id}
+                    profiles={profiles}
+                    adresseClient={adresseClient}
+                    values={{
+                      dateMetre: lead.dateMetre,
+                      dateCommande: lead.dateCommande,
+                      dateLivraisonPrevue: lead.dateLivraisonPrevue,
+                      dateLivraisonReelle: lead.dateLivraisonReelle,
+                      datePosePrevue: lead.datePosePrevue,
+                      datePoseReelle: lead.datePoseReelle,
+                      poseAssignedTo: lead.poseAssignedTo,
+                      equipePose: lead.equipePose,
+                      fournisseur: lead.fournisseur,
+                      refCommande: lead.refCommande,
+                      adressePose: lead.adressePose,
+                    }}
+                  />
+                </Bloc>
+                <div id="argent" className="space-y-4">
+                  {devisBloc}
+                  {facturation ? (
+                    <Bloc titre="Factures" compteur={facturation.factures.filter((f) => f.statut !== "supprimee").length || null}>
+                      <Facturation
+                        leadId={lead.id}
+                        pennylaneConfigured={!!process.env.PENNYLANE_API_KEY}
+                        etat={facturation}
+                      />
+                    </Bloc>
+                  ) : null}
+                  <Bloc titre="Paiements reçus" compteur={paiementsItems.length || null}>
+                    <Paiements
+                      leadId={lead.id}
+                      paiements={paiementsItems}
+                      ttc={ttc}
+                      echeancier={facturation?.echeancier ?? [40, 40, 20]}
+                    />
+                  </Bloc>
+                  <Bloc titre="Dossier administratif">
+                    <DossierAdmin
+                      leadId={lead.id}
+                      montantTtc={lead.montantTtc}
+                      ttcDuDevis={devisRef?.ttc ?? null}
+                      financeur={lead.financeur}
+                      mesure={lead.mesure}
+                      factureSoldeClient={lead.factureSoldeClient}
+                      factureSoldePoseur={lead.factureSoldePoseur}
+                      dossierDateEnvoi={lead.dossierDateEnvoi}
+                      soldeFacture={soldeFacture}
+                    />
+                  </Bloc>
+                </div>
+                {documentsBloc}
+                {produitBloc}
+                {garantiesBloc}
+                {emailsBloc}
+                {origineBloc}
+              </>
+            ) : (
+              <>
+                {devisBloc}
+                {produitBloc}
+                {documentsBloc}
+                {emailsBloc}
+                {origineBloc}
+              </>
+            )}
+          </div>
         </div>
       </div>
     </main>

@@ -25,7 +25,7 @@ export default async function EditLeadPage({
   if (!lead) notFound();
 
   return (
-    <main className="mx-auto w-full max-w-4xl flex-1 space-y-4 px-6 py-6">
+    <main className="mx-auto w-full max-w-4xl flex-1 space-y-4 px-6 pt-6 pb-28">
       <div>
         <Link
           href={`/leads/${lead.id}`}
@@ -42,6 +42,7 @@ export default async function EditLeadPage({
         stages={stages}
         profiles={profiles}
         admin={admin}
+        client={lead.statut === "gagnee"}
       />
     </main>
   );

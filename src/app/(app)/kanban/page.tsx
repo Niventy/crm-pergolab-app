@@ -1,27 +1,18 @@
-import { asc } from "drizzle-orm";
+import { asc, isNull } from "drizzle-orm";
 import { db } from "@/db";
-import { stages as stagesTable } from "@/db/schema";
+import { stages as stagesTable, leads as leadsTable } from "@/db/schema";
 import { createClient } from "@/lib/supabase/server";
+import { ymParis, moisLabelFr } from "@/lib/format";
 import { NouveauProspect } from "@/components/nouveau-prospect";
 import { KanbanBoard } from "./kanban-board";
 import { MonthSelect } from "./month-select";
 
 export const dynamic = "force-dynamic";
 
-const MOIS_FR = [
-  "JANVIER", "FÉVRIER", "MARS", "AVRIL", "MAI", "JUIN",
-  "JUILLET", "AOÛT", "SEPTEMBRE", "OCTOBRE", "NOVEMBRE", "DÉCEMBRE",
-];
-
-// "YYYY-MM" de la date de réception.
-function ym(d: Date | string): string {
-  return (d instanceof Date ? d : new Date(d)).toISOString().slice(0, 7);
-}
-// "2026-06" → "JUIN 26".
-function moisLabel(key: string): string {
-  const [y, m] = key.split("-");
-  return `${MOIS_FR[Number(m) - 1]} ${y.slice(2)}`;
-}
+// "YYYY-MM" de la date de réception, en heure de Paris (pas UTC).
+const ym = ymParis;
+// "2026-06" → "JUIN 2026" (libellé partagé Kanban / Liste / Clients).
+const moisLabel = (key: string) => moisLabelFr(key);
 
 export default async function KanbanPage({
   searchParams,
@@ -32,6 +23,7 @@ export default async function KanbanPage({
     searchParams,
     db.select().from(stagesTable).orderBy(asc(stagesTable.position)),
     db.query.leads.findMany({
+      where: isNull(leadsTable.deletedAt),
       with: { responsable: true, modifiePar: true },
       orderBy: (l, { desc }) => [desc(l.createdAt)],
     }),

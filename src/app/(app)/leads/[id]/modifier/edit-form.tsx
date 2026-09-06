@@ -34,11 +34,15 @@ export function EditForm({
   stages,
   profiles,
   admin = false,
+  client = false,
 }: {
   lead: Lead;
   stages: Stage[];
   profiles: Profile[];
   admin?: boolean;
+  /** Fiche client (signée) : l'étape se pilote depuis la fiche (rail / Kanban),
+   *  pas ici — sinon on contournait le motif d'annulation. */
+  client?: boolean;
 }) {
   const router = useRouter();
   const [pending, startTransition] = useTransition();
@@ -46,13 +50,12 @@ export function EditForm({
   const [form, setForm] = useState<LeadEditInput>({
     nom: lead.nom ?? "",
     entreprise: lead.entreprise ?? "",
+    siret: lead.siret ?? "",
+    tvaIntracom: lead.tvaIntracom ?? "",
     email: lead.email ?? "",
     telephone: lead.telephone ?? "",
     source: lead.source ?? "",
     campagne: lead.campagne ?? "",
-    montant: lead.montant ?? "",
-    probabilite: lead.probabilite?.toString() ?? "",
-    objectifDate: lead.objectifDate ?? "",
     typeProjet: lead.typeProjet ?? "",
     adresse: lead.adresse ?? "",
     ville: lead.ville ?? "",
@@ -70,8 +73,6 @@ export function EditForm({
     // Métriques commerciales
     datePremierContact: toDateTimeLocal(lead.datePremierContact),
     raisonPerte: lead.raisonPerte ?? "",
-    modePaiement: lead.modePaiement ?? "",
-    acompte: lead.acompte ?? "",
     montantAchat: lead.montantAchat ?? "",
     // Produit
     gamme: lead.gamme ?? "",
@@ -120,21 +121,35 @@ export function EditForm({
     <form onSubmit={handleSubmit} className="space-y-6">
       <Section title="Identité">
         <FieldText label="Nom" value={form.nom} onChange={set("nom")} required />
-        <FieldText label="Entreprise" value={form.entreprise} onChange={set("entreprise")} />
         <FieldText label="Email" type="email" value={form.email} onChange={set("email")} />
         <FieldText label="Téléphone" value={form.telephone} onChange={set("telephone")} />
       </Section>
 
+      <Section title="Client professionnel (facultatif)">
+        <FieldText label="Société (raison sociale)" value={form.entreprise} onChange={set("entreprise")} />
+        <FieldText label="SIRET" value={form.siret} onChange={set("siret")} />
+        <FieldText label="N° TVA intracommunautaire" value={form.tvaIntracom} onChange={set("tvaIntracom")} />
+      </Section>
+
       <Section title="Pipeline">
-        <FieldSelect
-          label="Étape"
-          value={form.stageId || NONE}
-          onChange={(v) => set("stageId")(v === NONE ? "" : v)}
-          options={[
-            { value: NONE, label: "—" },
-            ...stages.map((s) => ({ value: s.id, label: s.nom })),
-          ]}
-        />
+        {client ? (
+          <div className="space-y-1.5">
+            <Label>Étape</Label>
+            <div className="flex h-9 items-center rounded-lg border border-input bg-muted/40 px-2.5 text-sm text-muted-foreground">
+              {stages.find((s) => s.id === form.stageId)?.nom ?? "—"} · se change depuis la fiche
+            </div>
+          </div>
+        ) : (
+          <FieldSelect
+            label="Étape"
+            value={form.stageId || NONE}
+            onChange={(v) => set("stageId")(v === NONE ? "" : v)}
+            options={[
+              { value: NONE, label: "—" },
+              ...stages.map((s) => ({ value: s.id, label: s.nom })),
+            ]}
+          />
+        )}
         <FieldSelect
           label="Responsable"
           value={form.assignedTo || NONE}
@@ -144,28 +159,17 @@ export function EditForm({
             ...profiles.map((p) => ({ value: p.id, label: p.nom ?? p.email })),
           ]}
         />
-        <FieldText
-          label="Montant (€)"
-          type="number"
-          value={form.montant}
-          onChange={set("montant")}
-        />
-        <FieldText
-          label="Probabilité (%)"
-          type="number"
-          value={form.probabilite}
-          onChange={set("probabilite")}
-        />
-        <FieldText
-          label="Objectif (date)"
-          type="date"
-          value={form.objectifDate}
-          onChange={set("objectifDate")}
-        />
+        {/* Montant / probabilité / objectif : retirés (le montant vient du devis). */}
       </Section>
 
       <Section title="Projet">
         <FieldText label="Type de projet" value={form.typeProjet} onChange={set("typeProjet")} />
+        <FieldText
+          label="Dimensions de la pergola"
+          placeholder="ex. 4 x 3 m"
+          value={form.dimensions}
+          onChange={set("dimensions")}
+        />
         <FieldText label="Adresse (facturation)" value={form.adresse} onChange={set("adresse")} />
         <FieldText label="Ville" value={form.ville} onChange={set("ville")} />
         <FieldText label="Code postal" value={form.codePostal} onChange={set("codePostal")} />
@@ -238,23 +242,8 @@ export function EditForm({
           value={form.datePremierContact}
           onChange={set("datePremierContact")}
         />
-        <FieldSelect
-          label="Mode de paiement"
-          value={form.modePaiement || NONE}
-          onChange={(v) => set("modePaiement")(v === NONE ? "" : v)}
-          options={[
-            { value: NONE, label: "—" },
-            { value: "comptant", label: "Comptant" },
-            { value: "financement_60", label: "Financement 60 mois" },
-            { value: "financement_120", label: "Financement 120 mois" },
-          ]}
-        />
-        <FieldText
-          label="Acompte versé (€)"
-          type="number"
-          value={form.acompte}
-          onChange={set("acompte")}
-        />
+        {/* Mode de paiement retiré (le financeur et les paiements réels sont
+            sur la fiche client) ; l'acompte se saisit dans « Paiements ». */}
         <FieldSelect
           label="Raison de perte (si KO)"
           value={form.raisonPerte || NONE}
@@ -287,7 +276,6 @@ export function EditForm({
             { value: "Sur mesure", label: "Sur mesure" },
           ]}
         />
-        <FieldText label="Dimensions" value={form.dimensions} onChange={set("dimensions")} />
         <FieldText label="Finition" value={form.finition} onChange={set("finition")} />
         <FieldSelect
           label="Type de pose"
@@ -315,7 +303,7 @@ export function EditForm({
       {cycle === 3 ? (
       <Section title="Pose & technique">
         <FieldSelect
-          label="Poseur / métreur"
+          label="Poseur / métreur (membre de l'équipe)"
           value={form.poseAssignedTo || NONE}
           onChange={(v) => set("poseAssignedTo")(v === NONE ? "" : v)}
           options={[
@@ -366,7 +354,8 @@ export function EditForm({
           onChange={set("datePoseReelle")}
         />
         <FieldText
-          label="Adresse de pose"
+          label="Adresse de pose (si différente du client)"
+          placeholder="vide = adresse du client"
           value={form.adressePose}
           onChange={set("adressePose")}
         />

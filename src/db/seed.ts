@@ -6,6 +6,7 @@ import postgres from "postgres";
 import { eq } from "drizzle-orm";
 import * as schema from "./schema";
 import { stages } from "./schema";
+import { STAGE_CODE_PAR_NOM } from "../lib/pipeline";
 
 // Étapes par défaut du pipeline. Couleurs = pastilles discrètes.
 // cycle : 1 = prospection, 2 = devis & closing (bascule à « Devis envoyé »).
@@ -31,6 +32,9 @@ const DEFAULT_STAGES = [
   { nom: "Pose planifiée", position: 16, couleur: "#14b8a6", cycle: 3, isGagnee: false, isPerdue: false },
   { nom: "Posée", position: 17, couleur: "#22c55e", cycle: 3, isGagnee: false, isPerdue: false },
   { nom: "SAV", position: 18, couleur: "#f59e0b", cycle: 3, isGagnee: false, isPerdue: false },
+  // Commande annulée après signature (rétractation, refus de financement…) :
+  // la fiche repasse « perdue » et sort du CA, sans revenir en prospection.
+  { nom: "Annulée", position: 19, couleur: "#dc2626", cycle: 3, isGagnee: false, isPerdue: true },
 ];
 
 async function main() {
@@ -50,17 +54,18 @@ async function main() {
       .from(stages)
       .where(eq(stages.nom, stage.nom));
 
+    const code = STAGE_CODE_PAR_NOM[stage.nom] ?? null;
     if (existing.length > 0) {
-      // Backfill du cycle sur une étape déjà présente.
+      // Backfill du cycle + de la clé stable sur une étape déjà présente.
       await db
         .update(stages)
-        .set({ cycle: stage.cycle })
+        .set({ cycle: stage.cycle, code })
         .where(eq(stages.nom, stage.nom));
-      console.log(`  • « ${stage.nom} » existe déjà — cycle ${stage.cycle} mis à jour.`);
+      console.log(`  • « ${stage.nom} » existe déjà — cycle ${stage.cycle}, code ${code} mis à jour.`);
       continue;
     }
 
-    await db.insert(stages).values(stage);
+    await db.insert(stages).values({ ...stage, code });
     console.log(`  ✓ « ${stage.nom} » créée (cycle ${stage.cycle}).`);
   }
 

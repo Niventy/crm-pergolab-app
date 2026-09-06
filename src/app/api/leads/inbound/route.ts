@@ -1,7 +1,9 @@
-import { asc, desc, eq, or } from "drizzle-orm";
+import { timingSafeEqual } from "node:crypto";
+import { and, desc, isNull, or, sql } from "drizzle-orm";
 import { revalidatePath } from "next/cache";
 import { db } from "@/db";
-import { leads, stages } from "@/db/schema";
+import { leads } from "@/db/schema";
+import { stageEntree } from "@/lib/pipeline-server";
 
 export const dynamic = "force-dynamic";
 
@@ -49,7 +51,10 @@ export async function POST(req: Request) {
   const secret = process.env.INBOUND_WEBHOOK_SECRET;
   const auth = req.headers.get("authorization") ?? "";
   const token = auth.replace(/^Bearer\s+/i, "").trim();
-  if (!secret || token !== secret) {
+  // Comparaison à temps constant (pas de fuite par le temps de réponse).
+  const a = Buffer.from(token);
+  const b = Buffer.from(secret ?? "");
+  if (!secret || a.length !== b.length || !timingSafeEqual(a, b)) {
     return Response.json({ error: "Non autorisé" }, { status: 401 });
   }
 
@@ -82,36 +87,29 @@ export async function POST(req: Request) {
     pick(data, ["created_time", "created_at", "date_created", "sheet_date", "date_creation"]),
   );
 
-  // 4) Étape d'entrée : « À traiter » (sinon 1ère étape du cycle 1).
-  const [parNom] = await db
-    .select()
-    .from(stages)
-    .where(eq(stages.nom, "À traiter"))
-    .limit(1);
-  const [parCycle] = parNom
-    ? [parNom]
-    : await db
-        .select()
-        .from(stages)
-        .where(eq(stages.cycle, 1))
-        .orderBy(asc(stages.position))
-        .limit(1);
-  const stage = parCycle;
+  // 4) Étape d'entrée : « À traiter » (par clé stable, sinon 1ère du cycle 1).
+  const stage = await stageEntree();
 
   const emailVal = pick(data, ["email", "email_address", "mail"]);
   const telVal = pick(data, ["telephone", "téléphone", "phone", "phone_number", "tel"]);
 
-  // 4 bis) Même contact (email/téléphone) déjà présent ?
+  // 4 bis) Même contact (email/téléphone) déjà présent ? Le téléphone est
+  // comparé sur ses CHIFFRES (« 06 12 34 » = « 0612 34 » = « +33 6 12 34 »).
   let resoumission = false;
+  const telDigits = telVal ? telVal.replace(/\D/g, "").replace(/^33/, "0") : null;
   const ident = [
-    ...(emailVal ? [eq(leads.email, emailVal)] : []),
-    ...(telVal ? [eq(leads.telephone, telVal)] : []),
+    ...(emailVal ? [sql`lower(${leads.email}) = ${emailVal.toLowerCase()}`] : []),
+    ...(telDigits && telDigits.length >= 9
+      ? [
+          sql`regexp_replace(regexp_replace(coalesce(${leads.telephone}, ''), '\\D', '', 'g'), '^33', '0') = ${telDigits}`,
+        ]
+      : []),
   ];
   if (ident.length > 0) {
     const [existing] = await db
       .select({ id: leads.id, createdAt: leads.createdAt })
       .from(leads)
-      .where(or(...ident))
+      .where(and(isNull(leads.deletedAt), or(...ident)))
       .orderBy(desc(leads.createdAt))
       .limit(1);
 

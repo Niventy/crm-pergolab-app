@@ -44,19 +44,28 @@ export default async function DashboardPage({
           </h2>
           <div className="grid grid-cols-2 gap-3 lg:grid-cols-4">
             <Kpi label="Mes leads reçus" value={String(s.mesLeads.length)} />
-            <Kpi label="Mes signés" value={String(s.mesWon.length)} />
-            <Kpi label="Mon CA (HT)" value={compact(s.monCa)} color="text-green-700" />
+            <Kpi
+              label="Mes signatures"
+              value={String(s.mesSignes.length)}
+              sub="signées sur la période"
+            />
+            <Kpi
+              label="Mon CA signé (HT)"
+              value={compact(s.monCa)}
+              color="text-green-700"
+              sub="par date de signature"
+            />
             <Kpi
               label="Mon taux de closing"
               value={`${s.monClosing} %`}
-              sub="signés / (signés + perdus)"
+              sub="signés / (signés + perdus), leads reçus"
             />
           </div>
           {s.monObjectif > 0 ? (
             <div className="mt-3">
               <div className="mb-1 flex items-baseline justify-between text-xs">
                 <span className="font-medium text-foreground">
-                  Objectif du mois : {compact(s.monCa)} / {compact(s.monObjectif)}
+                  Objectif {s.objectifLabel} : {compact(s.monCaMois)} / {compact(s.monObjectif)}
                 </span>
                 <span className="text-muted-foreground">{s.monPct} %</span>
               </div>
@@ -83,11 +92,16 @@ export default async function DashboardPage({
           sub={`${s.enCours.length} actif${s.enCours.length > 1 ? "s" : ""}`}
           color="text-blue-700"
         />
-        <Kpi label="CA généré (HT)" value={compact(s.ca)} color="text-green-700" />
+        <Kpi
+          label="CA signé (HT)"
+          value={compact(s.ca)}
+          color="text-green-700"
+          sub={`${s.signes.length} signature${s.signes.length > 1 ? "s" : ""} · par date de signature`}
+        />
         <Kpi
           label="Taux de closing"
           value={`${s.closing} %`}
-          sub={`${s.won.length} signé${s.won.length > 1 ? "s" : ""} · ${s.perdu.length} perdu${s.perdu.length > 1 ? "s" : ""}`}
+          sub={`${s.won.length} signé${s.won.length > 1 ? "s" : ""} · ${s.perdu.length} perdu${s.perdu.length > 1 ? "s" : ""} (leads reçus)`}
         />
       </div>
 

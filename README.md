@@ -37,7 +37,6 @@ et l'ordre de construction.
 | --- | --- | --- |
 | `NEXT_PUBLIC_SUPABASE_URL` | Supabase > Project Settings > Data API | Client navigateur + serveur |
 | `NEXT_PUBLIC_SUPABASE_ANON_KEY` | Supabase > Project Settings > API Keys (anon) | Client navigateur + serveur |
-| `SUPABASE_SERVICE_ROLE_KEY` | Supabase > Project Settings > API Keys (service_role) | Serveur uniquement (webhook) |
 | `DATABASE_URL` | Supabase > Project Settings > Database > Connection string | Migrations / seed Drizzle |
 | `INBOUND_WEBHOOK_SECRET` | À générer (`openssl rand -hex 32`) | Protection du webhook entrant |
 

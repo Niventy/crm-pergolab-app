@@ -6,23 +6,20 @@ import { redirect } from "next/navigation";
 import { db } from "@/db";
 import { leads, stages } from "@/db/schema";
 import { currentUserId, isAdmin } from "@/lib/current-user";
-import { createClient } from "@/lib/supabase/server";
-import { resolveSender } from "@/lib/email-sender";
-import {
-  upsertCalendarEvent,
-  deleteCalendarEvent,
-} from "@/lib/google-calendar";
+import { autoAccepterDevisSiUnique } from "@/lib/devis-accepte";
+import { statutPourStage } from "@/lib/pipeline";
+import { etapeEffective } from "@/lib/pipeline-server";
+import { syncRdvAgenda } from "@/lib/rdv-agenda";
 
 export type LeadEditInput = {
   nom: string;
   entreprise: string;
+  siret: string;
+  tvaIntracom: string;
   email: string;
   telephone: string;
   source: string;
   campagne: string;
-  montant: string;
-  probabilite: string;
-  objectifDate: string;
   typeProjet: string;
   adresse: string;
   ville: string;
@@ -40,8 +37,6 @@ export type LeadEditInput = {
   // Métriques commerciales
   datePremierContact: string;
   raisonPerte: string;
-  modePaiement: string;
-  acompte: string;
   montantAchat: string;
   // Produit
   gamme: string;
@@ -80,18 +75,22 @@ export async function updateLead(leadId: string, data: LeadEditInput) {
   // l'écraser (le champ n'est pas dans son formulaire → il enverrait du vide).
   const admin = await isAdmin();
 
-  const stageId = orNull(data.stageId);
+  let stageId = orNull(data.stageId);
 
-  // Statut déduit de l'étape sélectionnée.
+  // Statut déduit de l'étape sélectionnée ; « Signée » ⇒ chantier démarré
+  // (1ʳᵉ étape du cycle 3), comme depuis le Kanban ou le rail de la fiche.
   let statut: "en_cours" | "gagnee" | "perdue" = "en_cours";
   if (stageId) {
-    const [stage] = await db
+    const [demandee] = await db
       .select()
       .from(stages)
       .where(eq(stages.id, stageId))
       .limit(1);
-    if (stage?.isPerdue) statut = "perdue";
-    else if (stage?.isGagnee || stage?.cycle === 3) statut = "gagnee";
+    if (demandee) {
+      const stage = await etapeEffective(demandee);
+      stageId = stage.id;
+      statut = demandee.isGagnee ? "gagnee" : statutPourStage(stage);
+    }
   }
 
   await db
@@ -99,13 +98,14 @@ export async function updateLead(leadId: string, data: LeadEditInput) {
     .set({
       nom: data.nom.trim(),
       entreprise: orNull(data.entreprise),
+      siret: orNull(data.siret),
+      tvaIntracom: orNull(data.tvaIntracom),
       email: orNull(data.email),
       telephone: orNull(data.telephone),
       source: orNull(data.source),
       campagne: orNull(data.campagne),
-      montant: orNull(data.montant),
-      probabilite: intOrNull(data.probabilite),
-      objectifDate: orNull(data.objectifDate),
+      // (montant / probabilité / objectif : retirés de l'interface — le montant
+      // vient du devis ; les colonnes restent en base)
       typeProjet: orNull(data.typeProjet),
       adresse: orNull(data.adresse),
       ville: orNull(data.ville),
@@ -137,12 +137,6 @@ export async function updateLead(leadId: string, data: LeadEditInput) {
         | "non_qualifie"
         | "autre"
         | null,
-      modePaiement: orNull(data.modePaiement) as
-        | "comptant"
-        | "financement_60"
-        | "financement_120"
-        | null,
-      acompte: orNull(data.acompte),
       ...(admin ? { montantAchat: orNull(data.montantAchat) } : {}),
       // Produit
       gamme: orNull(data.gamme),
@@ -170,84 +164,13 @@ export async function updateLead(leadId: string, data: LeadEditInput) {
     })
     .where(eq(leads.id, leadId));
 
-  // --- Synchronisation Google Agenda (RDV) ---
-  // Crée / met à jour / supprime l'évènement dans l'agenda de l'ADV connecté.
-  // Silencieux en cas d'échec (ex. scope calendar.events absent du token).
-  try {
-    const supabase = await createClient();
-    const {
-      data: { user },
-    } = await supabase.auth.getUser();
-    const account = resolveSender(user?.email);
-    const rdvDate = orNull(data.rdvDate);
-    const rdvHeure = orNull(data.rdvHeure);
+  // Signature : le devis unique devient le devis accepté (base de facturation).
+  if (statut === "gagnee") await autoAccepterDevisSiUnique(leadId);
 
-    if (account) {
-      const [cur] = await db
-        .select({ eventId: leads.rdvEventId })
-        .from(leads)
-        .where(eq(leads.id, leadId))
-        .limit(1);
-      const existingEventId = cur?.eventId ?? null;
-
-      if (rdvDate) {
-        const appUrl = process.env.NEXT_PUBLIC_APP_URL ?? "";
-        const summary = `RDV ${data.nom.trim()} — Pergolab`;
-        const description = [
-          orNull(data.typeProjet) ? `Projet : ${data.typeProjet}` : null,
-          orNull(data.telephone) ? `Tél : ${data.telephone}` : null,
-          `Fiche : ${appUrl}/leads/${leadId}`,
-        ]
-          .filter(Boolean)
-          .join("\n");
-        const location =
-          orNull(data.adressePose) ?? orNull(data.codePostal) ?? undefined;
-        const attendeeEmail = orNull(data.email);
-
-        const ev = rdvHeure
-          ? {
-              summary,
-              description,
-              location,
-              startISO: `${rdvDate}T${rdvHeure}:00`,
-              endISO: `${rdvDate}T${endHeure(rdvHeure)}:00`,
-              attendeeEmail,
-            }
-          : { summary, description, location, allDayDate: rdvDate, attendeeEmail };
-
-        const r = await upsertCalendarEvent(
-          account.refreshToken,
-          existingEventId,
-          ev,
-          true,
-        );
-        if (r.id && r.id !== existingEventId) {
-          await db
-            .update(leads)
-            .set({ rdvEventId: r.id })
-            .where(eq(leads.id, leadId));
-        }
-      } else if (existingEventId) {
-        await deleteCalendarEvent(account.refreshToken, existingEventId);
-        await db
-          .update(leads)
-          .set({ rdvEventId: null })
-          .where(eq(leads.id, leadId));
-      }
-    }
-  } catch (e) {
-    console.error("Sync Google Agenda échouée:", e);
-  }
+  // --- Synchronisation Google Agenda (RDV) — helper partagé avec la fiche ---
+  await syncRdvAgenda(leadId);
 
   revalidatePath(`/leads/${leadId}`);
   revalidatePath("/kanban");
   redirect(`/leads/${leadId}`);
-}
-
-// Heure de fin = +1h (bornée à 23:59 pour rester le même jour).
-function endHeure(hhmm: string): string {
-  const [h, m] = hhmm.split(":").map(Number);
-  if (Number.isNaN(h)) return hhmm;
-  if (h >= 23) return "23:59";
-  return `${String(h + 1).padStart(2, "0")}:${String(m).padStart(2, "0")}`;
 }

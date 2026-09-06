@@ -5,14 +5,17 @@ import { Check, X } from "lucide-react";
 import { toast } from "sonner";
 import { cn } from "@/lib/utils";
 import { Button } from "@/components/ui/button";
+import { RAISONS_PERTE, STAGE } from "@/lib/pipeline";
 import { changerEtape } from "./actions";
 
 type StageLite = {
   id: string;
   nom: string;
+  code: string | null;
   couleur: string;
   cycle: number;
   position: number;
+  isPerdue: boolean;
 };
 
 const CYCLE_LABEL: Record<number, string> = {
@@ -35,14 +38,22 @@ export function StageMover({
 }) {
   const [target, setTarget] = useState<StageLite | null>(null);
   const [commentaire, setCommentaire] = useState("");
+  const [raison, setRaison] = useState("");
   const [pending, start] = useTransition();
 
-  const commentaireRequis = target ? target.nom !== "Pas de réponse" : false;
+  // Commentaire requis en prospection / closing, sauf « Pas de réponse » ;
+  // facultatif sur les étapes de chantier (cycle 3).
+  const commentaireRequis = target
+    ? target.code !== STAGE.PAS_DE_REPONSE && target.cycle !== 3
+    : false;
+  // Étape perdue (KO, Annulée…) : la raison alimente les statistiques de perte.
+  const raisonRequise = !!target?.isPerdue;
 
   function choisir(s: StageLite) {
     if (s.id === currentStageId) return;
     setTarget(s);
     setCommentaire("");
+    setRaison("");
   }
 
   // Base prospect = cycles 1 & 2 · Base client = cycle 3 uniquement. Un lead
@@ -50,10 +61,16 @@ export function StageMover({
   const cyclesVisibles = isClient ? [3] : [1, 2];
   const stagesVisibles = stages.filter((s) => cyclesVisibles.includes(s.cycle));
 
-  // Client fraîchement signé encore sur « Signée » (cycle 2) : son étape actuelle
-  // n'est pas dans le cycle pose → on l'invite à choisir la 1ère étape.
+  // Client dont l'étape n'est pas dans le cycle pose (ne devrait plus arriver :
+  // la signature démarre le chantier) → on l'invite à choisir la 1ère étape.
   const etapeActuelleVisible = stagesVisibles.some((s) => s.id === currentStageId);
   const clientSansPose = isClient && !etapeActuelleVisible;
+
+  const peutConfirmer =
+    !pending &&
+    !!target &&
+    (!commentaireRequis || commentaire.trim() !== "") &&
+    (!raisonRequise || raison !== "");
 
   function confirmer() {
     if (!target) return;
@@ -61,12 +78,17 @@ export function StageMover({
       toast.error("Un commentaire est obligatoire pour ce déplacement.");
       return;
     }
+    if (raisonRequise && !raison) {
+      toast.error("Indique la raison de la perte.");
+      return;
+    }
     start(async () => {
-      const r = await changerEtape(leadId, target.id, commentaire);
+      const r = await changerEtape(leadId, target.id, commentaire, raison || null);
       if (r.ok) {
         toast.success(`Déplacé en « ${target.nom} »`);
         setTarget(null);
         setCommentaire("");
+        setRaison("");
       } else {
         toast.error(r.error ?? "Échec du déplacement");
       }
@@ -136,11 +158,28 @@ export function StageMover({
               <span className="text-muted-foreground"> · commentaire optionnel</span>
             )}
           </div>
+          {raisonRequise ? (
+            <label className="block text-xs text-muted-foreground">
+              Raison de la perte <span className="text-red-600">*</span>
+              <select
+                value={raison}
+                onChange={(e) => setRaison(e.target.value)}
+                className="mt-1 h-9 w-full rounded-md border border-border bg-white px-2 text-sm text-foreground outline-none focus:border-primary"
+              >
+                <option value="">— choisir —</option>
+                {RAISONS_PERTE.map((r) => (
+                  <option key={r.value} value={r.value}>
+                    {r.label}
+                  </option>
+                ))}
+              </select>
+            </label>
+          ) : null}
           <textarea
             value={commentaire}
             onChange={(e) => setCommentaire(e.target.value)}
             rows={2}
-            autoFocus
+            autoFocus={!raisonRequise}
             placeholder={
               commentaireRequis
                 ? "Que s'est-il passé ? (ex. RDV fixé jeudi 14h, devis à 18k…)"
@@ -152,7 +191,7 @@ export function StageMover({
             <Button
               type="button"
               size="sm"
-              disabled={pending || (commentaireRequis && !commentaire.trim())}
+              disabled={!peutConfirmer}
               onClick={confirmer}
             >
               <Check className="size-3.5" /> Confirmer le déplacement
@@ -171,7 +210,7 @@ export function StageMover({
       ) : (
         <p className="text-xs text-muted-foreground">
           {isClient
-            ? "Clique sur une étape pour faire avancer le chantier (un commentaire sera demandé)."
+            ? "Clique sur une étape pour faire avancer le chantier (commentaire facultatif ; « Annulée » demande un motif)."
             : "Clique sur une étape pour y déplacer le lead (un commentaire sera demandé, sauf pour « Pas de réponse »)."}
         </p>
       )}

@@ -1,10 +1,12 @@
 "use client";
 
 import Link from "next/link";
-import { useMemo, useState } from "react";
+import { useMemo, useState, useTransition } from "react";
+import { useRouter } from "next/navigation";
 import {
   DndContext,
   DragOverlay,
+  KeyboardSensor,
   PointerSensor,
   useSensor,
   useSensors,
@@ -32,21 +34,17 @@ import {
   humanise,
 } from "@/lib/format";
 import type { Stage, Lead, Profile } from "@/db/schema";
-import { updateLeadStage } from "./actions";
+import { statutPourStage, RAISONS_PERTE } from "@/lib/pipeline";
+import { useAutoRefresh } from "@/lib/use-auto-refresh";
+import { ConfirmDialog } from "@/components/confirm-dialog";
+import { ajouterCommentaireEtape } from "@/app/(app)/leads/[id]/actions";
+import { updateLeadStage, perdreLead } from "./actions";
 
 // Lead enrichi des profils liés (chargés côté serveur via les relations).
 export type LeadWithRel = Lead & {
   responsable: Profile | null;
   modifiePar: Profile | null;
 };
-
-function statutPourStage(stage: Stage): Lead["statut"] {
-  if (stage.isPerdue) return "perdue";
-  if (stage.isGagnee) return "gagnee";
-  // Cycle 3 (pose & technique) = après signature : la fiche reste « gagnée ».
-  if (stage.cycle === 3) return "gagnee";
-  return "en_cours";
-}
 
 function nomProfil(p: Profile | null | undefined): string | null {
   return p?.nom ?? p?.email ?? null;
@@ -121,9 +119,9 @@ function LeadCard({ lead, dragging }: { lead: LeadWithRel; dragging?: boolean })
 
       {/* Projet (type ou dimensions) + créneaux souhaités */}
       <div className="mt-2.5 space-y-0.5">
-        {humanise(lead.typeProjet) || humanise(lead.dimensions) ? (
+        {humanise(lead.dimensions) || humanise(lead.typeProjet) ? (
           <div className="truncate text-sm font-medium text-foreground">
-            {humanise(lead.typeProjet) || humanise(lead.dimensions)}
+            {humanise(lead.dimensions) || humanise(lead.typeProjet)}
           </div>
         ) : null}
         {lead.dateSouhaiteeAppel ? (
@@ -232,7 +230,11 @@ function Column({ stage, leads }: { stage: Stage; leads: LeadWithRel[] }) {
         ref={setNodeRef}
         className={cn(
           "flex min-h-24 flex-1 flex-col gap-2 rounded-xl border border-dashed p-2 transition-colors",
-          isOver ? "border-blue-300 bg-blue-50/50" : "border-transparent bg-muted/40",
+          isOver
+            ? stage.isPerdue
+              ? "border-red-300 bg-red-50/60"
+              : "border-blue-300 bg-blue-50/50"
+            : "border-transparent bg-muted/40",
         )}
       >
         {leads.map((lead) => (
@@ -243,6 +245,13 @@ function Column({ stage, leads }: { stage: Stage; leads: LeadWithRel[] }) {
   );
 }
 
+// Dialogue en attente après un dépôt : perte (raison requise) ou commentaire
+// facultatif proposé après un déplacement ordinaire.
+type Dialogue =
+  | { kind: "perte"; lead: LeadWithRel; stage: Stage }
+  | { kind: "commentaire"; lead: LeadWithRel; stage: Stage }
+  | null;
+
 // --- Board -----------------------------------------------------------------
 export function KanbanBoard({
   stages,
@@ -251,13 +260,32 @@ export function KanbanBoard({
   stages: Stage[];
   leads: LeadWithRel[];
 }) {
+  const router = useRouter();
   const [leads, setLeads] = useState<LeadWithRel[]>(initialLeads);
+  // Resynchronise l'état local quand le serveur renvoie de nouvelles données
+  // (rafraîchissement périodique / retour sur l'onglet / action d'un collègue).
+  // Motif React « ajuster l'état pendant le rendu » (pas d'effet → pas de
+  // rendu en cascade).
+  const [prevInitial, setPrevInitial] = useState(initialLeads);
+  if (initialLeads !== prevInitial) {
+    setPrevInitial(initialLeads);
+    setLeads(initialLeads);
+  }
+  useAutoRefresh();
+
   const [activeId, setActiveId] = useState<string | null>(null);
   const [cycle, setCycle] = useState<number>(1);
   const [focusStageId, setFocusStageId] = useState<string | null>(null);
+  const [dialogue, setDialogue] = useState<Dialogue>(null);
+  const [raison, setRaison] = useState("");
+  const [commentaire, setCommentaire] = useState("");
+  const [pending, start] = useTransition();
 
+  // Souris/tactile + CLAVIER (Espace pour saisir, flèches pour déplacer, Espace
+  // pour déposer) : le Kanban reste utilisable sans souris.
   const sensors = useSensors(
     useSensor(PointerSensor, { activationConstraint: { distance: 5 } }),
+    useSensor(KeyboardSensor),
   );
 
   // Cycle de chaque étape, pour compter les leads par cycle.
@@ -268,16 +296,10 @@ export function KanbanBoard({
   const cycleCount = (c: number) =>
     leads.filter((l) => l.stageId && stageCycle.get(l.stageId) === c).length;
 
-  const visibleStages = useMemo(() => {
-    const inCycle = stages.filter((s) => s.cycle === cycle);
-    // KO (perdue) accessible aussi depuis la Prospection : un lead peut être
-    // perdu dès le début (injoignable, non qualifié…), sans passer par le devis.
-    if (cycle === 1) {
-      const ko = stages.find((s) => s.isPerdue);
-      if (ko && !inCycle.some((s) => s.id === ko.id)) inCycle.push(ko);
-    }
-    return inCycle;
-  }, [stages, cycle]);
+  const visibleStages = useMemo(
+    () => stages.filter((s) => s.cycle === cycle),
+    [stages, cycle],
+  );
 
   const leadsByStage = useMemo(() => {
     const map = new Map<string, LeadWithRel[]>();
@@ -300,6 +322,21 @@ export function KanbanBoard({
 
   function handleDragStart(event: DragStartEvent) {
     setActiveId(String(event.active.id));
+  }
+
+  // Propose d'ajouter un commentaire (non bloquant) juste après un déplacement,
+  // pour aligner le Kanban sur le rail de la fiche sans casser la fluidité.
+  function proposerCommentaire(lead: LeadWithRel, stage: Stage) {
+    toast.success(`« ${lead.nom} » → ${stage.nom}`, {
+      action: {
+        label: "Commenter",
+        onClick: () => {
+          setCommentaire("");
+          setDialogue({ kind: "commentaire", lead, stage });
+        },
+      },
+      duration: 6000,
+    });
   }
 
   async function handleDragEnd(event: DragEndEvent) {
@@ -327,10 +364,18 @@ export function KanbanBoard({
     const targetStageId = targetStage.id;
     if (lead.stageId === targetStageId) return;
 
+    // Étape PERDUE (KO, hors zone…) : on demande la raison avant d'agir.
+    if (targetStage.isPerdue) {
+      setRaison("");
+      setCommentaire("");
+      setDialogue({ kind: "perte", lead, stage: targetStage });
+      return;
+    }
+
     const previous = leads;
 
     // Étape « gagnée » (Signée) = signature : la fiche QUITTE le Kanban vente
-    // et devient un client (espace Clients / Chantiers).
+    // et devient un client (chantier démarré en « À métrer »).
     if (targetStage.isGagnee) {
       setLeads((curr) => curr.filter((l) => l.id !== leadId));
       const res = await updateLeadStage(leadId, targetStageId);
@@ -339,8 +384,9 @@ export function KanbanBoard({
         toast.error("Signature impossible", { description: res.error });
       } else {
         toast.success(`« ${lead.nom} » signé → dans Clients`, {
-          description: "Retrouve-le dans l'espace Clients / Chantiers.",
+          description: "Chantier démarré en « À métrer » (espace Clients).",
         });
+        router.refresh();
       }
       return;
     }
@@ -352,8 +398,7 @@ export function KanbanBoard({
           : l,
       ),
     );
-    // Suivre la carte seulement si l'étape cible n'est pas déjà visible
-    // (évite de quitter la Prospection quand on dépose dans la colonne KO).
+    // Suivre la carte seulement si l'étape cible n'est pas déjà visible.
     if (!visibleStages.some((s) => s.id === targetStageId)) {
       setCycle(targetStage.cycle);
     }
@@ -362,7 +407,34 @@ export function KanbanBoard({
     if (res?.error) {
       setLeads(previous);
       toast.error("Déplacement impossible", { description: res.error });
+    } else {
+      proposerCommentaire(lead, targetStage);
+      router.refresh();
     }
+  }
+
+  function confirmerDialogue() {
+    if (!dialogue) return;
+    const { lead, stage } = dialogue;
+    start(async () => {
+      if (dialogue.kind === "perte") {
+        const r = await perdreLead(lead.id, stage.id, raison, commentaire);
+        if (r.ok) {
+          setLeads((curr) =>
+            curr.map((l) => (l.id === lead.id ? { ...l, stageId: stage.id, statut: "perdue" } : l)),
+          );
+          toast.success(`« ${lead.nom} » → ${stage.nom}`);
+          setDialogue(null);
+          router.refresh();
+        } else toast.error(r.error ?? "Échec");
+      } else {
+        const r = await ajouterCommentaireEtape(lead.id, commentaire);
+        if (r.ok) {
+          toast.success("Commentaire ajouté");
+          setDialogue(null);
+        } else toast.error(r.error ?? "Échec");
+      }
+    });
   }
 
   return (
@@ -407,7 +479,7 @@ export function KanbanBoard({
         </div>
 
         {focusStage ? (
-          <div className="flex-1 overflow-y-auto px-6 pb-6">
+          <div className="flex-1 overflow-y-auto px-6 pb-24">
             {focusLeads.length === 0 ? (
               <p className="py-16 text-center text-sm text-muted-foreground">
                 Aucune carte dans « {focusStage.nom} ».
@@ -427,7 +499,7 @@ export function KanbanBoard({
             )}
           </div>
         ) : (
-          <div className="flex flex-1 gap-4 overflow-x-auto px-6 pb-6">
+          <div className="flex flex-1 gap-4 overflow-x-auto px-6 pb-24">
             {visibleStages.map((stage) => (
               <Column
                 key={stage.id}
@@ -446,6 +518,59 @@ export function KanbanBoard({
           </div>
         ) : null}
       </DragOverlay>
+
+      {/* Perte : raison obligatoire · Commentaire : facultatif après un dépôt */}
+      <ConfirmDialog
+        open={dialogue !== null}
+        titre={
+          dialogue?.kind === "perte"
+            ? `Passer « ${dialogue.lead.nom} » en ${dialogue.stage.nom} ?`
+            : `Commenter le déplacement de « ${dialogue?.lead.nom ?? ""} »`
+        }
+        description={
+          dialogue?.kind === "perte"
+            ? "La fiche passe « perdue ». La raison alimente les statistiques de perte ; le commentaire est facultatif."
+            : `Vers « ${dialogue?.stage.nom ?? ""} ». Que s'est-il passé ? (visible dans l'activité de la fiche et le fil Commentaires)`
+        }
+        confirmLabel={dialogue?.kind === "perte" ? "Confirmer la perte" : "Ajouter le commentaire"}
+        danger={dialogue?.kind === "perte"}
+        pending={pending}
+        confirmDisabled={
+          dialogue?.kind === "perte" ? !raison : !commentaire.trim()
+        }
+        onConfirm={confirmerDialogue}
+        onCancel={() => !pending && setDialogue(null)}
+      >
+        <div className="space-y-2">
+          {dialogue?.kind === "perte" ? (
+            <select
+              value={raison}
+              onChange={(e) => setRaison(e.target.value)}
+              autoFocus
+              className="h-9 w-full rounded-md border border-border bg-white px-2 text-sm text-foreground outline-none focus:border-primary"
+            >
+              <option value="">— Raison de la perte —</option>
+              {RAISONS_PERTE.map((r) => (
+                <option key={r.value} value={r.value}>
+                  {r.label}
+                </option>
+              ))}
+            </select>
+          ) : null}
+          <textarea
+            value={commentaire}
+            onChange={(e) => setCommentaire(e.target.value)}
+            rows={3}
+            autoFocus={dialogue?.kind === "commentaire"}
+            placeholder={
+              dialogue?.kind === "perte"
+                ? "Commentaire (facultatif)…"
+                : "ex. RDV fixé jeudi 14h, devis à 18k…"
+            }
+            className="w-full resize-none rounded-md border border-border bg-white px-3 py-2 text-sm outline-none focus:border-primary"
+          />
+        </div>
+      </ConfirmDialog>
     </DndContext>
   );
 }
@@ -491,7 +616,7 @@ function FocusSelect({
 
 // --- Sélecteur de cycle de vente -------------------------------------------
 // Le Kanban commercial ne couvre QUE la vente (le post-signature est dans
-// l'espace Clients → Chantiers).
+// l'espace Clients).
 const CYCLES = [
   { id: 1, label: "Prospection" },
   { id: 2, label: "Devis & closing" },

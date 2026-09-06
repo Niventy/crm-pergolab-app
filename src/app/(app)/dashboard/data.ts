@@ -1,11 +1,18 @@
 // Calculs partagés par les 3 pages de pilotage : Dashboard (synthèse),
 // Commercial (analyse) et Comptabilité (résultat, admin).
-import { eq } from "drizzle-orm";
+//
+// RÈGLE : les VOLUMES (leads reçus, closing, entonnoir, sources) se lisent en
+// COHORTE — par date de RÉCEPTION du lead. L'ARGENT (CA, marge, panier,
+// encaissements, objectifs) se lit par date de SIGNATURE : le CA de septembre
+// est ce qui a été signé en septembre, pas ce que donneront un jour les leads
+// reçus en septembre.
+import { eq, isNull } from "drizzle-orm";
 import { db } from "@/db";
-import { profiles as profilesTable } from "@/db/schema";
+import { echanges, profiles as profilesTable, leads as leadsTable } from "@/db/schema";
 import { createClient } from "@/lib/supabase/server";
 import { isAdmin } from "@/lib/current-user";
-import { formatEuros } from "@/lib/format";
+import { formatEuros, ymParis, ymdParis } from "@/lib/format";
+import { STAGE } from "@/lib/pipeline";
 import { DEPT_TO_REGION } from "./france-geo";
 
 export const MOIS = [
@@ -21,38 +28,66 @@ export function compact(n: number): string {
     : formatEuros(n);
 }
 
-// "YYYY-MM" d'un horodatage de réception.
-function ym(d: Date | string): string {
-  return (d instanceof Date ? d : new Date(d)).toISOString().slice(0, 7);
-}
+// "YYYY-MM" d'un horodatage de réception, en heure de Paris (pas UTC).
+const ym = ymParis;
 
 // [année, mois (0-11), jour] d'un horodatage, dans le fuseau de Paris.
 function parisYMD(d: Date | string): [number, number, number] {
-  const s = new Intl.DateTimeFormat("en-CA", {
-    timeZone: "Europe/Paris",
-    year: "numeric",
-    month: "2-digit",
-    day: "2-digit",
-  }).format(d instanceof Date ? d : new Date(d));
-  const [y, m, day] = s.split("-").map(Number);
+  const [y, m, day] = ymdParis(d).split("-").map(Number);
   return [y, m - 1, day];
 }
 
 export type StatsParams = { adv?: string; mois?: string };
 
+// Période sélectionnée : « annee » (année en cours, défaut), « YYYY » (une
+// année) ou « YYYY-MM » (un mois, de n'importe quelle année).
+type Periode = { key: string; year: number; month: number | null; label: string };
+
+function parsePeriode(raw: string | undefined, now: Date): Periode {
+  const curY = now.getFullYear();
+  if (raw && /^\d{4}-\d{2}$/.test(raw)) {
+    const y = Number(raw.slice(0, 4));
+    const m = Number(raw.slice(5)) - 1;
+    if (m >= 0 && m <= 11) return { key: raw, year: y, month: m, label: `${MOIS[m]} ${y}` };
+  }
+  if (raw && /^\d{4}$/.test(raw) && Number(raw) !== curY) {
+    return { key: raw, year: Number(raw), month: null, label: `Année ${raw}` };
+  }
+  return { key: "annee", year: curY, month: null, label: `Année ${curY}` };
+}
+
+// Une date « YYYY-MM-DD » / « YYYY-MM » est-elle dans la période ?
+function dansPeriode(p: Periode, ymOrYmd: string | null | undefined): boolean {
+  if (!ymOrYmd) return false;
+  return p.month == null
+    ? ymOrYmd.startsWith(String(p.year))
+    : ymOrYmd.slice(0, 7) === p.key;
+}
+
 export async function getStats(sp: StatsParams) {
-  const [supabase, allLeads, admin] = await Promise.all([
+  const [supabase, allLeads, admin, devisEnvoyesRows] = await Promise.all([
     createClient(),
-    db.query.leads.findMany({ with: { stage: true, responsable: true } }),
+    db.query.leads.findMany({
+      where: isNull(leadsTable.deletedAt),
+      with: { stage: true, responsable: true },
+    }),
     isAdmin(),
+    // Leads pour lesquels un devis a RÉELLEMENT été envoyé (activité).
+    db
+      .selectDistinct({ leadId: echanges.leadId })
+      .from(echanges)
+      .where(eq(echanges.type, "devis_envoye")),
   ]);
   const {
     data: { user },
   } = await supabase.auth.getUser();
+  const devisEnvoyesIds = new Set(devisEnvoyesRows.map((r) => r.leadId));
 
   const now = new Date();
-  const year = now.getFullYear();
-  const month = now.getMonth();
+  const [curYear, curMonth] = parisYMD(now);
+  const periode = parsePeriode(sp.mois, now);
+  const { year } = periode;
+  const moisActif = periode.month;
 
   // --- Périmètre (responsable) ---
   // Un MEMBRE (ADV) est verrouillé sur SON propre périmètre : il ne voit jamais
@@ -83,51 +118,58 @@ export async function getStats(sp: StatsParams) {
       ]
     : [];
 
-  // --- Période (date de RÉCEPTION du lead) ---
-  const moisSel = sp.mois && /^\d{4}-\d{2}$/.test(sp.mois) ? sp.mois : "annee";
-  const periodeLabel =
-    moisSel === "annee"
-      ? `Année ${year}`
-      : `${MOIS[Number(moisSel.slice(5)) - 1]} ${year}`;
-  const moisActif = moisSel === "annee" ? null : Number(moisSel.slice(5)) - 1;
+  // --- Options de période : toutes les années présentes (réception OU
+  // signature), de la plus récente à la plus ancienne, avec leurs mois. ---
+  const annees = new Set<number>([curYear]);
+  for (const l of allLeads) {
+    annees.add(parisYMD(l.createdAt)[0]);
+    if (l.dateSignature) annees.add(Number(l.dateSignature.slice(0, 4)));
+  }
+  const periodOptions: { value: string; label: string }[] = [];
+  for (const y of [...annees].sort((a, b) => b - a)) {
+    const courante = y === curYear;
+    periodOptions.push({
+      value: courante ? "annee" : String(y),
+      label: courante ? `Année ${y} (en cours)` : `Année ${y}`,
+    });
+    const maxM = courante ? curMonth : 11;
+    for (let m = maxM; m >= 0; m--)
+      periodOptions.push({
+        value: `${y}-${String(m + 1).padStart(2, "0")}`,
+        label: `${MOIS[m]} ${y}`,
+      });
+  }
 
-  const inPeriode = (l: (typeof scoped)[number]) =>
-    moisSel === "annee"
-      ? ym(l.createdAt).startsWith(String(year))
-      : ym(l.createdAt) === moisSel;
-
+  // --- COHORTE : leads reçus sur la période (volumes) ---
+  const inPeriode = (l: (typeof scoped)[number]) => dansPeriode(periode, ym(l.createdAt));
   const leads = scoped.filter(inPeriode);
 
-  const periodOptions = [
-    { value: "annee", label: `Année ${year}` },
-    ...Array.from({ length: month + 1 }, (_, m) => ({
-      value: `${year}-${String(m + 1).padStart(2, "0")}`,
-      label: `${MOIS[m]} ${year}`,
-    })),
-  ];
-
-  const sum = (arr: typeof leads, f: (l: (typeof leads)[number]) => number) =>
-    arr.reduce((a, l) => a + f(l), 0);
+  const sum = <T,>(arr: T[], f: (l: T) => number) => arr.reduce((a, l) => a + f(l), 0);
 
   const won = leads.filter((l) => l.statut === "gagnee");
   const perdu = leads.filter((l) => l.statut === "perdue");
   const enCours = leads.filter((l) => l.statut === "en_cours");
 
-  const ca = sum(won, (l) => num(l.montant));
-  const marge = sum(won, (l) => num(l.montant) - num(l.montantAchat));
-  const margePct = ca ? Math.round((marge / ca) * 100) : 0;
-  const acomptes = sum(won, (l) => num(l.acompte));
   const pipeline = sum(enCours, (l) => num(l.montant));
-  const devisEnAttente = enCours.filter((l) => l.stage?.nom === "Devis envoyé");
+  const devisEnAttente = enCours.filter((l) => l.stage?.code === STAGE.DEVIS_ENVOYE);
   const devisMontant = sum(devisEnAttente, (l) => num(l.montant));
   const closing =
     won.length + perdu.length > 0
       ? Math.round((won.length / (won.length + perdu.length)) * 100)
       : 0;
-  const panierMoyen = won.length ? ca / won.length : 0;
 
-  const today = now.toISOString().slice(0, 10);
-  const in7 = new Date(now.getTime() + 7 * 86400000).toISOString().slice(0, 10);
+  // --- SIGNATURE : commandes signées sur la période (argent) ---
+  const signes = scoped.filter(
+    (l) => l.statut === "gagnee" && dansPeriode(periode, l.dateSignature),
+  );
+  const ca = sum(signes, (l) => num(l.montant));
+  const marge = sum(signes, (l) => num(l.montant) - num(l.montantAchat));
+  const margePct = ca ? Math.round((marge / ca) * 100) : 0;
+  const encaisse = sum(signes, (l) => num(l.acompteEncaisse) + num(l.paiementEspece));
+  const panierMoyen = signes.length ? ca / signes.length : 0;
+
+  const today = ymdParis(now);
+  const in7 = ymdParis(new Date(now.getTime() + 7 * 86400000));
   const rdvAVenir = leads.filter(
     (l) => l.rdvDate && l.rdvDate >= today && l.rdvStatut !== "honore",
   ).length;
@@ -148,12 +190,35 @@ export async function getStats(sp: StatsParams) {
   );
   const mesWon = mesLeads.filter((l) => l.statut === "gagnee");
   const mesPerdu = mesLeads.filter((l) => l.statut === "perdue");
-  const monCa = mesWon.reduce((a, l) => a + num(l.montant), 0);
+  const mesSignes = allLeads.filter(
+    (l) =>
+      l.assignedTo === user?.id &&
+      l.statut === "gagnee" &&
+      dansPeriode(periode, l.dateSignature),
+  );
+  const monCa = sum(mesSignes, (l) => num(l.montant));
   const monClosing =
     mesWon.length + mesPerdu.length > 0
       ? Math.round((mesWon.length / (mesWon.length + mesPerdu.length)) * 100)
       : 0;
 
+  // Objectif MENSUEL : comparé au CA signé du mois affiché (ou du mois en cours
+  // si une année est sélectionnée) — plus jamais à un CA annuel.
+  const moisObjectif =
+    moisActif != null
+      ? periode.key
+      : `${curYear}-${String(curMonth + 1).padStart(2, "0")}`;
+  const objectifLabel =
+    moisActif != null ? periode.label : `${MOIS[curMonth]} ${curYear}`;
+  const monCaMois = sum(
+    allLeads.filter(
+      (l) =>
+        l.assignedTo === user?.id &&
+        l.statut === "gagnee" &&
+        (l.dateSignature ?? "").startsWith(moisObjectif),
+    ),
+    (l) => num(l.montant),
+  );
   const monProfil = user?.id
     ? await db.query.profiles.findFirst({
         where: eq(profilesTable.id, user.id),
@@ -161,10 +226,11 @@ export async function getStats(sp: StatsParams) {
       })
     : null;
   const monObjectif = num(monProfil?.objectifMensuel ?? null);
-  const monPct = monObjectif > 0 ? Math.round((monCa / monObjectif) * 100) : 0;
+  const monPct = monObjectif > 0 ? Math.round((monCaMois / monObjectif) * 100) : 0;
 
-  // --- Séries / graphes ---
-  const serie = Array.from({ length: month + 1 }, (_, m) => {
+  // --- Séries / graphes (année de la période) ---
+  const nbMois = year === curYear ? curMonth + 1 : 12;
+  const serie = Array.from({ length: nbMois }, (_, m) => {
     const key = `${year}-${String(m + 1).padStart(2, "0")}`;
     return {
       mois: MOIS[m],
@@ -172,7 +238,7 @@ export async function getStats(sp: StatsParams) {
     };
   });
 
-  const calMonth = moisActif ?? month;
+  const calMonth = moisActif ?? (year === curYear ? curMonth : 11);
   const calCounts = new Map<number, number>();
   for (const l of scoped) {
     const [yy, mm, dd] = parisYMD(l.createdAt);
@@ -202,7 +268,8 @@ export async function getStats(sp: StatsParams) {
     { label: "Leads reçus", v: recus },
     { label: "Contactés", v: leads.filter((l) => l.datePremierContact).length },
     { label: "RDV", v: leads.filter((l) => l.rdvDate).length },
-    { label: "Devis envoyés", v: leads.filter((l) => (l.stage?.cycle ?? 1) >= 2).length },
+    // Devis réellement envoyés (activité), pas « au moins en cycle 2 ».
+    { label: "Devis envoyés", v: leads.filter((l) => devisEnvoyesIds.has(l.id)).length },
     { label: "Signés", v: won.length },
   ];
 
@@ -216,30 +283,34 @@ export async function getStats(sp: StatsParams) {
     .sort((a, b) => b.v - a.v);
   const srcMax = Math.max(1, ...sources.map((s) => s.v));
 
+  // Performance par ADV : leads / closing en cohorte, CA par signature.
   const advMap = new Map<
     string,
     { nom: string; leads: number; ca: number; won: number; perdu: number }
   >();
-  for (const l of leads) {
-    const nom = l.responsable?.nom ?? l.responsable?.email ?? "Non assigné";
+  const advDe = (l: (typeof scoped)[number]) =>
+    l.responsable?.nom ?? l.responsable?.email ?? "Non assigné";
+  const advEntry = (nom: string) => {
     const a = advMap.get(nom) ?? { nom, leads: 0, ca: 0, won: 0, perdu: 0 };
-    a.leads += 1;
-    if (l.statut === "gagnee") {
-      a.won += 1;
-      a.ca += num(l.montant);
-    }
-    if (l.statut === "perdue") a.perdu += 1;
     advMap.set(nom, a);
+    return a;
+  };
+  for (const l of leads) {
+    const a = advEntry(advDe(l));
+    a.leads += 1;
+    if (l.statut === "gagnee") a.won += 1;
+    if (l.statut === "perdue") a.perdu += 1;
   }
+  for (const l of signes) advEntry(advDe(l)).ca += num(l.montant);
   const advs = [...advMap.values()].sort((a, b) => b.ca - a.ca);
   const caAdvMax = Math.max(1, ...advs.map((a) => a.ca));
 
-  // --- Marge par produit (gamme) : uniquement sur le CA réalisé (signés) ---
+  // --- Marge par produit (gamme) : sur le CA signé de la période ---
   const prodMap = new Map<
     string,
     { gamme: string; nb: number; ca: number; cout: number }
   >();
-  for (const l of won) {
+  for (const l of signes) {
     const g = l.gamme?.trim() || "Non renseignée";
     const e = prodMap.get(g) ?? { gamme: g, nb: 0, ca: 0, cout: 0 };
     e.nb += 1;
@@ -256,13 +327,18 @@ export async function getStats(sp: StatsParams) {
     .sort((a, b) => b.marge - a.marge);
 
   return {
-    admin, user, year, month,
-    scopeSel, scopes, moisSel, moisActif, periodeLabel, periodOptions,
-    leads, recus, won, perdu, enCours,
-    ca, marge, margePct, acomptes, pipeline, devisEnAttente, devisMontant,
-    closing, panierMoyen, rdvAVenir, aRelancer,
-    nonAssignes, rdvAReprogrammer, aContacter,
-    mesLeads, mesWon, monCa, monClosing, monObjectif, monPct,
+    admin, user, year, month: curMonth,
+    scopeSel, scopes, moisSel: periode.key, moisActif,
+    periodeLabel: periode.label, periodOptions,
+    // cohorte (volumes)
+    leads, recus, won, perdu, enCours, pipeline, devisEnAttente, devisMontant,
+    closing, rdvAVenir, aRelancer, nonAssignes, rdvAReprogrammer, aContacter,
+    // signature (argent)
+    signes, ca, marge, margePct, encaisse, panierMoyen,
+    // moi
+    mesLeads, mesWon, mesSignes, monCa, monClosing,
+    monObjectif, monPct, monCaMois, objectifLabel,
+    // graphes
     serie, calMonth, calCounts, calMax,
     regionCounts, horsMetropole, funnel, sources, srcMax,
     advs, caAdvMax, margeParProduit,

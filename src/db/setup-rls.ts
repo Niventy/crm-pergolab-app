@@ -54,6 +54,41 @@ create policy "echanges_all_authenticated"
 drop policy if exists "devis_all_authenticated" on public.devis;
 create policy "devis_all_authenticated"
   on public.devis for all to authenticated using (true) with check (true);
+
+-- Tables ajoutées ensuite (aussi couvertes par la migration 0022, idempotent).
+alter table public.factures           enable row level security;
+alter table public.documents          enable row level security;
+alter table public.notifications      enable row level security;
+alter table public.taches             enable row level security;
+alter table public.produits_catalogue enable row level security;
+alter table public.sur_mesure_mapping enable row level security;
+alter table public.paiements          enable row level security;
+
+drop policy if exists "paiements_all_authenticated" on public.paiements;
+create policy "paiements_all_authenticated"
+  on public.paiements for all to authenticated using (true) with check (true);
+drop policy if exists "factures_all_authenticated" on public.factures;
+create policy "factures_all_authenticated"
+  on public.factures for all to authenticated using (true) with check (true);
+drop policy if exists "documents_all_authenticated" on public.documents;
+create policy "documents_all_authenticated"
+  on public.documents for all to authenticated using (true) with check (true);
+drop policy if exists "produits_catalogue_all_authenticated" on public.produits_catalogue;
+create policy "produits_catalogue_all_authenticated"
+  on public.produits_catalogue for all to authenticated using (true) with check (true);
+drop policy if exists "sur_mesure_mapping_all_authenticated" on public.sur_mesure_mapping;
+create policy "sur_mesure_mapping_all_authenticated"
+  on public.sur_mesure_mapping for all to authenticated using (true) with check (true);
+
+-- Données personnelles : chacun ne voit que les siennes.
+drop policy if exists "notifications_own" on public.notifications;
+create policy "notifications_own"
+  on public.notifications for all to authenticated
+  using (auth.uid() = user_id) with check (auth.uid() = user_id);
+drop policy if exists "taches_own" on public.taches;
+create policy "taches_own"
+  on public.taches for all to authenticated
+  using (auth.uid() = user_id) with check (auth.uid() = user_id);
 `;
 
 async function main() {
@@ -75,7 +110,9 @@ async function main() {
     join pg_namespace n on n.oid = c.relnamespace
     left join pg_policies p on p.tablename = c.relname and p.schemaname = 'public'
     where n.nspname = 'public'
-      and c.relname in ('profiles','stages','leads','notes','echanges','devis')
+      and c.relname in ('profiles','stages','leads','notes','echanges','devis',
+                        'factures','documents','notifications','taches',
+                        'produits_catalogue','sur_mesure_mapping','paiements')
     group by c.relname, c.relrowsecurity
     order by c.relname;
   `);

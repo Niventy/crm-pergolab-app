@@ -2,9 +2,17 @@
 // Le devis est composé DANS le CRM (éditeur de lignes) puis créé à la demande.
 // No-op / erreur claire si PENNYLANE_API_KEY absent.
 
-import { eq } from "drizzle-orm";
+import { and, eq, isNotNull } from "drizzle-orm";
 import { db } from "@/db";
 import { leads, devis, factures, type Lead } from "@/db/schema";
+import {
+  totalHt as calcTotalHt,
+  totalTtc,
+  r2,
+  htDeLignesFacture,
+  ttcDeLignesFacture,
+  type LigneFacture,
+} from "@/lib/devis-calc";
 
 const BASE = "https://app.pennylane.com/api/external/v2";
 
@@ -56,12 +64,16 @@ function withClause(lines: DevisLine[]): DevisLine[] {
 }
 
 // Échéancier de règlement (acompte / livraison / solde), surchargeable via
-// PENNYLANE_ECHEANCIER = "40,40,20". Doit totaliser 100.
-function echeancierPct(): [number, number, number] {
+// PENNYLANE_ECHEANCIER = "40,40,20". Doit totaliser 100 (sinon on retombe sur
+// 40/40/20 pour ne jamais annoncer un échéancier faux au client).
+export function echeancierPct(): [number, number, number] {
   const raw = (process.env.PENNYLANE_ECHEANCIER ?? "40,40,20")
     .split(",")
-    .map((s) => Number(s.trim()) || 0);
-  const [a = 40, l = 40, s = 20] = raw;
+    .map((s) => Number(s.trim()));
+  if (raw.length !== 3 || raw.some((n) => !Number.isFinite(n) || n < 0))
+    return [40, 40, 20];
+  const [a, l, s] = raw;
+  if (Math.round(a + l + s) !== 100) return [40, 40, 20];
   return [a, l, s];
 }
 
@@ -91,11 +103,6 @@ Le règlement du montant total du présent devis (TTC ${eurFr(ttc)}) s'effectuer
 Ce devis est valable 30 jours. Toute commande est soumise à l'acceptation préalable de nos conditions générales de vente.`;
 }
 
-// Total TTC d'une liste de lignes (HT remise déduite × TVA de chaque ligne).
-function totalTtc(lines: DevisLine[]): number {
-  return lines.reduce((a, l) => a + ligneHt(l) * (1 + (l.tva || 0) / 100), 0);
-}
-
 export type DevisLine = {
   id?: number | null; // id de la ligne côté Pennylane (si elle existe déjà)
   designation: string;
@@ -112,13 +119,6 @@ function discountPayload(remisePct?: number | null) {
   const r = Number(remisePct ?? 0);
   if (!r || r <= 0) return {};
   return { discount: { type: "relative", value: String(r) } };
-}
-
-// HT d'une ligne, remise (%) déduite.
-function ligneHt(l: DevisLine): number {
-  const brut = (l.quantite || 0) * (l.prixHt || 0);
-  const r = Number(l.remisePct ?? 0);
-  return r > 0 ? brut * (1 - r / 100) : brut;
 }
 
 // Lit une remise Pennylane → % (on ne gère que les remises "relative"/%).
@@ -139,10 +139,12 @@ export type ProduitPL = {
   reference: string | null;
 };
 
-// « FR_200 » → 20, « FR_055 » → 5.5.
+// « FR_200 » → 20, « FR_55 » → 5.5, « exempt » → 0.
 function vatToNumber(code: string | number | null | undefined): number {
   if (typeof code === "number") return code;
-  const m = String(code ?? "").match(/(\d+)/);
+  const s = String(code ?? "");
+  if (/exempt/i.test(s)) return 0;
+  const m = s.match(/(\d+)/);
   return m ? Number(m[1]) / 10 : 20;
 }
 
@@ -159,11 +161,13 @@ function ymd(d: Date): string {
 
 // Code TVA Pennylane = « FR_ » + taux×10, cadré à 2 chiffres mini (PAS 3) :
 // 20 → FR_200 · 10 → FR_100 · 5.5 → FR_55 · 2.1 → FR_21 · 0.9 → FR_09.
-// ⚠️ 0 % n'existe pas dans l'énum Pennylane (mini FR_1_05) → on retombe sur 20 %
-// (sans effet sur une ligne à 0 €, mais évite un rejet « FR_000/FR_00 » invalide).
-function vatCode(tva: number): string {
+// 0 % = `exempt` (pas de code FR_0). Avant, un 0 % retombait SILENCIEUSEMENT
+// sur 20 % : un produit exonéré était facturé avec 20 % de TVA.
+// Exception : une ligne à 0 € (clause) reste en 20 % — sans effet sur le montant,
+// et évite de dépendre de l'énum `exempt` pour une ligne purement informative.
+export function vatCode(tva: number, prixHt = 1): string {
   const r = Math.round((tva || 0) * 10);
-  if (r <= 0) return "FR_200";
+  if (r <= 0) return Math.abs(prixHt) < 0.005 ? "FR_200" : "exempt";
   return `FR_${String(r).padStart(2, "0")}`;
 }
 
@@ -174,23 +178,26 @@ function toLinePayload(l: DevisLine) {
   // pas de description (sinon on écrase le texte enrichi du produit par du brut).
   // Ligne libre : on envoie la description saisie dans le CRM.
   const desc = l.productId ? undefined : l.description?.trim() || undefined;
+  // Arrondi au centime AVANT envoi : le configurateur produit des flottants
+  // (1234.5600000001) que Pennylane arrondit à sa façon → écarts CRM / PDF.
+  const prix = String(r2(l.prixHt ?? 0));
   return l.productId
     ? {
         product_id: l.productId,
         quantity: l.quantite || 1,
         label: l.designation || undefined,
-        raw_currency_unit_price: String(l.prixHt ?? 0),
+        raw_currency_unit_price: prix,
         unit: "pièce",
-        vat_rate: vatCode(l.tva),
+        vat_rate: vatCode(l.tva, l.prixHt),
         ...discountPayload(l.remisePct),
       }
     : {
         label: l.designation || "Prestation",
         description: desc,
         quantity: l.quantite || 1,
-        raw_currency_unit_price: String(l.prixHt ?? 0),
+        raw_currency_unit_price: prix,
         unit: "pièce",
-        vat_rate: vatCode(l.tva),
+        vat_rate: vatCode(l.tva, l.prixHt),
         ...discountPayload(l.remisePct),
       };
 }
@@ -199,39 +206,123 @@ function toInvoiceLines(lines: DevisLine[]) {
   return lines.map(toLinePayload);
 }
 
-// POST /individual_customers → id du client créé.
-async function createCustomer(
-  lead: Lead,
-): Promise<{ id: number | null; error?: string }> {
-  const parts = (lead.nom ?? "").trim().split(/\s+/);
-  const first_name = parts[0] || "Client";
-  const last_name = parts.slice(1).join(" ") || parts[0] || "Pergolab";
+// Lignes « métier » d'un devis = sans la clause (0 €), pour les totaux / snapshot.
+function sansClause(lines: DevisLine[]): DevisLine[] {
+  return lines.filter((l) => !isClauseLine(l));
+}
 
-  const body = {
-    first_name,
-    last_name,
+// Instantané stocké dans `devis.lignes` (seuls les champs de calcul + libellé).
+function snapshotLignes(lines: DevisLine[]) {
+  return sansClause(lines).map((l) => ({
+    designation: l.designation,
+    description: l.description ?? null,
+    quantite: l.quantite,
+    prixHt: r2(l.prixHt),
+    tva: l.tva,
+    remisePct: l.remisePct ?? null,
+    productId: l.productId ?? null,
+  }));
+}
+
+// Le montant du lead (pipeline, CA, facturation) suit un devis UNIQUEMENT si
+// aucun autre devis n'a été accepté : sinon c'est le devis accepté qui fait foi
+// (sans ça, « Dupliquer » une variante écrasait le montant signé).
+async function syncMontantLead(
+  leadId: string,
+  devisId: string | null,
+  totaux: { ht: number; ttc: number },
+) {
+  const [accepte] = await db
+    .select({ id: devis.id })
+    .from(devis)
+    .where(and(eq(devis.leadId, leadId), isNotNull(devis.accepteAt)))
+    .limit(1);
+  if (accepte && accepte.id !== devisId) return;
+  await db
+    .update(leads)
+    .set({ montant: String(totaux.ht), montantTtc: String(totaux.ttc) })
+    .where(eq(leads.id, leadId));
+}
+
+// Adresse de facturation commune aux deux types de client Pennylane.
+function billingAddress(lead: Lead) {
+  return {
+    address: lead.adresse || "À compléter",
+    postal_code: lead.codePostal || "",
+    city: lead.ville || "À compléter",
+    country_alpha2: "FR",
+  };
+}
+
+// Un lead avec une raison sociale est un client PROFESSIONNEL → `company_customer`
+// (raison sociale + SIRET + TVA intracom sur le PDF) ; sinon `individual_customer`.
+export type CustomerType = "individual" | "company";
+export function typeClientPennylane(lead: Lead): CustomerType {
+  return (lead.entreprise ?? "").trim() ? "company" : "individual";
+}
+
+function customerBody(lead: Lead, type: CustomerType) {
+  const commun = {
     ...(lead.telephone ? { phone: lead.telephone } : {}),
     ...(lead.email ? { emails: [lead.email] } : {}),
-    billing_address: {
-      address: lead.adresse || "À compléter",
-      postal_code: lead.codePostal || "",
-      city: lead.ville || "À compléter",
-      country_alpha2: "FR",
-    },
-    billing_language: "fr_FR",
+    billing_address: billingAddress(lead),
   };
+  if (type === "company") {
+    const siret = (lead.siret ?? "").replace(/\s/g, "");
+    const tva = (lead.tvaIntracom ?? "").replace(/\s/g, "").toUpperCase();
+    return {
+      name: (lead.entreprise ?? "").trim(),
+      ...(siret ? { reg_no: siret } : {}),
+      ...(tva ? { vat_number: tva } : {}),
+      ...commun,
+    };
+  }
+  const parts = (lead.nom ?? "").trim().split(/\s+/);
+  return {
+    first_name: parts[0] || "Client",
+    last_name: parts.slice(1).join(" ") || parts[0] || "Pergolab",
+    ...commun,
+  };
+}
 
-  const res = await fetch(`${BASE}/individual_customers`, {
+// POST /individual_customers ou /company_customers → id + type du client créé.
+async function createCustomer(
+  lead: Lead,
+): Promise<{ id: number | null; type: CustomerType; error?: string }> {
+  const type = typeClientPennylane(lead);
+  const body = { ...customerBody(lead, type), billing_language: "fr_FR" };
+
+  const res = await fetch(`${BASE}/${type}_customers`, {
     method: "POST",
     headers: plHeaders(),
     body: JSON.stringify(body),
   });
   if (!res.ok) {
     const t = await res.text();
-    return { id: null, error: `Client ${res.status} — ${t.slice(0, 200)}` };
+    return { id: null, type, error: `Client ${res.status} — ${t.slice(0, 200)}` };
   }
   const j = (await res.json()) as { id?: number };
-  return { id: j.id ?? null };
+  return { id: j.id ?? null, type };
+}
+
+// Met à jour l'identité / l'adresse de facturation d'un client Pennylane déjà
+// créé (l'adresse était souvent « À compléter » à la création). Best-effort.
+// La route dépend du type mémorisé à la création (un particulier devenu « pro »
+// dans le CRM reste un individual_customer côté Pennylane : on ne migre pas).
+async function updateCustomer(customerId: number, lead: Lead): Promise<void> {
+  const type: CustomerType =
+    lead.pennylaneCustomerType === "company" || lead.pennylaneCustomerType === "individual"
+      ? lead.pennylaneCustomerType
+      : "individual";
+  try {
+    await fetch(`${BASE}/${type}_customers/${customerId}`, {
+      method: "PUT",
+      headers: plHeaders(),
+      body: JSON.stringify(customerBody(lead, type)),
+    });
+  } catch {
+    // non bloquant
+  }
 }
 
 // S'assure qu'un CONTACT (personne nommée + email) existe sur le client Pennylane.
@@ -345,6 +436,7 @@ async function createQuote(
 export async function creerDevisPennylane(
   leadId: string,
   lines?: DevisLine[],
+  config?: unknown,
 ): Promise<{
   ok: boolean;
   numero?: string;
@@ -384,8 +476,11 @@ export async function creerDevisPennylane(
     customerId = c.id;
     await db
       .update(leads)
-      .set({ pennylaneCustomerId: String(customerId) })
+      .set({ pennylaneCustomerId: String(customerId), pennylaneCustomerType: c.type })
       .where(eq(leads.id, leadId));
+  } else {
+    // Client déjà créé : on pousse l'adresse / le nom à jour (saisis depuis le CRM).
+    await updateCustomer(customerId, lead);
   }
 
   // Crée le contact signataire s'il manque (nouveau OU ancien client sans contact).
@@ -394,28 +489,32 @@ export async function creerDevisPennylane(
   const q = await createQuote(customerId, useLines);
   if (!q.id) return { ok: false, error: q.error };
 
-  const totalHt = useLines.reduce(
-    (a, l) => a + ligneHt(l),
-    0,
-  );
+  const metier = sansClause(useLines);
+  const ht = calcTotalHt(metier);
+  const ttc = totalTtc(metier);
 
-  // Le montant du devis devient le montant du lead : sans ça, le pipeline et
-  // le CA du dashboard resteraient à 0 (ils se calculent sur leads.montant).
   await db
     .update(leads)
-    .set({ pennylaneQuoteId: String(q.id), montant: String(totalHt) })
+    .set({ pennylaneQuoteId: String(q.id) })
     .where(eq(leads.id, leadId));
   const [row] = await db
     .insert(devis)
     .values({
       leadId,
       numero: q.number ?? `PL-${q.id}`,
-      montant: String(totalHt),
-      statut: "Devis Pennylane",
+      montant: String(ht),
+      montantTtc: String(ttc),
+      lignes: snapshotLignes(useLines),
+      config: config ?? null,
+      statut: "Brouillon",
       lienExterne: q.link ?? null,
       externalId: String(q.id),
     })
     .returning({ id: devis.id });
+
+  // Le montant du devis devient le montant du lead (pipeline / CA / facturation),
+  // sauf si un autre devis est déjà accepté.
+  await syncMontantLead(leadId, row?.id ?? null, { ht, ttc });
 
   return {
     ok: true,
@@ -482,7 +581,13 @@ export async function assurerContactPennylane(
 export async function updateQuotePennylane(
   quoteId: string,
   lines: DevisLine[],
-): Promise<{ ok: boolean; totalHt?: number; error?: string }> {
+): Promise<{
+  ok: boolean;
+  totalHt?: number;
+  totalTtc?: number;
+  lignes?: ReturnType<typeof snapshotLignes>;
+  error?: string;
+}> {
   if (!process.env.PENNYLANE_API_KEY)
     return { ok: false, error: "Pennylane non configuré." };
   if (!lines.length) return { ok: false, error: "Ajoute au moins une ligne." };
@@ -518,11 +623,65 @@ export async function updateQuotePennylane(
     const t = await res.text();
     return { ok: false, error: `Maj devis ${res.status} — ${t.slice(0, 200)}` };
   }
-  const totalHt = lignes.reduce(
-    (a, l) => a + ligneHt(l),
-    0,
-  );
-  return { ok: true, totalHt };
+  const metier = sansClause(lignes);
+  return {
+    ok: true,
+    totalHt: calcTotalHt(metier),
+    totalTtc: totalTtc(metier),
+    lignes: snapshotLignes(lignes),
+  };
+}
+
+// Enregistre en base les totaux + l'instantané des lignes d'un devis modifié,
+// et propage le montant au lead si ce devis fait foi.
+export async function enregistrerDevisModifie(
+  leadId: string,
+  devisId: string,
+  r: { totalHt?: number; totalTtc?: number; lignes?: unknown },
+  config?: unknown,
+) {
+  const ht = r.totalHt ?? 0;
+  const ttc = r.totalTtc ?? 0;
+  await db
+    .update(devis)
+    .set({
+      montant: String(ht),
+      montantTtc: String(ttc),
+      lignes: r.lignes ?? null,
+      ...(config !== undefined ? { config: config ?? null } : {}),
+    })
+    .where(eq(devis.id, devisId));
+  await syncMontantLead(leadId, devisId, { ht, ttc });
+}
+
+// GET /quotes/{id} → statut Pennylane brut (ex. draft / sent / accepted / signed /
+// invoiced…) + s'il est verrouillé côté Pennylane (accepté, signé ou facturé).
+export async function getQuoteStatus(
+  quoteId: string,
+): Promise<{ ok: boolean; status?: string | null; verrouille?: boolean; error?: string }> {
+  if (!process.env.PENNYLANE_API_KEY)
+    return { ok: false, error: "Pennylane non configuré." };
+  try {
+    const res = await fetch(`${BASE}/quotes/${quoteId}`, { headers: plHeaders() });
+    if (!res.ok) return { ok: false, error: `Devis ${res.status}` };
+    const j = (await res.json()) as {
+      status?: string;
+      quote_status?: string;
+      signed?: boolean;
+      accepted?: boolean;
+      invoiced?: boolean;
+    };
+    const status = j.status ?? j.quote_status ?? null;
+    const verrouille =
+      !!j.signed ||
+      !!j.accepted ||
+      !!j.invoiced ||
+      /accept|sign|invoic|factur/i.test(status ?? "");
+    return { ok: true, status, verrouille };
+  } catch (e) {
+    const msg = e instanceof Error ? e.message : String(e);
+    return { ok: false, error: msg.slice(0, 120) };
+  }
 }
 
 // GET /products → catalogue de présélections pour l'éditeur de devis.
@@ -649,6 +808,7 @@ async function createInvoice(
   customerId: number,
   lines: DevisLine[],
   draft: boolean,
+  specialMention?: string,
 ): Promise<{ id: number | null; number?: string | null; status?: string | null; error?: string }> {
   const now = new Date();
   const deadline = new Date(now.getTime() + 30 * 86400000);
@@ -658,6 +818,7 @@ async function createInvoice(
     deadline: ymd(deadline),
     currency: "EUR",
     draft,
+    ...(specialMention ? { special_mention: specialMention } : {}),
     invoice_lines: toInvoiceLines(lines),
   };
   const res = await fetch(`${BASE}/customer_invoices`, {
@@ -683,13 +844,21 @@ async function createInvoice(
 }
 
 // Crée une facture (acompte/solde) pour un lead + enregistre la ligne `factures`.
+// `lignes` = UNE ligne HT par taux de TVA (calculées depuis le devis accepté) :
+// le TTC facturé reproduit exactement la TVA du devis, même à taux multiples.
 export async function creerFacturePennylane(
   leadId: string,
-  opts: { type: "acompte" | "solde" | "finale"; libelle: string; montantHt: number; tva?: number; draft?: boolean },
+  opts: {
+    type: "acompte" | "solde" | "finale";
+    lignes: LigneFacture[];
+    mention?: string; // rappel du devis + des acomptes déjà facturés
+    draft?: boolean;
+  },
 ): Promise<{ ok: boolean; error?: string; numero?: string | null; factureId?: string }> {
   if (!process.env.PENNYLANE_API_KEY)
     return { ok: false, error: "Pennylane non configuré (clé API manquante)." };
-  if (!(opts.montantHt > 0)) return { ok: false, error: "Montant invalide." };
+  const lignes = opts.lignes.filter((l) => l.prixHt > 0);
+  if (!lignes.length) return { ok: false, error: "Montant invalide." };
 
   const lead = await db.query.leads.findFirst({ where: eq(leads.id, leadId) });
   if (!lead) return { ok: false, error: "Lead introuvable." };
@@ -701,17 +870,16 @@ export async function creerFacturePennylane(
     customerId = c.id;
     await db
       .update(leads)
-      .set({ pennylaneCustomerId: String(customerId) })
+      .set({ pennylaneCustomerId: String(customerId), pennylaneCustomerType: c.type })
       .where(eq(leads.id, leadId));
   }
 
-  const line: DevisLine = {
-    designation: opts.libelle,
-    quantite: 1,
-    prixHt: opts.montantHt,
-    tva: opts.tva ?? 20,
-  };
-  const inv = await createInvoice(customerId, [line], opts.draft ?? true);
+  const inv = await createInvoice(
+    customerId,
+    lignes.map((l) => ({ ...l, quantite: 1 as number })),
+    opts.draft ?? true,
+    opts.mention,
+  );
   if (!inv.id) return { ok: false, error: inv.error };
 
   const [row] = await db
@@ -721,12 +889,37 @@ export async function creerFacturePennylane(
       type: opts.type,
       numero: inv.number ?? `PL-${inv.id}`,
       externalId: String(inv.id),
-      montantHt: String(opts.montantHt),
+      montantHt: String(htDeLignesFacture(lignes)),
+      montantTtc: String(ttcDeLignesFacture(lignes)),
+      lignes,
       statut: inv.status ?? (opts.draft ?? true ? "draft" : "finalized"),
     })
     .returning({ id: factures.id });
 
   return { ok: true, numero: inv.number ?? `PL-${inv.id}`, factureId: row?.id };
+}
+
+// GET /customer_invoices/{id} → statut actuel, ou `exists: false` si la facture a
+// été supprimée dans Pennylane (brouillon effacé) : elle ne doit plus compter
+// dans le « déjà facturé ».
+export async function getFactureStatut(
+  invoiceId: string,
+): Promise<{ ok: boolean; exists: boolean; status?: string | null; error?: string }> {
+  if (!process.env.PENNYLANE_API_KEY)
+    return { ok: false, exists: true, error: "Pennylane non configuré." };
+  try {
+    const res = await fetch(`${BASE}/customer_invoices/${invoiceId}`, {
+      headers: plHeaders(),
+    });
+    if (res.status === 404) return { ok: true, exists: false };
+    if (!res.ok) return { ok: false, exists: true, error: `Erreur ${res.status}` };
+    const j = (await res.json()) as { status?: string; draft?: boolean };
+    const status = j.status ?? (j.draft === false ? "finalized" : j.draft ? "draft" : null);
+    return { ok: true, exists: true, status };
+  } catch (e) {
+    const msg = e instanceof Error ? e.message : String(e);
+    return { ok: false, exists: true, error: msg.slice(0, 120) };
+  }
 }
 
 // GET /customer_invoices/{id} → URL publique du PDF de la facture.

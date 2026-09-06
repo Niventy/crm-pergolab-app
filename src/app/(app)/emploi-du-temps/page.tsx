@@ -1,5 +1,5 @@
 import Link from "next/link";
-import { and, asc, eq, or } from "drizzle-orm";
+import { and, asc, eq, isNull, or } from "drizzle-orm";
 import {
   CalendarCheck,
   RefreshCw,
@@ -16,17 +16,13 @@ import {
 import { db } from "@/db";
 import { taches, leads as leadsTable } from "@/db/schema";
 import { cn } from "@/lib/utils";
-import { formatDateCourte, formatEuros, tempsRelatif } from "@/lib/format";
+import { formatDateCourte, formatEuros, tempsRelatif, todayParis } from "@/lib/format";
 import { currentUserId } from "@/lib/current-user";
+import { STAGE } from "@/lib/pipeline";
 import { TodoList } from "./todo-list";
 import { AgendaGoogle } from "./agenda-google";
 
 export const dynamic = "force-dynamic";
-
-const PARIS = "Europe/Paris";
-function todayParis() {
-  return new Intl.DateTimeFormat("en-CA", { timeZone: PARIS }).format(new Date());
-}
 
 type BLead = { id: string; nom: string; sousTitre: string };
 
@@ -43,7 +39,7 @@ export default async function EmploiDuTempsPage() {
 
   const [mesLeads, mesTaches, mesChantiers] = await Promise.all([
     db.query.leads.findMany({
-      where: eq(leadsTable.assignedTo, userId),
+      where: and(eq(leadsTable.assignedTo, userId), isNull(leadsTable.deletedAt)),
       with: { stage: true },
     }),
     db.query.taches.findMany({
@@ -55,6 +51,7 @@ export default async function EmploiDuTempsPage() {
     db.query.leads.findMany({
       where: and(
         eq(leadsTable.statut, "gagnee"),
+        isNull(leadsTable.deletedAt),
         or(
           eq(leadsTable.assignedTo, userId),
           eq(leadsTable.poseAssignedTo, userId),
@@ -81,6 +78,7 @@ export default async function EmploiDuTempsPage() {
   for (const l of mesLeads) {
     if (l.statut !== "en_cours") continue;
     const stage = l.stage?.nom ?? "";
+    const code = l.stage?.code ?? "";
     const ageH = (now - new Date(l.updatedAt).getTime()) / H;
     const rdvDuJour = l.rdvDate === today && l.rdvStatut !== "honore";
 
@@ -101,19 +99,19 @@ export default async function EmploiDuTempsPage() {
           l.relanceCount ? ` · déjà ${l.relanceCount}×` : ""
         }`,
       });
-    } else if (stage === "Rappeler" || stage === "Pas de réponse") {
+    } else if (code === STAGE.RAPPELER || code === STAGE.PAS_DE_REPONSE) {
       b.rappel.push({
         id: l.id,
         nom: l.nom,
         sousTitre: `${stage} · vu ${tempsRelatif(l.updatedAt)}`,
       });
-    } else if (stage === "Devis à envoyer") {
+    } else if (code === STAGE.DEVIS_A_ENVOYER) {
       b.devisEnvoyer.push({
         id: l.id,
         nom: l.nom,
         sousTitre: `Devis à rédiger${l.codePostal ? ` · ${l.codePostal}` : ""}`,
       });
-    } else if (stage === "Devis envoyé" && ageH > 72) {
+    } else if (code === STAGE.DEVIS_ENVOYE && ageH > 72) {
       b.devisSansReponse.push({
         id: l.id,
         nom: l.nom,
@@ -151,13 +149,14 @@ export default async function EmploiDuTempsPage() {
     dossier: [],
   };
   for (const l of mesChantiers) {
-    const stage = l.stage?.nom ?? "";
-    const ttc = Number(l.montantTtc ?? l.montant ?? 0);
+    const code = l.stage?.code ?? "";
+    // Base = TTC uniquement (le HT sous-estimait le reste dû).
+    const ttc = l.montantTtc ? Number(l.montantTtc) : null;
     const enc = Number(l.acompteEncaisse ?? 0) + Number(l.paiementEspece ?? 0);
-    const reste = Math.max(0, ttc - enc);
+    const reste = ttc == null ? null : Math.max(0, ttc - enc);
     const pose = l.datePoseReelle;
 
-    if (stage === "À métrer") {
+    if (code === STAGE.A_METRER) {
       ch.metre.push({ id: l.id, nom: l.nom, sousTitre: "Métré à planifier" });
     } else if (l.datePosePrevue && !pose) {
       const jour = l.datePosePrevue === today;
@@ -168,7 +167,13 @@ export default async function EmploiDuTempsPage() {
           ? "Pose aujourd'hui"
           : `Pose prévue le ${formatDateCourte(l.datePosePrevue)}`,
       });
-    } else if (pose && reste > 0) {
+    } else if (pose && reste == null) {
+      ch.encaisser.push({
+        id: l.id,
+        nom: l.nom,
+        sousTitre: "TTC inconnu — marque le devis signé",
+      });
+    } else if (pose && reste != null && reste > 0) {
       ch.encaisser.push({
         id: l.id,
         nom: l.nom,

@@ -1,9 +1,10 @@
 import { createServerClient } from "@supabase/ssr";
 import { NextResponse, type NextRequest } from "next/server";
 
-// Routes accessibles sans authentification (les routes /api gèrent leur propre
-// auth, ex. le webhook entrant protégé par un Bearer secret).
-const PUBLIC_PATHS = ["/login", "/auth", "/api"];
+// Routes accessibles sans authentification. Les routes API publiques sont listées
+// UNE PAR UNE (chacune gère sa propre auth, ex. Bearer secret du webhook) : une
+// nouvelle route /api/* est protégée par défaut tant qu'elle n'est pas ajoutée ici.
+const PUBLIC_PATHS = ["/login", "/auth", "/api/leads/inbound"];
 
 function isPublic(pathname: string) {
   return PUBLIC_PATHS.some(

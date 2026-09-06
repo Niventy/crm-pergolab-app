@@ -26,7 +26,7 @@ export default async function ComptabilitePage({
     <main className="mx-auto w-full max-w-6xl flex-1 space-y-5 px-6 py-6 pb-28">
       <EnTete
         titre="Comptabilité"
-        sous={`Le résultat : CA, marge, encaissements · ${s.periodeLabel}`}
+        sous={`CA, marge, encaissements par DATE DE SIGNATURE · ${s.periodeLabel}`}
         Icon={Euro}
         basePath="/comptabilite"
         moisSel={s.moisSel}
@@ -36,14 +36,24 @@ export default async function ComptabilitePage({
       />
 
       <div className="grid grid-cols-2 gap-3 lg:grid-cols-4">
-        <Kpi label="CA généré (HT)" value={compact(s.ca)} color="text-green-700" />
+        <Kpi
+          label="CA signé (HT)"
+          value={compact(s.ca)}
+          color="text-green-700"
+          sub={`${s.signes.length} signature${s.signes.length > 1 ? "s" : ""}`}
+        />
         <Kpi
           label="Marge générée"
           value={compact(s.marge)}
           sub={`${s.margePct} % du CA`}
           color="text-green-700"
         />
-        <Kpi label="Encaissé (acomptes)" value={compact(s.acomptes)} color="text-green-700" />
+        <Kpi
+          label="Encaissé"
+          value={compact(s.encaisse)}
+          sub="acomptes + espèces des commandes signées"
+          color="text-green-700"
+        />
         <Kpi label="Panier moyen signé" value={compact(s.panierMoyen)} />
       </div>
 
@@ -61,19 +71,19 @@ export default async function ComptabilitePage({
           color="text-blue-700"
         />
         <Kpi
-          label="Signés"
+          label="Signés (cohorte)"
           value={String(s.won.length)}
-          sub={`sur ${s.recus} lead${s.recus > 1 ? "s" : ""} reçus`}
+          sub={`sur ${s.recus} lead${s.recus > 1 ? "s" : ""} reçus sur la période`}
         />
-        <Kpi label="Taux de closing" value={`${s.closing} %`} />
+        <Kpi label="Taux de closing" value={`${s.closing} %`} sub="leads reçus sur la période" />
       </div>
 
       {/* Marge par produit — où l'argent se gagne réellement */}
       <Panel title={`Marge par produit (gamme) — ${s.periodeLabel}`}>
         {s.margeParProduit.length === 0 ? (
           <p className="text-sm text-muted-foreground">
-            Aucun devis signé sur la période — la marge se calcule sur le CA
-            réalisé.
+            Aucune signature sur la période — la marge se calcule sur le CA
+            signé.
           </p>
         ) : (
           <table className="w-full text-sm">
@@ -146,8 +156,8 @@ export default async function ComptabilitePage({
             <thead>
               <tr className="text-left text-[0.7rem] uppercase tracking-wide text-muted-foreground">
                 <th className="pb-2 font-semibold">ADV</th>
-                <th className="pb-2 text-right font-semibold">Leads</th>
-                <th className="pb-2 text-right font-semibold">CA</th>
+                <th className="pb-2 text-right font-semibold">Leads reçus</th>
+                <th className="pb-2 text-right font-semibold">CA signé</th>
                 <th className="pb-2 text-right font-semibold">Closing</th>
               </tr>
             </thead>

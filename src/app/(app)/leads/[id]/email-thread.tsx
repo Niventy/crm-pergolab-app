@@ -15,8 +15,8 @@ export function EmailThread({ leadEmail }: { leadEmail: string }) {
   useEffect(() => {
     let active = true;
     (async () => {
-      setLoading(true);
-      const res = await fetchLeadEmails(leadEmail);
+      // « Actualiser » (tick > 0) force la relecture ; sinon cache court serveur.
+      const res = await fetchLeadEmails(leadEmail, tick > 0);
       if (!active) return;
       setMessages(res.messages ?? []);
       setError(res.ok ? null : (res.error ?? "Erreur"));
@@ -35,7 +35,10 @@ export function EmailThread({ leadEmail }: { leadEmail: string }) {
         </span>
         <button
           type="button"
-          onClick={() => setTick((t) => t + 1)}
+          onClick={() => {
+            setLoading(true);
+            setTick((t) => t + 1);
+          }}
           disabled={loading}
           className="inline-flex items-center gap-1 text-xs text-muted-foreground hover:text-foreground disabled:opacity-50"
         >

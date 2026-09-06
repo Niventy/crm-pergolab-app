@@ -2,79 +2,45 @@
 
 import { useMemo, useState, useTransition } from "react";
 import { useRouter } from "next/navigation";
-import { Check, Minus } from "lucide-react";
+import { Check, Minus, Ban } from "lucide-react";
 import { toast } from "sonner";
 import { cn } from "@/lib/utils";
-import { formatEuros, formatDate } from "@/lib/format";
+import { formatEuros, formatDate, moisLabelFr } from "@/lib/format";
 import { updateLeadStage } from "@/app/(app)/kanban/actions";
-import {
-  Select,
-  SelectContent,
-  SelectItem,
-  SelectTrigger,
-  SelectValue,
-} from "@/components/ui/select";
+import { FilterSelect, Td } from "@/components/data-table";
+import { PHASE_META, PHASE_ORDER, type CommandeRow, type Phase, type StageOption } from "./phases-meta";
 
-export type StageOption = { id: string; nom: string; couleur: string };
-
-export type CommandeRow = {
-  id: string;
-  dateCde: string; // "YYYY-MM-DD"
-  commercial: string | null;
-  assignedTo: string | null;
-  equipePose: string | null;
-  nom: string;
-  codePostal: string | null;
-  ville: string | null;
-  produit: string | null;
-  montantHt: number | null;
-  montantTtc: number | null;
-  acompteEncaisse: number | null;
-  paiementEspece: number | null;
-  montantAchat: number | null; // admin only
-  financeur: string | null;
-  modePaiement: string | null;
-  factureSoldeClient: boolean;
-  factureSoldePoseur: boolean;
-  dossierDateEnvoi: string | null;
-  datePoseReelle: string | null;
-  stageId: string | null;
-  stageNom: string | null;
-  stageCouleur: string | null;
-};
-
-const MOIS_FR = [
-  "JANVIER", "FÉVRIER", "MARS", "AVRIL", "MAI", "JUIN",
-  "JUILLET", "AOÛT", "SEPTEMBRE", "OCTOBRE", "NOVEMBRE", "DÉCEMBRE",
-];
 const ym = (d: string) => d.slice(0, 7);
-const moisLabel = (key: string) => {
-  const [y, m] = key.split("-");
-  return `${MOIS_FR[Number(m) - 1]} ${y}`;
-};
+const moisLabel = (key: string) => moisLabelFr(key);
 const semaine = (d: string) => `S${Math.min(5, Math.ceil(Number(d.slice(8, 10)) / 7))}`;
 
-// Base à encaisser = TTC si connu, sinon HT.
-const baseDue = (r: CommandeRow) => r.montantTtc ?? r.montantHt ?? 0;
+// Base à encaisser = TTC uniquement (jamais le HT : le client paie la TVA).
+// TTC inconnu → reste inconnu (null), affiché « TTC ? » plutôt qu'un faux chiffre.
 const encaisse = (r: CommandeRow) =>
   (r.acompteEncaisse ?? 0) + (r.paiementEspece ?? 0);
-const reste = (r: CommandeRow) => Math.max(0, baseDue(r) - encaisse(r));
+const reste = (r: CommandeRow): number | null =>
+  r.montantTtc == null ? null : Math.max(0, r.montantTtc - encaisse(r));
 
 export function CommandesTable({
   rows,
   admin,
   currentUserId,
   stages,
+  initialEnc = "all",
 }: {
   rows: CommandeRow[];
   admin: boolean;
   currentUserId: string | null;
   stages: StageOption[];
+  /** Filtre d'encaissement pré-appliqué (?enc=…). */
+  initialEnc?: Phase | "all";
 }) {
   const router = useRouter();
   const [annee, setAnnee] = useState("all");
   const [commercial, setCommercial] = useState("all");
   const [equipe, setEquipe] = useState("all");
+  const [enc, setEnc] = useState<Phase | "all">(initialEnc);
+  const [avecAnnulees, setAvecAnnulees] = useState(false);
 
   // Options de filtres.
   const commMap = new Map<string, string>();
@@ -102,22 +68,33 @@ export function CommandesTable({
     ...anneeSet.map((a) => ({ value: a, label: a })),
   ];
 
+  const encOptions = [
+    { value: "all", label: "Tout encaissement" },
+    ...PHASE_ORDER.map((p) => ({ value: p, label: PHASE_META[p].label })),
+  ];
+
+  const nbAnnulees = rows.filter((r) => r.statut !== "gagnee").length;
+
   const filtered = useMemo(
     () =>
       rows.filter((r) => {
+        if (!avecAnnulees && r.statut !== "gagnee") return false;
         if (annee !== "all" && r.dateCde.slice(0, 4) !== annee) return false;
         if (commercial !== "all" && r.assignedTo !== commercial) return false;
         if (equipe !== "all" && r.equipePose !== equipe) return false;
+        if (enc !== "all" && (r.statut !== "gagnee" || r.phase !== enc)) return false;
         return true;
       }),
-    [rows, annee, commercial, equipe],
+    [rows, annee, commercial, equipe, enc, avecAnnulees],
   );
 
-  // KPIs réactifs.
-  const kHt = filtered.reduce((a, r) => a + (r.montantHt ?? 0), 0);
-  const kEncaisse = filtered.reduce((a, r) => a + encaisse(r), 0);
-  const kReste = filtered.reduce((a, r) => a + reste(r), 0);
-  const kMarge = filtered.reduce(
+  // KPIs réactifs (commandes actives uniquement).
+  const actives = filtered.filter((r) => r.statut === "gagnee");
+  const kHt = actives.reduce((a, r) => a + (r.montantHt ?? 0), 0);
+  const kEncaisse = actives.reduce((a, r) => a + encaisse(r), 0);
+  const kReste = actives.reduce((a, r) => a + (reste(r) ?? 0), 0);
+  const kSansTtc = actives.filter((r) => r.montantTtc == null).length;
+  const kMarge = actives.reduce(
     (a, r) => a + (r.montantHt != null && r.montantAchat != null ? r.montantHt - r.montantAchat : 0),
     0,
   );
@@ -131,41 +108,64 @@ export function CommandesTable({
     }
     return [...map.entries()]
       .sort((a, b) => b[0].localeCompare(a[0]))
-      .map(([mois, list]) => ({
-        mois,
-        list: [...list].sort((a, b) => b.dateCde.localeCompare(a.dateCde)),
-        totHt: list.reduce((a, r) => a + (r.montantHt ?? 0), 0),
-        totTtc: list.reduce((a, r) => a + (r.montantTtc ?? 0), 0),
-        totEnc: list.reduce((a, r) => a + encaisse(r), 0),
-        totReste: list.reduce((a, r) => a + reste(r), 0),
-      }));
+      .map(([mois, list]) => {
+        const act = list.filter((r) => r.statut === "gagnee");
+        return {
+          mois,
+          list: [...list].sort((a, b) => b.dateCde.localeCompare(a.dateCde)),
+          totHt: act.reduce((a, r) => a + (r.montantHt ?? 0), 0),
+          totTtc: act.reduce((a, r) => a + (r.montantTtc ?? 0), 0),
+          totEnc: act.reduce((a, r) => a + encaisse(r), 0),
+          totReste: act.reduce((a, r) => a + (reste(r) ?? 0), 0),
+        };
+      });
   }, [filtered]);
 
-  const actifs = annee !== "all" || commercial !== "all" || equipe !== "all";
+  const actifs =
+    annee !== "all" || commercial !== "all" || equipe !== "all" || enc !== "all" || avecAnnulees;
   const reset = () => {
     setAnnee("all");
     setCommercial("all");
     setEquipe("all");
+    setEnc("all");
+    setAvecAnnulees(false);
   };
 
-  const NB_COLS = 11;
+  const NB_COLS = 12;
 
   return (
     <div className="flex min-h-0 flex-1 flex-col">
       {/* KPIs */}
       <div className="grid grid-cols-2 gap-3 px-6 pb-3 sm:grid-cols-4 lg:grid-cols-5">
-        <Kpi label="Commandes" value={String(filtered.length)} />
+        <Kpi label="Commandes" value={String(actives.length)} />
         <Kpi label="CA HT" value={formatEuros(kHt)} />
         <Kpi label="Encaissé" value={formatEuros(kEncaisse)} accent="green" />
-        <Kpi label="Reste à encaisser" value={formatEuros(kReste)} accent="orange" />
+        <Kpi
+          label="Reste à encaisser"
+          value={formatEuros(kReste)}
+          accent="orange"
+          sub={kSansTtc > 0 ? `${kSansTtc} commande${kSansTtc > 1 ? "s" : ""} sans TTC` : undefined}
+        />
         {admin ? <Kpi label="Marge" value={formatEuros(kMarge)} accent="green" /> : null}
       </div>
 
       {/* Filtres */}
       <div className="flex flex-wrap items-center gap-2 px-6 pb-3">
+        <FilterSelect options={encOptions} value={enc} onChange={(v) => setEnc(v as Phase | "all")} width="w-44" />
         <FilterSelect options={anneeOptions} value={annee} onChange={setAnnee} width="w-40" />
         <FilterSelect options={commercialOptions} value={commercial} onChange={setCommercial} width="w-52" />
         <FilterSelect options={equipeOptions} value={equipe} onChange={setEquipe} width="w-56" />
+        {nbAnnulees > 0 ? (
+          <label className="flex items-center gap-1.5 text-xs text-muted-foreground">
+            <input
+              type="checkbox"
+              checked={avecAnnulees}
+              onChange={(e) => setAvecAnnulees(e.target.checked)}
+              className="size-3.5 accent-red-600"
+            />
+            Annulées ({nbAnnulees})
+          </label>
+        ) : null}
         {actifs ? (
           <button
             type="button"
@@ -183,10 +183,10 @@ export function CommandesTable({
       {filtered.length === 0 ? (
         <div className="px-6 py-16 text-center text-sm text-muted-foreground">
           Aucune commande dans cette vue. Une commande apparaît dès qu&apos;une fiche
-          passe « Gagnée ».
+          passe « Signée ».
         </div>
       ) : (
-        <div className="flex min-h-0 flex-1 flex-col px-6 pb-6">
+        <div className="flex min-h-0 flex-1 flex-col px-6 pb-24">
           <div className="min-h-0 flex-1 overflow-auto rounded-lg border border-border">
             <table className="min-w-full border-collapse text-sm">
               <thead className="sticky top-0 z-10">
@@ -195,7 +195,8 @@ export function CommandesTable({
                     { l: "Sem." },
                     { l: "Date" },
                     { l: "Client" },
-                    { l: "Statut" },
+                    { l: "Étape" },
+                    { l: "Encaissement" },
                     { l: "Localisation" },
                     { l: "Produit" },
                     { l: "HT", r: true },
@@ -263,52 +264,89 @@ function MonthGroup({
           {moisLabel(g.mois)} · {g.list.length} commande{g.list.length > 1 ? "s" : ""}
         </td>
       </tr>
-      {g.list.map((r) => (
-        <tr
-          key={r.id}
-          onClick={() => router.push(`/leads/${r.id}`)}
-          className="cursor-pointer bg-white transition-colors hover:bg-primary/[0.06]"
-        >
-          <Td className="text-muted-foreground">{semaine(r.dateCde)}</Td>
-          <Td className="whitespace-nowrap tabular-nums">{formatDate(r.dateCde)}</Td>
-          <Td className="font-medium text-foreground">{r.nom}</Td>
-          <Td className="whitespace-nowrap">
-            <StatutSelect
-              leadId={r.id}
-              stageId={r.stageId}
-              couleur={r.stageCouleur}
-              stages={stages}
-              onDone={() => router.refresh()}
-            />
-          </Td>
-          <Td className="whitespace-nowrap text-muted-foreground">
-            {[r.codePostal, r.ville].filter(Boolean).join(" ") || "—"}
-          </Td>
-          <Td className="max-w-[16rem] truncate" title={r.produit ?? undefined}>
-            {r.produit ?? "—"}
-          </Td>
-          <Td className="text-right tabular-nums">{formatEuros(r.montantHt)}</Td>
-          <Td className="text-right tabular-nums">{formatEuros(r.montantTtc)}</Td>
-          <Td className="text-right tabular-nums text-green-700">
-            {encaisse(r) > 0 ? formatEuros(encaisse(r)) : "—"}
-          </Td>
-          <Td className="text-right tabular-nums text-orange-700">
-            {reste(r) > 0 ? formatEuros(reste(r)) : "—"}
-          </Td>
-          <Td>
-            <div className="flex items-center gap-1.5" title="Facture client · Facture poseur · Envoi dossier">
-              <Flag on={r.factureSoldeClient} label="C" />
-              <Flag on={r.factureSoldePoseur} label="P" />
-              <span className="text-[0.7rem] text-muted-foreground">
-                {r.dossierDateEnvoi ? formatDate(r.dossierDateEnvoi) : "—"}
-              </span>
-            </div>
-          </Td>
-        </tr>
-      ))}
-      {/* Total du mois */}
+      {g.list.map((r) => {
+        const annulee = r.statut !== "gagnee";
+        const rst = reste(r);
+        return (
+          <tr
+            key={r.id}
+            onClick={() => router.push(`/leads/${r.id}`)}
+            className={cn(
+              "cursor-pointer bg-white transition-colors hover:bg-primary/[0.06]",
+              annulee && "text-muted-foreground",
+            )}
+          >
+            <Td className="text-muted-foreground">{semaine(r.dateCde)}</Td>
+            <Td className="whitespace-nowrap tabular-nums">{formatDate(r.dateCde)}</Td>
+            <Td className={cn("font-medium text-foreground", annulee && "line-through")}>{r.nom}</Td>
+            <Td className="whitespace-nowrap">
+              <StatutSelect
+                leadId={r.id}
+                stageId={r.stageId}
+                couleur={r.stageCouleur}
+                stages={stages}
+                onDone={() => router.refresh()}
+              />
+            </Td>
+            <Td className="whitespace-nowrap">
+              {annulee ? (
+                <span className="inline-flex items-center gap-1 rounded-md bg-red-600 px-1.5 py-0.5 text-[10px] font-bold uppercase tracking-wide text-white">
+                  <Ban className="size-3" /> Annulée
+                </span>
+              ) : (
+                <span
+                  className={cn(
+                    "inline-flex items-center gap-1 rounded-md px-1.5 py-0.5 text-[10px] font-bold uppercase tracking-wide",
+                    PHASE_META[r.phase].cls,
+                  )}
+                >
+                  <span className={cn("size-1.5 rounded-full", PHASE_META[r.phase].dot)} />
+                  {PHASE_META[r.phase].label}
+                </span>
+              )}
+            </Td>
+            <Td className="whitespace-nowrap text-muted-foreground">
+              {[r.codePostal, r.ville].filter(Boolean).join(" ") || "—"}
+            </Td>
+            <Td className="max-w-[16rem] truncate" title={r.produit ?? undefined}>
+              {r.produit ?? "—"}
+            </Td>
+            <Td className="text-right tabular-nums">{formatEuros(r.montantHt)}</Td>
+            <Td className="text-right tabular-nums">{formatEuros(r.montantTtc)}</Td>
+            <Td className="text-right tabular-nums text-green-700">
+              {encaisse(r) > 0 ? formatEuros(encaisse(r)) : "—"}
+            </Td>
+            <Td className="text-right tabular-nums text-orange-700">
+              {annulee ? (
+                "—"
+              ) : rst == null ? (
+                <span
+                  className="text-xs text-amber-700"
+                  title="TTC inconnu : marque le devis signé ou saisis le TTC sur la fiche"
+                >
+                  TTC ?
+                </span>
+              ) : rst > 0 ? (
+                formatEuros(rst)
+              ) : (
+                "—"
+              )}
+            </Td>
+            <Td>
+              <div className="flex items-center gap-1.5" title="Facture client · Facture poseur · Envoi dossier">
+                <Flag on={r.factureSoldeClient} label="C" />
+                <Flag on={r.factureSoldePoseur} label="P" />
+                <span className="text-[0.7rem] text-muted-foreground">
+                  {r.dossierDateEnvoi ? formatDate(r.dossierDateEnvoi) : "—"}
+                </span>
+              </div>
+            </Td>
+          </tr>
+        );
+      })}
+      {/* Total du mois (commandes actives) */}
       <tr className="bg-muted/60 font-semibold">
-        <Td className="text-[0.7rem] uppercase tracking-wide text-muted-foreground" colSpan={6}>
+        <Td className="text-[0.7rem] uppercase tracking-wide text-muted-foreground" colSpan={7}>
           Total {moisLabel(g.mois)}
         </Td>
         <Td className="text-right tabular-nums">{formatEuros(g.totHt)}</Td>
@@ -321,7 +359,8 @@ function MonthGroup({
   );
 }
 
-// Statut modifiable sur place : change l'étape du dossier client.
+// Étape de chantier modifiable sur place (« Annulée » passe par la fiche ou le
+// Kanban, qui demandent un motif).
 function StatutSelect({
   leadId,
   stageId,
@@ -336,6 +375,7 @@ function StatutSelect({
   onDone: () => void;
 }) {
   const [pending, start] = useTransition();
+  const choix = stages.filter((s) => !s.isPerdue || s.id === stageId);
 
   function onChange(newId: string) {
     if (!newId || newId === stageId) return;
@@ -343,7 +383,7 @@ function StatutSelect({
       const r = await updateLeadStage(leadId, newId);
       if (r?.error) toast.error("Changement impossible", { description: r.error });
       else {
-        toast.success("Statut mis à jour");
+        toast.success("Étape mise à jour");
         onDone();
       }
     });
@@ -368,7 +408,7 @@ function StatutSelect({
         {stageId && !stages.some((s) => s.id === stageId) ? (
           <option value={stageId}>— hors chantier —</option>
         ) : null}
-        {stages.map((s) => (
+        {choix.map((s) => (
           <option key={s.id} value={s.id}>
             {s.nom}
           </option>
@@ -396,10 +436,12 @@ function Kpi({
   label,
   value,
   accent,
+  sub,
 }: {
   label: string;
   value: string;
   accent?: "green" | "orange";
+  sub?: string;
 }) {
   return (
     <div className="rounded-xl border border-border bg-white px-3 py-2">
@@ -416,58 +458,8 @@ function Kpi({
       >
         {value}
       </div>
+      {sub ? <div className="text-[11px] text-amber-700">{sub}</div> : null}
     </div>
   );
 }
 
-function FilterSelect({
-  options,
-  value,
-  onChange,
-  width,
-}: {
-  options: { value: string; label: string }[];
-  value: string;
-  onChange: (v: string) => void;
-  width: string;
-}) {
-  return (
-    <Select items={options} value={value} onValueChange={(v) => onChange(v ?? "all")}>
-      <SelectTrigger className={cn("h-8", width)}>
-        <SelectValue />
-      </SelectTrigger>
-      <SelectContent>
-        {options.map((o) => (
-          <SelectItem key={o.value} value={o.value}>
-            {o.label}
-          </SelectItem>
-        ))}
-      </SelectContent>
-    </Select>
-  );
-}
-
-function Td({
-  children,
-  className,
-  colSpan,
-  title,
-}: {
-  children?: React.ReactNode;
-  className?: string;
-  colSpan?: number;
-  title?: string;
-}) {
-  return (
-    <td
-      colSpan={colSpan}
-      title={title}
-      className={cn(
-        "border-b border-r border-border px-3 py-2 align-middle last:border-r-0",
-        className,
-      )}
-    >
-      {children}
-    </td>
-  );
-}

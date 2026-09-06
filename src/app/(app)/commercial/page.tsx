@@ -35,20 +35,25 @@ export default async function CommercialPage({
           Mes chiffres · {s.periodeLabel}
         </h2>
         <div className="grid grid-cols-2 gap-3 lg:grid-cols-4">
-          <Kpi label="Mon CA généré (HT)" value={compact(s.monCa)} color="text-green-700" />
+          <Kpi
+            label="Mon CA signé (HT)"
+            value={compact(s.monCa)}
+            color="text-green-700"
+            sub="par date de signature"
+          />
           <Kpi label="Mes leads reçus" value={String(s.mesLeads.length)} />
-          <Kpi label="Mes signés" value={String(s.mesWon.length)} />
+          <Kpi label="Mes signatures" value={String(s.mesSignes.length)} sub="sur la période" />
           <Kpi
             label="Mon taux de closing"
             value={`${s.monClosing} %`}
-            sub="signés / (signés + perdus)"
+            sub="signés / (signés + perdus), leads reçus"
           />
         </div>
         {s.monObjectif > 0 ? (
           <div className="mt-3">
             <div className="mb-1 flex items-baseline justify-between text-xs">
               <span className="font-medium text-foreground">
-                Objectif du mois : {compact(s.monCa)} / {compact(s.monObjectif)}
+                Objectif {s.objectifLabel} : {compact(s.monCaMois)} / {compact(s.monObjectif)}
               </span>
               <span className="text-muted-foreground">{s.monPct} %</span>
             </div>
@@ -87,7 +92,7 @@ export default async function CommercialPage({
       </div>
 
       <div className="grid grid-cols-1 gap-4 lg:grid-cols-3">
-        <Panel title={`Leads reçus par mois — ${s.year}`} className="lg:col-span-2">
+        <Panel title={`Leads reçus par mois — ${s.year} (date de réception)`} className="lg:col-span-2">
           <BarParMois
             data={s.serie}
             moisActif={s.moisActif}

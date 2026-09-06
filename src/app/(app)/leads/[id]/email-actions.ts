@@ -8,6 +8,7 @@ import { createClient } from "@/lib/supabase/server";
 import { currentUserId } from "@/lib/current-user";
 import { resolveSender, allSenders } from "@/lib/email-sender";
 import { getQuotePdfUrl } from "@/lib/pennylane";
+import { marquerDevisEnvoye } from "@/lib/pipeline-server";
 
 export type EmailState = { ok: boolean; error: string | null };
 
@@ -172,11 +173,23 @@ function extractBody(part?: GPart): string {
   return "";
 }
 
+// Cache court (par processus) du fil Gmail d'un contact : la fiche s'ouvre
+// souvent plusieurs fois de suite et chaque ouverture interrogeait TOUTES les
+// boîtes séquentiellement (N × 10 messages en format=full). « Actualiser »
+// force la relecture.
+type CacheEntry = { at: number; res: { ok: boolean; messages?: ThreadMessage[]; error?: string } };
+const gmailCache = new Map<string, CacheEntry>();
+const GMAIL_CACHE_MS = 2 * 60 * 1000;
+
 export async function fetchLeadEmails(
   leadEmail: string,
+  force = false,
 ): Promise<{ ok: boolean; messages?: ThreadMessage[]; error?: string }> {
-  const email = leadEmail?.trim();
+  const email = leadEmail?.trim().toLowerCase();
   if (!email) return { ok: true, messages: [] };
+
+  const cached = gmailCache.get(email);
+  if (!force && cached && Date.now() - cached.at < GMAIL_CACHE_MS) return cached.res;
 
   const clientId = process.env.GOOGLE_CLIENT_ID;
   const clientSecret = process.env.GOOGLE_CLIENT_SECRET;
@@ -188,69 +201,87 @@ export async function fetchLeadEmails(
     return { ok: false, error: "Aucun compte Gmail configuré." };
 
   const q = encodeURIComponent(`from:${email} OR to:${email}`);
-  const out: ThreadMessage[] = [];
-  const seen = new Set<string>(); // dédoublonnage inter-boîtes (Message-ID)
   let anyOk = false;
   let scopeError = false;
 
-  // On interroge TOUTES les boîtes configurées (Sofiane, adv@, …).
-  for (const acc of accounts) {
-    try {
-      const client = new OAuth2Client(clientId, clientSecret);
-      client.setCredentials({ refresh_token: acc.refreshToken });
-      const at = await client.getAccessToken();
-      const token = typeof at === "string" ? at : at?.token;
-      if (!token) continue;
+  // Toutes les boîtes configurées, interrogées EN PARALLÈLE.
+  const parBoite = await Promise.all(
+    accounts.map(async (acc): Promise<ThreadMessage[]> => {
+      try {
+        const client = new OAuth2Client(clientId, clientSecret);
+        client.setCredentials({ refresh_token: acc.refreshToken });
+        const at = await client.getAccessToken();
+        const token = typeof at === "string" ? at : at?.token;
+        if (!token) return [];
 
-      const listRes = await fetch(
-        `https://gmail.googleapis.com/gmail/v1/users/me/messages?q=${q}&maxResults=10`,
-        { headers: { Authorization: `Bearer ${token}` } },
-      );
-      if (!listRes.ok) {
-        if (listRes.status === 403) scopeError = true;
-        continue;
-      }
-      anyOk = true;
-      const list = (await listRes.json()) as { messages?: { id: string }[] };
-
-      for (const { id } of list.messages ?? []) {
-        const mRes = await fetch(
-          `https://gmail.googleapis.com/gmail/v1/users/me/messages/${id}?format=full`,
+        const listRes = await fetch(
+          `https://gmail.googleapis.com/gmail/v1/users/me/messages?q=${q}&maxResults=10`,
           { headers: { Authorization: `Bearer ${token}` } },
         );
-        if (!mRes.ok) continue;
-        const msg = (await mRes.json()) as GMessage;
-        const headers = msg.payload?.headers ?? [];
-        const h = (n: string) =>
-          headers.find((x) => x.name.toLowerCase() === n.toLowerCase())?.value ?? "";
-        const key = h("Message-ID") || id;
-        if (seen.has(key)) continue;
-        seen.add(key);
-        const from = h("From");
-        out.push({
-          id,
-          account: acc.label,
-          direction: from.toLowerCase().includes(email.toLowerCase()) ? "in" : "out",
-          from,
-          subject: h("Subject"),
-          date: Number(msg.internalDate ?? 0),
-          body: extractBody(msg.payload).slice(0, 4000),
-        });
+        if (!listRes.ok) {
+          if (listRes.status === 403) scopeError = true;
+          return [];
+        }
+        anyOk = true;
+        const list = (await listRes.json()) as { messages?: { id: string }[] };
+
+        const msgs = await Promise.all(
+          (list.messages ?? []).map(async ({ id }) => {
+            const mRes = await fetch(
+              `https://gmail.googleapis.com/gmail/v1/users/me/messages/${id}?format=full`,
+              { headers: { Authorization: `Bearer ${token}` } },
+            );
+            if (!mRes.ok) return null;
+            const msg = (await mRes.json()) as GMessage;
+            const headers = msg.payload?.headers ?? [];
+            const h = (n: string) =>
+              headers.find((x) => x.name.toLowerCase() === n.toLowerCase())?.value ?? "";
+            const from = h("From");
+            return {
+              id,
+              key: h("Message-ID") || id,
+              account: acc.label,
+              direction: from.toLowerCase().includes(email) ? "in" : "out",
+              from,
+              subject: h("Subject"),
+              date: Number(msg.internalDate ?? 0),
+              body: extractBody(msg.payload).slice(0, 4000),
+            } as ThreadMessage & { key: string };
+          }),
+        );
+        return msgs.filter((m): m is ThreadMessage & { key: string } => !!m);
+      } catch (e) {
+        console.error("Gmail read error:", acc.label, e);
+        return [];
       }
-    } catch (e) {
-      console.error("Gmail read error:", acc.label, e);
-    }
+    }),
+  );
+
+  // Dédoublonnage inter-boîtes (Message-ID) + tri chronologique.
+  const seen = new Set<string>();
+  const out: ThreadMessage[] = [];
+  for (const m of parBoite.flat() as (ThreadMessage & { key?: string })[]) {
+    const key = m.key ?? m.id;
+    if (seen.has(key)) continue;
+    seen.add(key);
+    const { key: _k, ...msg } = m;
+    void _k;
+    out.push(msg);
   }
 
+  let res: { ok: boolean; messages?: ThreadMessage[]; error?: string };
   if (!anyOk && scopeError)
-    return {
+    res = {
       ok: false,
       error:
         "Lecture Gmail non autorisée — régénère les tokens avec le scope gmail.readonly.",
     };
-
-  out.sort((a, b) => a.date - b.date);
-  return { ok: true, messages: out };
+  else {
+    out.sort((a, b) => a.date - b.date);
+    res = { ok: true, messages: out };
+  }
+  if (res.ok) gmailCache.set(email, { at: Date.now(), res });
+  return res;
 }
 
 // Message MIME multipart avec le PDF du devis en pièce jointe (API Gmail).
@@ -364,12 +395,16 @@ export async function sendDevisParGmail(
     return { ok: false, error: `Échec envoi : ${msg.slice(0, 300)}` };
   }
 
-  await db.insert(echanges).values({
+  // Envoi RÉEL : la fiche avance en « Devis envoyé » + relance à +3 j + journal.
+  await marquerDevisEnvoye({
     leadId,
     userId: await currentUserId(),
-    type: "devis_envoye",
-    contenu: `Devis ${numero ?? ""} envoyé par email à ${to}`.trim(),
+    numero,
+    via: `par email à ${to}`,
+    quoteId,
   });
   revalidatePath(`/leads/${leadId}`);
+  revalidatePath("/kanban");
+  revalidatePath("/liste");
   return { ok: true, error: null };
 }

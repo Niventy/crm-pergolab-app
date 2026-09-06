@@ -55,6 +55,16 @@ const META: Record<
     Icon: FileText,
     cls: "bg-emerald-100 text-emerald-700",
   },
+  devis_cree: { label: "Devis créé", Icon: FileText, cls: "bg-slate-100 text-slate-700" },
+  devis_accepte: {
+    label: "Devis signé",
+    Icon: FileText,
+    cls: "bg-green-600 text-white",
+  },
+  suppression: { label: "Corbeille", Icon: ArrowRight, cls: "bg-red-100 text-red-700" },
+  restauration: { label: "Restauré", Icon: ArrowRight, cls: "bg-green-100 text-green-700" },
+  creation: { label: "Création", Icon: Plus, cls: "bg-slate-100 text-slate-700" },
+  paiement: { label: "Paiement", Icon: Check, cls: "bg-green-100 text-green-700" },
   metre: { label: "Métré réalisé", Icon: Ruler, cls: "bg-violet-100 text-violet-700" },
   commande: {
     label: "Commande passée",
@@ -94,10 +104,13 @@ export function ActivitePills({
   leadId,
   cycle,
   activites,
+  showTimeline = true,
 }: {
   leadId: string;
   cycle: number;
   activites: Activite[];
+  /** false : seules les pilules (le fil chronologique est affiché ailleurs). */
+  showTimeline?: boolean;
 }) {
   const [pending, startTransition] = useTransition();
   const [mode, setMode] = useState<null | "relance" | "autre">(null);
@@ -229,7 +242,7 @@ export function ActivitePills({
       ) : null}
 
       {/* Timeline des activités */}
-      {activites.length > 0 ? (
+      {!showTimeline ? null : activites.length > 0 ? (
         <ul className="space-y-1.5 pt-1">
           {activites.map((a) => {
             const meta = META[a.type];

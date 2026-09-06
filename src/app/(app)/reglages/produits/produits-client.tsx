@@ -4,6 +4,8 @@ import { useState, useTransition } from "react";
 import { useRouter } from "next/navigation";
 import { Plus, Trash2, Loader2, Check } from "lucide-react";
 import { toast } from "sonner";
+import { TVA_OPTIONS, tauxLabel } from "@/lib/devis-calc";
+import { ConfirmDialog } from "@/components/confirm-dialog";
 import {
   addProduitCatalogue,
   updateProduitCatalogue,
@@ -96,6 +98,7 @@ function ProduitCard({
   const [d, setD] = useState<Draft>(initial);
   const [pending, start] = useTransition();
   const [saved, setSaved] = useState(false);
+  const [confirmSuppr, setConfirmSuppr] = useState(false);
   const set = (patch: Partial<Draft>) => {
     setD((cur) => ({ ...cur, ...patch }));
     setSaved(false);
@@ -125,9 +128,14 @@ function ProduitCard({
 
   function supprimer() {
     if (!id) return onClose?.();
-    if (!confirm(`Supprimer « ${d.nom} » du catalogue ?`)) return;
+    setConfirmSuppr(true);
+  }
+
+  function supprimerConfirme() {
+    if (!id) return;
     start(async () => {
       const r = await deleteProduitCatalogue(id);
+      setConfirmSuppr(false);
       if (r.ok) {
         toast.success("Produit supprimé");
         router.refresh();
@@ -169,18 +177,20 @@ function ProduitCard({
           />
           <span className="text-muted-foreground">€</span>
         </label>
-        <label className="flex items-center gap-1 rounded-md border border-border px-2 text-sm">
-          <input
-            type="number"
-            min={0}
-            step="0.5"
-            value={d.tva}
-            onChange={(e) => set({ tva: e.target.value })}
-            aria-label="TVA"
-            className="h-8 w-full bg-transparent text-right outline-none"
-          />
-          <span className="text-muted-foreground">%</span>
-        </label>
+        {/* Taux limités à ceux gérés par le devis / Pennylane (un taux libre
+            comme 0 partait silencieusement à 20 % sur la facture). */}
+        <select
+          value={d.tva}
+          onChange={(e) => set({ tva: e.target.value })}
+          aria-label="TVA"
+          className="h-9 rounded-md border border-border bg-white px-2 text-sm outline-none focus:border-primary"
+        >
+          {TVA_OPTIONS.map((t) => (
+            <option key={t} value={String(t)}>
+              TVA {tauxLabel(t)}
+            </option>
+          ))}
+        </select>
       </div>
 
       <textarea
@@ -225,6 +235,17 @@ function ProduitCard({
           </button>
         </div>
       </div>
+
+      <ConfirmDialog
+        open={confirmSuppr}
+        titre={`Supprimer « ${d.nom} » du catalogue ?`}
+        description="Les devis déjà créés ne sont pas modifiés ; le produit ne sera plus proposé."
+        confirmLabel="Supprimer"
+        danger
+        pending={pending}
+        onConfirm={supprimerConfirme}
+        onCancel={() => setConfirmSuppr(false)}
+      />
     </div>
   );
 }

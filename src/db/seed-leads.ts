@@ -113,7 +113,8 @@ async function main() {
 
     const montantNum = Number(lead.montant ?? 0);
     const montantAchat = montantNum ? (montantNum * 0.6).toFixed(2) : null;
-    const acompte = statut === "gagnee" && montantNum ? (montantNum * 0.3).toFixed(2) : null;
+    const acompteEncaisse =
+      statut === "gagnee" && montantNum ? (montantNum * 0.3).toFixed(2) : null;
     const assignedTo = ADV[i % ADV.length].id;
     const modePaiement = MODE_PAIEMENT[i % MODE_PAIEMENT.length];
     const createdAt = lead.creeLe ? new Date(`${lead.creeLe}T10:00:00Z`) : new Date();
@@ -133,7 +134,7 @@ async function main() {
       campagne: lead.campagne ?? null,
       montant: lead.montant ?? null,
       montantAchat,
-      acompte,
+      acompteEncaisse,
       modePaiement: modePaiement as (typeof MODE_PAIEMENT)[number],
       probabilite: lead.probabilite ?? null,
       typeProjet: lead.typeProjet ?? null,

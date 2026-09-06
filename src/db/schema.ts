@@ -70,6 +70,9 @@ export const profiles = pgTable("profiles", {
 export const stages = pgTable("stages", {
   id: uuid("id").primaryKey().defaultRandom(),
   nom: text("nom").notNull(),
+  // Clé STABLE référencée par le code (a_traiter, devis_envoye, a_metrer…) :
+  // le nom est libre et modifiable par l'équipe sans rien casser.
+  code: text("code"),
   position: integer("position").notNull(),
   couleur: text("couleur").notNull().default("#94a3b8"),
   // Cycle de vente : 1 = prospection, 2 = devis & closing.
@@ -96,6 +99,11 @@ export const leads = pgTable("leads", {
 
   nom: text("nom").notNull(),
   entreprise: text("entreprise"),
+  // Client PROFESSIONNEL : `entreprise` = raison sociale, + SIRET et n° de TVA
+  // intracommunautaire (portés sur le devis / la facture). Côté Pennylane, un
+  // pro est créé en `company_customer` (et non `individual_customer`).
+  siret: text("siret"),
+  tvaIntracom: text("tva_intracom"),
   email: text("email"),
   telephone: text("telephone"),
 
@@ -125,6 +133,8 @@ export const leads = pgTable("leads", {
 
   // Pennylane : ids du client + devis créés à la signature (évite les doublons).
   pennylaneCustomerId: text("pennylane_customer_id"),
+  // « individual » | « company » : pour cibler la bonne route API à la mise à jour.
+  pennylaneCustomerType: text("pennylane_customer_type"),
   pennylaneQuoteId: text("pennylane_quote_id"),
 
   nextRelanceDate: date("next_relance_date"),
@@ -138,7 +148,8 @@ export const leads = pgTable("leads", {
   datePremierContact: timestamp("date_premier_contact", { withTimezone: true }),
   raisonPerte: raisonPerteEnum("raison_perte"),
   modePaiement: modePaiementEnum("mode_paiement"),
-  acompte: numeric("acompte", { precision: 12, scale: 2 }),
+  // (l'ancien `acompte` a été supprimé — décision du 05/09/2026 : seule la
+  // valeur « Acompte encaissé » du bloc Encaissement fait foi)
   // Coût d'achat fournisseur → marge = montant - montantAchat.
   montantAchat: numeric("montant_achat", { precision: 12, scale: 2 }),
   // Date de signature (fixée au passage en « gagnée ») → CA/marge par période.
@@ -185,6 +196,10 @@ export const leads = pgTable("leads", {
   updatedBy: uuid("updated_by").references(() => profiles.id, {
     onDelete: "set null",
   }),
+
+  // Corbeille : une fiche « supprimée » est masquée partout mais conservée
+  // (restaurable par un admin). La suppression définitive purge la ligne.
+  deletedAt: timestamp("deleted_at", { withTimezone: true }),
 
   rawPayload: jsonb("raw_payload"),
 });
@@ -235,7 +250,19 @@ export const devis = pgTable("devis", {
     .notNull()
     .references(() => leads.id, { onDelete: "cascade" }),
   numero: text("numero"),
-  montant: numeric("montant", { precision: 12, scale: 2 }),
+  montant: numeric("montant", { precision: 12, scale: 2 }), // HT, remise déduite
+  // TTC calculé ligne par ligne (chaque ligne à SON taux) : c'est la base de la
+  // facturation (acompte = % du TTC) et du reste à encaisser.
+  montantTtc: numeric("montant_ttc", { precision: 12, scale: 2 }),
+  // Instantané des lignes (designation, quantite, prixHt, tva, remisePct) pour
+  // facturer PAR TAUX sans dépendre de Pennylane, et rouvrir le devis hors ligne.
+  lignes: jsonb("lignes"),
+  // Devis retenu par le client (un seul par lead) : source du montant du lead,
+  // de la facturation et du CA. Renseigné à la signature.
+  accepteAt: timestamp("accepte_at", { withTimezone: true }),
+  // Configuration du configurateur (pergola, pergolas supplémentaires, TVA par
+  // défaut, remise %) pour rouvrir le devis sans tout ressaisir.
+  config: jsonb("config"),
   statut: text("statut"),
   lienExterne: text("lien_externe"),
   externalId: text("external_id"), // id du devis Pennylane (pour récupérer le PDF)
@@ -326,7 +353,32 @@ export const factures = pgTable("factures", {
   numero: text("numero"),
   externalId: text("external_id"), // id de la facture Pennylane
   montantHt: numeric("montant_ht", { precision: 12, scale: 2 }),
-  statut: text("statut"), // draft / finalized
+  // TTC réellement facturé (somme des lignes par taux) → reste à facturer juste.
+  montantTtc: numeric("montant_ttc", { precision: 12, scale: 2 }),
+  // Lignes facturées (une par taux de TVA) pour calculer le solde par taux.
+  lignes: jsonb("lignes"),
+  statut: text("statut"), // draft / finalized / supprimee (disparue de Pennylane)
+  createdAt: timestamp("created_at", { withTimezone: true })
+    .notNull()
+    .defaultNow(),
+});
+
+// ---------------------------------------------------------------------------
+// paiements — encaissements d'une commande (un par versement : acompte,
+// livraison, solde…). `leads.acompte_encaisse` / `paiement_espece` sont
+// RECALCULÉS à chaque écriture (sommes) pour les lecteurs existants.
+// ---------------------------------------------------------------------------
+export const paiements = pgTable("paiements", {
+  id: uuid("id").primaryKey().defaultRandom(),
+  leadId: uuid("lead_id")
+    .notNull()
+    .references(() => leads.id, { onDelete: "cascade" }),
+  date: date("date").notNull(),
+  montant: numeric("montant", { precision: 12, scale: 2 }).notNull(),
+  // virement | cheque | especes | cb | financement | autre
+  mode: text("mode").notNull().default("virement"),
+  reference: text("reference"), // n° de chèque, libellé du virement, dossier financeur…
+  userId: uuid("user_id").references(() => profiles.id, { onDelete: "set null" }),
   createdAt: timestamp("created_at", { withTimezone: true })
     .notNull()
     .defaultNow(),
@@ -387,6 +439,12 @@ export const leadsRelations = relations(leads, ({ one, many }) => ({
   devis: many(devis),
   documents: many(documents),
   factures: many(factures),
+  paiements: many(paiements),
+}));
+
+export const paiementsRelations = relations(paiements, ({ one }) => ({
+  lead: one(leads, { fields: [paiements.leadId], references: [leads.id] }),
+  auteur: one(profiles, { fields: [paiements.userId], references: [profiles.id] }),
 }));
 
 export const facturesRelations = relations(factures, ({ one }) => ({
@@ -449,3 +507,4 @@ export type ProduitCatalogue = typeof produitsCatalogue.$inferSelect;
 export type Document = typeof documents.$inferSelect;
 export type Notification = typeof notifications.$inferSelect;
 export type Facture = typeof factures.$inferSelect;
+export type Paiement = typeof paiements.$inferSelect;

@@ -70,6 +70,23 @@ export type Element = {
   qte: number;
 };
 
+// Coloris de la structure (thermolaquage). Le premier est la teinte standard,
+// sans supplément ; les autres passent par une ligne « Option couleur » sur le
+// devis (prix libre, souvent OFFERTE → 0 €, comme sur les anciennes factures).
+export type CouleurRal = { code: string; nom: string; standard?: boolean };
+export const COULEURS_RAL: CouleurRal[] = [
+  { code: "RAL 7016", nom: "Gris anthracite", standard: true },
+  { code: "RAL 9010", nom: "Blanc pur" },
+  { code: "RAL 9005", nom: "Noir foncé" },
+  { code: "RAL 9006", nom: "Aluminium blanc" },
+  { code: "RAL 7035", nom: "Gris clair" },
+  { code: "RAL 1015", nom: "Ivoire clair" },
+  { code: "RAL 6003", nom: "Vert olive" },
+  { code: "RAL 3004", nom: "Rouge pourpre" },
+  { code: "RAL 5003", nom: "Bleu saphir" },
+];
+export const COULEUR_AUTRE = "AUTRE"; // saisie libre (code + nom)
+
 export type ConfigSM = {
   modele: string;
   toitL: number; // largeur (m)
@@ -78,6 +95,24 @@ export type ConfigSM = {
   poteaux: number;
   eclairage: number; // qté du système d'éclairage
   elements: Element[];
+  // Option couleur : libellé complet (« RAL 9010 Blanc pur ») ; vide/absent = teinte standard.
+  couleur?: string | null;
+  couleurPrix?: number; // supplément HT (0 = offerte)
+};
+
+// Couleur choisie, hors teinte standard (celle-ci ne fait pas l'objet d'une option).
+export function couleurOption(cfg: ConfigSM): string | null {
+  const c = (cfg.couleur ?? "").trim();
+  if (!c) return null;
+  const std = COULEURS_RAL.find((x) => x.standard);
+  if (std && c.toUpperCase().startsWith(std.code.toUpperCase())) return null;
+  return c;
+}
+const libelleCouleur = (cfg: ConfigSM) => {
+  const c = couleurOption(cfg);
+  if (!c) return null;
+  const offerte = !((cfg.couleurPrix ?? 0) > 0);
+  return `Option couleur — ${c}${offerte ? " (offerte)" : ""}`;
 };
 
 const r2 = (n: number) => Math.round(n * 100) / 100;
@@ -112,6 +147,7 @@ export const COMPOSANTS: { id: string; label: string }[] = [
   })),
   { id: "led", label: "Bandeau LED" },
   { id: "eclairage", label: "Système d'éclairage" },
+  { id: "couleur", label: "Option couleur (RAL)" },
   ...OPTIONS.map((o) => ({ id: o.id, label: o.label })),
 ];
 
@@ -172,6 +208,17 @@ export function construireLignes(
       tva: 20,
     });
 
+  // Option couleur (hors teinte standard) — visible même offerte (0 €).
+  const couleur = libelleCouleur(cfg);
+  if (couleur)
+    lignes.push({
+      designation: couleur,
+      description: descriptions["couleur"] || null,
+      quantite: 1,
+      prixHt: r2(cfg.couleurPrix ?? 0),
+      tva: 20,
+    });
+
   // Éléments (options posées, avec leur face)
   for (const el of cfg.elements) {
     const o = OPTIONS.find((x) => x.id === el.optionId);
@@ -208,6 +255,7 @@ export const TOKENS_DESCRIPTION: { token: string; libelle: string }[] = [
   { token: "{surface}", libelle: "Surface au sol en m²" },
   { token: "{perimetre}", libelle: "Périmètre en m" },
   { token: "{gamme}", libelle: "Gamme (ESSENTIA / HORIZON / SIGNATURE)" },
+  { token: "{couleur}", libelle: "Coloris (ex. RAL 9010 Blanc pur)" },
 ];
 
 // Remplace les tokens {…} d'un texte par les valeurs de la config.
@@ -228,6 +276,9 @@ function injecterTokens(texte: string, cfg: ConfigSM): string {
     perimetre: fr(r2((L + W) * 2)),
     gamme: m.code,
     modele: m.code,
+    couleur:
+      (cfg.couleur ?? "").trim() ||
+      `${COULEURS_RAL[0].code} ${COULEURS_RAL[0].nom}`,
   };
   return texte.replace(/\{(\w+)\}/g, (whole, key: string) => {
     const k = key.toLowerCase();
@@ -282,6 +333,12 @@ export function construireDescription(
       struct.push(`système d'éclairage ×${cfg.eclairage}`);
     if (struct.length) blocs.push(`Structure : ${struct.join(" · ")}`);
   }
+
+  // Coloris de la structure (toujours rappelé : standard ou option).
+  const coul = (cfg.couleur ?? "").trim();
+  blocs.push(
+    `Coloris : ${coul || `${COULEURS_RAL[0].code} ${COULEURS_RAL[0].nom}`} (thermolaquage)`,
+  );
 
   // Extras (LED / éclairage) si une description est renseignée.
   const ledDesc = reel(descriptions["led"]);
@@ -350,10 +407,14 @@ export function construireLignesDevis(
   const W = cfg.toitW || 0;
   const lignes: Ligne[] = [];
 
-  // 1) Ligne KIT (toit + poteaux + LED + éclairage), options exclues.
+  // 1) Ligne KIT (toit + poteaux + LED + éclairage), options ET couleur exclues
+  //    du prix (la couleur a sa propre ligne) mais coloris rappelé dans la description.
   const cfgBase: ConfigSM = { ...cfg, elements: [] };
   const baseTotal = r2(
-    construireLignes(cfgBase, descriptions).reduce((a, l) => a + l.prixHt, 0),
+    construireLignes({ ...cfgBase, couleur: null }, descriptions).reduce(
+      (a, l) => a + l.prixHt,
+      0,
+    ),
   );
   if (baseTotal > 0) {
     const gamme = m.code.charAt(0) + m.code.slice(1).toLowerCase();
@@ -368,7 +429,23 @@ export function construireLignesDevis(
     });
   }
 
-  // 2) Une ligne par option posée (avec sa face, ses dimensions, sa description).
+  // 2) Option couleur (hors teinte standard) : ligne visible même à 0 € (offerte),
+  //    comme sur les factures historiques (« OPTION COULEUR RAL 1015 — OFFERT »).
+  const couleur = libelleCouleur(cfg);
+  if (couleur) {
+    const brut = descriptions["couleur"]?.trim();
+    lignes.push({
+      designation: couleur,
+      description:
+        brut && brut.toLowerCase() !== "manquant" ? injecterTokens(brut, cfg) : null,
+      quantite: 1,
+      prixHt: r2(cfg.couleurPrix ?? 0),
+      tva: 20,
+      config: true,
+    });
+  }
+
+  // 3) Une ligne par option posée (avec sa face, ses dimensions, sa description).
   for (const el of cfg.elements) {
     const o = OPTIONS.find((x) => x.id === el.optionId);
     if (!o) continue;

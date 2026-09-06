@@ -2,23 +2,8 @@
 
 import Link from "next/link";
 import { ExternalLink, Download, User, Pencil } from "lucide-react";
-import { toast } from "sonner";
+import { ouvrirDans } from "@/lib/ouvrir-dans";
 import { devisAppUrl, devisPdfUrl } from "./actions";
-
-// Ouvre une URL Pennylane dans un onglet créé DANS le geste (anti-popup-blocker).
-function ouvrirDans(
-  getUrl: () => Promise<{ ok?: boolean; url?: string; error?: string } | string>,
-) {
-  const w = window.open("", "_blank");
-  Promise.resolve(getUrl()).then((r) => {
-    const url = typeof r === "string" ? r : r.url;
-    if (url && w) w.location.href = url;
-    else {
-      if (w) w.close();
-      toast.error((typeof r === "object" && r.error) || "Lien indisponible");
-    }
-  });
-}
 
 export function DevisActions({
   externalId,

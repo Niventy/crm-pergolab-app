@@ -1,6 +1,6 @@
 "use server";
 
-import { or, ilike } from "drizzle-orm";
+import { and, or, ilike, isNull } from "drizzle-orm";
 import { db } from "@/db";
 import { leads } from "@/db/schema";
 
@@ -21,12 +21,15 @@ export async function searchLeads(term: string): Promise<SearchResult[]> {
   const like = `%${q}%`;
 
   const rows = await db.query.leads.findMany({
-    where: or(
-      ilike(leads.nom, like),
-      ilike(leads.email, like),
-      ilike(leads.telephone, like),
-      ilike(leads.codePostal, like),
-      ilike(leads.entreprise, like),
+    where: and(
+      isNull(leads.deletedAt),
+      or(
+        ilike(leads.nom, like),
+        ilike(leads.email, like),
+        ilike(leads.telephone, like),
+        ilike(leads.codePostal, like),
+        ilike(leads.entreprise, like),
+      ),
     ),
     with: { stage: true },
     orderBy: (l, { desc }) => [desc(l.createdAt)],

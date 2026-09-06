@@ -13,6 +13,8 @@ import {
 } from "lucide-react";
 import { toast } from "sonner";
 import { tempsRelatif } from "@/lib/format";
+import { ouvrirDans } from "@/lib/ouvrir-dans";
+import { ConfirmDialog } from "@/components/confirm-dialog";
 import { uploadDocument, getDocumentUrl, deleteDocument } from "./documents-actions";
 
 export type DocItem = {
@@ -50,6 +52,7 @@ export function Documents({
   const inputRef = useRef<HTMLInputElement>(null);
   const [pending, start] = useTransition();
   const [busyId, setBusyId] = useState<string | null>(null);
+  const [aSupprimer, setASupprimer] = useState<DocItem | null>(null);
 
   function onFiles(files: FileList | null) {
     if (!files || files.length === 0) return;
@@ -67,23 +70,17 @@ export function Documents({
   }
 
   function ouvrir(id: string) {
-    const w = window.open("", "_blank");
     setBusyId(id);
-    getDocumentUrl(id).then((r) => {
-      setBusyId(null);
-      if (r.ok && r.url && w) w.location.href = r.url;
-      else {
-        if (w) w.close();
-        toast.error(r.error ?? "Document indisponible");
-      }
-    });
+    ouvrirDans(() => getDocumentUrl(id), () => setBusyId(null));
   }
 
-  function supprimer(d: DocItem) {
-    if (!confirm(`Supprimer « ${d.nom} » ?`)) return;
+  function supprimer() {
+    const d = aSupprimer;
+    if (!d) return;
     setBusyId(d.id);
     deleteDocument(d.id).then((r) => {
       setBusyId(null);
+      setASupprimer(null);
       if (r.ok) {
         toast.success("Document supprimé");
         router.refresh();
@@ -153,7 +150,7 @@ export function Documents({
               </button>
               <button
                 type="button"
-                onClick={() => supprimer(d)}
+                onClick={() => setASupprimer(d)}
                 disabled={busyId === d.id}
                 className="inline-flex size-7 items-center justify-center rounded-md text-muted-foreground hover:bg-red-50 hover:text-red-600 disabled:opacity-50"
                 aria-label="Supprimer"
@@ -164,6 +161,17 @@ export function Documents({
           ))}
         </ul>
       )}
+
+      <ConfirmDialog
+        open={aSupprimer !== null}
+        titre={`Supprimer « ${aSupprimer?.nom ?? ""} » ?`}
+        description="Le fichier est effacé du stockage. Cette action est irréversible."
+        confirmLabel="Supprimer"
+        danger
+        pending={busyId !== null && busyId === aSupprimer?.id}
+        onConfirm={supprimer}
+        onCancel={() => setASupprimer(null)}
+      />
     </div>
   );
 }

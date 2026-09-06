@@ -7,6 +7,8 @@ import {
   MODELES,
   OPTIONS,
   FACES,
+  COULEURS_RAL,
+  COULEUR_AUTRE,
   PRIX_LED,
   PRIX_ECLAIRAGE,
   construireLignes,
@@ -63,6 +65,31 @@ export function SurMesureCalc({
   const [poteaux, setPoteaux] = useState(initial?.poteaux ?? 4);
   const [eclairage, setEclairage] = useState(initial?.eclairage ?? 0);
 
+  // Coloris : teinte de la liste (code RAL), « AUTRE » (saisie libre) ou "" =
+  // standard. Un supplément HT peut être saisi (0 = option offerte).
+  const couleurInit = (initial?.couleur ?? "").trim();
+  const ralInit = COULEURS_RAL.find((c) =>
+    couleurInit.toUpperCase().startsWith(c.code.toUpperCase()),
+  );
+  const [couleurSel, setCouleurSel] = useState<string>(
+    !couleurInit ? "" : ralInit ? ralInit.code : COULEUR_AUTRE,
+  );
+  const [couleurLibre, setCouleurLibre] = useState(
+    couleurInit && !ralInit ? couleurInit : "",
+  );
+  const [couleurPrix, setCouleurPrix] = useState(initial?.couleurPrix ?? 0);
+  const couleur: string | null =
+    couleurSel === COULEUR_AUTRE
+      ? couleurLibre.trim() || null
+      : couleurSel
+        ? (() => {
+            const c = COULEURS_RAL.find((x) => x.code === couleurSel);
+            return c ? `${c.code} ${c.nom}` : null;
+          })()
+        : null;
+  const couleurStandard =
+    !couleurSel || COULEURS_RAL.find((x) => x.code === couleurSel)?.standard;
+
   // Clés initiales = index ; les éléments ajoutés ensuite démarrent au-dessus
   // (1000+) pour éviter toute collision de clé.
   const keyRef = useRef(1000);
@@ -109,8 +136,18 @@ export function SurMesureCalc({
   // Aperçu détaillé (une ligne par composant) — pour vérifier le calcul.
   // Le devis, lui, ne reçoit qu'UNE seule ligne globale (construireLigneUnique).
   const cfg: ConfigSM = useMemo(
-    () => ({ modele, toitL, toitW, toitQte, poteaux, eclairage, elements }),
-    [modele, toitL, toitW, toitQte, poteaux, eclairage, elements],
+    () => ({
+      modele,
+      toitL,
+      toitW,
+      toitQte,
+      poteaux,
+      eclairage,
+      elements,
+      couleur,
+      couleurPrix: couleurStandard ? 0 : couleurPrix,
+    }),
+    [modele, toitL, toitW, toitQte, poteaux, eclairage, elements, couleur, couleurPrix, couleurStandard],
   );
   const apercu = useMemo(
     () => construireLignes(cfg, descriptions),
@@ -162,7 +199,7 @@ export function SurMesureCalc({
 
       {/* Base */}
       <div className="rounded-lg border border-border bg-white p-3">
-        <div className="text-eyebrow mb-2 text-muted-foreground">Base (le toit)</div>
+        <div className="text-eyebrow mb-2 text-muted-foreground">Structure (toit + poteaux)</div>
         <div className="grid grid-cols-2 gap-2 sm:grid-cols-5">
           <Champ
             label="Largeur (mm)"
@@ -174,14 +211,65 @@ export function SurMesureCalc({
             value={Math.round(toitW * 1000)}
             onChange={(v) => setToitW(v / 1000)}
           />
-          <Champ label="Qté toit" value={toitQte} onChange={setToitQte} min={1} />
-          <Champ label="Poteaux" value={poteaux} onChange={setPoteaux} min={1} />
-          <Champ label="Éclairage" value={eclairage} onChange={setEclairage} />
+          <Champ label="Nb de toits" value={toitQte} onChange={setToitQte} min={1} />
+          <Champ label="Nb de poteaux" value={poteaux} onChange={setPoteaux} min={1} />
+          <Champ label="Spots d'éclairage" value={eclairage} onChange={setEclairage} />
         </div>
         <p className="mt-2 text-xs text-muted-foreground">
-          LED auto : périmètre {perimetre} m × {PRIX_LED} € ={" "}
-          {eur(perimetre * PRIX_LED)} · Éclairage {PRIX_ECLAIRAGE} €/u
+          {toitL > 0 && toitW > 0
+            ? `${(toitL * toitW).toFixed(2).replace(".", ",")} m² · `
+            : ""}
+          Bandeau LED inclus automatiquement sur le périmètre ({perimetre} m ×{" "}
+          {PRIX_LED} € = {eur(perimetre * PRIX_LED)}) · 2 poteaux = autoportée · spot{" "}
+          {PRIX_ECLAIRAGE} €/u
         </p>
+
+        {/* Coloris (option couleur RAL) */}
+        <div className="mt-3 grid grid-cols-2 gap-2 border-t border-border pt-3 sm:grid-cols-5">
+          <label className="col-span-2 block">
+            <span className="text-[0.65rem] uppercase tracking-wide text-muted-foreground">
+              Couleur de la structure (RAL)
+            </span>
+            <select
+              value={couleurSel}
+              onChange={(e) => setCouleurSel(e.target.value)}
+              className="mt-0.5 h-9 w-full rounded-md border border-border bg-white px-1 text-sm outline-none focus:border-primary"
+            >
+              <option value="">Standard — {COULEURS_RAL[0].code} {COULEURS_RAL[0].nom}</option>
+              {COULEURS_RAL.filter((c) => !c.standard).map((c) => (
+                <option key={c.code} value={c.code}>
+                  {c.code} — {c.nom}
+                </option>
+              ))}
+              <option value={COULEUR_AUTRE}>Autre RAL…</option>
+            </select>
+          </label>
+          {couleurSel === COULEUR_AUTRE ? (
+            <label className="col-span-2 block">
+              <span className="text-[0.65rem] uppercase tracking-wide text-muted-foreground">
+                Code + nom (ex. RAL 6005 Vert mousse)
+              </span>
+              <input
+                type="text"
+                value={couleurLibre}
+                onChange={(e) => setCouleurLibre(e.target.value)}
+                placeholder="RAL …"
+                className="mt-0.5 h-9 w-full rounded-md border border-border bg-white px-2 text-sm outline-none focus:border-primary"
+              />
+            </label>
+          ) : (
+            <div className="hidden sm:col-span-2 sm:block" />
+          )}
+          {!couleurStandard ? (
+            <Champ label="Supplément couleur HT (€)" value={couleurPrix} onChange={setCouleurPrix} />
+          ) : null}
+        </div>
+        {!couleurStandard ? (
+          <p className="mt-1.5 text-xs text-muted-foreground">
+            Ligne « Option couleur — {couleur ?? "…"} » ajoutée au devis
+            {couleurPrix > 0 ? ` : ${eur(couleurPrix)} HT` : " : offerte (0 €)"}.
+          </p>
+        ) : null}
       </div>
 
       {/* Éléments / options avec face */}

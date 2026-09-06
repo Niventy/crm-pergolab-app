@@ -1,10 +1,10 @@
 "use server";
 
-import { asc, eq } from "drizzle-orm";
 import { revalidatePath } from "next/cache";
 import { db } from "@/db";
-import { leads, stages, echanges } from "@/db/schema";
+import { leads, echanges } from "@/db/schema";
 import { currentUserId } from "@/lib/current-user";
+import { stageEntree } from "@/lib/pipeline-server";
 
 export type NouveauProspect = {
   nom: string;
@@ -14,6 +14,7 @@ export type NouveauProspect = {
   codePostal?: string | null;
   ville?: string | null;
   typeProjet?: string | null;
+  dimensions?: string | null;
   montant?: string | null;
   source?: string | null;
   assignedTo?: string | null;
@@ -32,20 +33,8 @@ export async function creerProspect(input: NouveauProspect) {
 
   const userId = await currentUserId();
 
-  // Étape d'entrée : « À traiter » (sinon 1ère étape du cycle 1).
-  const [parNom] = await db
-    .select()
-    .from(stages)
-    .where(eq(stages.nom, "À traiter"))
-    .limit(1);
-  const [stage] = parNom
-    ? [parNom]
-    : await db
-        .select()
-        .from(stages)
-        .where(eq(stages.cycle, 1))
-        .orderBy(asc(stages.position))
-        .limit(1);
+  // Étape d'entrée : « À traiter » (par clé stable, sinon 1ère du cycle 1).
+  const stage = await stageEntree();
 
   const num = (v?: string | null) => {
     const t = (v ?? "").toString().trim().replace(",", ".");
@@ -71,6 +60,7 @@ export async function creerProspect(input: NouveauProspect) {
       codePostal: txt(input.codePostal),
       ville: txt(input.ville),
       typeProjet: txt(input.typeProjet),
+      dimensions: txt(input.dimensions),
       montant: num(input.montant),
       source: txt(input.source) ?? "Manuel",
       updatedAt: new Date(),

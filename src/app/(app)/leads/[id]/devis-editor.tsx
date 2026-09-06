@@ -3,47 +3,49 @@
 import Link from "next/link";
 import { useState, useTransition } from "react";
 import { useRouter } from "next/navigation";
-import { Plus, FileText, Download, ExternalLink, Pencil, Copy, RefreshCw } from "lucide-react";
+import {
+  Plus,
+  FileText,
+  Download,
+  ExternalLink,
+  Pencil,
+  Copy,
+  RefreshCw,
+  BadgeCheck,
+} from "lucide-react";
 import { toast } from "sonner";
-import { formatEuros } from "@/lib/format";
-import { devisAppUrl, devisPdfUrl, dupliquerDevis } from "./actions";
+import { cn } from "@/lib/utils";
+import { formatEurosCents } from "@/lib/format";
+import { ouvrirDans } from "@/lib/ouvrir-dans";
+import { devisAppUrl, devisPdfUrl, dupliquerDevis, marquerDevisAccepte } from "./actions";
 
 type DevisRow = {
   id: string;
   numero: string | null;
-  montant: string | null;
+  montant: string | null; // HT
+  montantTtc: string | null;
   statut: string | null;
   lienExterne: string | null;
   externalId: string | null;
+  accepte: boolean; // devis signé par le client (un seul par fiche)
 };
-
-// Ouvre une URL Pennylane dans un onglet créé DANS le geste (anti-popup-blocker).
-function ouvrirDans(
-  getUrl: () => Promise<{ ok?: boolean; url?: string; error?: string } | string>,
-) {
-  const w = window.open("", "_blank");
-  Promise.resolve(getUrl()).then((r) => {
-    const url = typeof r === "string" ? r : r.url;
-    if (url && w) w.location.href = url;
-    else {
-      if (w) w.close();
-      toast.error((typeof r === "object" && r.error) || "Lien indisponible");
-    }
-  });
-}
 
 export function DevisEditor({
   leadId,
   devisExistants,
   pennylaneConfigured,
+  choixRequis = false,
 }: {
   leadId: string;
   devisExistants: DevisRow[];
   pennylaneConfigured: boolean;
+  /** Client avec plusieurs devis et aucun signé : on met en avant le choix. */
+  choixRequis?: boolean;
 }) {
   const router = useRouter();
   const [pending, start] = useTransition();
   const [dupId, setDupId] = useState<string | null>(null);
+  const [accId, setAccId] = useState<string | null>(null);
 
   const dupliquer = (quoteId: string, id: string) => {
     setDupId(id);
@@ -57,23 +59,75 @@ export function DevisEditor({
     });
   };
 
+  const accepter = (d: DevisRow) => {
+    setAccId(d.id);
+    start(async () => {
+      const r = await marquerDevisAccepte(leadId, d.id);
+      setAccId(null);
+      if (r.ok) {
+        toast.success(`Devis ${d.numero ?? ""} marqué signé`, {
+          description: "Il fixe le montant de la commande et la base de facturation.",
+        });
+        router.refresh();
+      } else toast.error(r.error ?? "Échec");
+    });
+  };
+
   return (
     <div className="space-y-4">
       {devisExistants.length > 0 ? (
         <ul className="divide-y divide-border">
           {devisExistants.map((d) => (
-            <li key={d.id} className="flex items-center gap-3 py-2 text-sm">
+            <li
+              key={d.id}
+              className={cn(
+                "flex flex-wrap items-center gap-3 py-2 text-sm",
+                d.accepte && "-mx-2 rounded-lg bg-green-50 px-2",
+              )}
+            >
               <FileText className="size-4 text-muted-foreground" />
               <span className="font-medium text-foreground">{d.numero ?? "Devis"}</span>
               <span className="tabular-nums text-muted-foreground">
-                {formatEuros(d.montant)}
+                {d.montantTtc ? (
+                  <>
+                    {formatEurosCents(d.montantTtc)} TTC
+                    <span className="ml-1 text-xs">({formatEurosCents(d.montant)} HT)</span>
+                  </>
+                ) : (
+                  <>{formatEurosCents(d.montant)} HT</>
+                )}
               </span>
-              {d.statut ? (
+              {d.accepte ? (
+                <span className="inline-flex items-center gap-1 rounded-md bg-green-600 px-2 py-0.5 text-[10px] font-bold uppercase tracking-wide text-white">
+                  <BadgeCheck className="size-3" /> Signé
+                </span>
+              ) : d.statut ? (
                 <span className="rounded-full bg-muted px-2 py-0.5 text-xs text-muted-foreground">
                   {d.statut}
                 </span>
               ) : null}
-              <span className="ml-auto flex items-center gap-3">
+              <span className="ml-auto flex flex-wrap items-center gap-3">
+                {!d.accepte ? (
+                  <button
+                    type="button"
+                    disabled={pending}
+                    onClick={() => accepter(d)}
+                    className={cn(
+                      "inline-flex items-center gap-1 text-xs font-medium hover:underline disabled:opacity-50",
+                      choixRequis
+                        ? "rounded-md bg-amber-600 px-2 py-1 text-white hover:no-underline"
+                        : "text-green-700",
+                    )}
+                    title="Le client a signé CE devis : il devient la base du montant et de la facturation"
+                  >
+                    {pending && accId === d.id ? (
+                      <RefreshCw className="size-3.5 animate-spin" />
+                    ) : (
+                      <BadgeCheck className="size-3.5" />
+                    )}
+                    Marquer signé
+                  </button>
+                ) : null}
                 <Link
                   href={`/leads/${leadId}/devis/${d.id}`}
                   className="inline-flex items-center gap-1 text-xs font-medium text-primary hover:underline"

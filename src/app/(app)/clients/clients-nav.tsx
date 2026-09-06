@@ -2,25 +2,22 @@
 
 import Link from "next/link";
 import { usePathname } from "next/navigation";
+import { KanbanSquare, Table2 } from "lucide-react";
 import { cn } from "@/lib/utils";
 
+// Deux VUES du même espace (Kanban par étape de chantier / Tableau), plus des
+// onglets par état d'encaissement : ce dernier est un badge + un filtre.
 const TABS = [
-  { href: "/clients", label: "Commande", key: "commande", exact: true },
-  { href: "/clients/facturation", label: "Facturation", key: "facturation", exact: false },
-  { href: "/clients/sav", label: "SAV", key: "sav", exact: false },
+  { href: "/clients", label: "Kanban", Icon: KanbanSquare, exact: true },
+  { href: "/clients/tableau", label: "Tableau", Icon: Table2, exact: false },
 ] as const;
 
-export function ClientsNav({
-  counts,
-}: {
-  counts?: Record<string, number>;
-}) {
+export function ClientsNav({ total }: { total?: number }) {
   const pathname = usePathname();
   return (
-    <nav className="flex flex-wrap gap-1 border-b border-border px-6">
+    <nav className="flex flex-wrap items-center gap-1 border-b border-border px-6">
       {TABS.map((t) => {
         const active = t.exact ? pathname === t.href : pathname.startsWith(t.href);
-        const n = counts?.[t.key];
         return (
           <Link
             key={t.href}
@@ -30,23 +27,19 @@ export function ClientsNav({
               active ? "text-primary" : "text-muted-foreground hover:text-foreground",
             )}
           >
+            <t.Icon className="size-4" />
             {t.label}
-            {n != null ? (
-              <span
-                className={cn(
-                  "rounded-full px-1.5 text-[10px] font-bold",
-                  active ? "bg-primary/10 text-primary" : "bg-muted text-muted-foreground",
-                )}
-              >
-                {n}
-              </span>
-            ) : null}
             {active ? (
               <span className="absolute inset-x-2 -bottom-px h-0.5 rounded-full bg-brand" />
             ) : null}
           </Link>
         );
       })}
+      {total != null ? (
+        <span className="ml-auto text-xs text-muted-foreground">
+          {total} client{total > 1 ? "s" : ""}
+        </span>
+      ) : null}
     </nav>
   );
 }

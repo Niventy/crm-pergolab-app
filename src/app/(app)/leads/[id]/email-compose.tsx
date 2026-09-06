@@ -75,7 +75,8 @@ export function EmailCompose({
     return (
       <p className="flex items-center gap-1.5 text-xs text-muted-foreground">
         <Mail className="size-3.5" />
-        Envoi d&apos;email à configurer (compte de service Google + délégation).
+        Envoi d&apos;email à configurer (OAuth Google : <code>GOOGLE_CLIENT_ID</code>,{" "}
+        <code>GOOGLE_CLIENT_SECRET</code> et un expéditeur pour ton adresse, cf. .env.example).
       </p>
     );
   }

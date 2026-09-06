@@ -12,6 +12,8 @@ export type Champ = {
   value: string | null;
   type?: "text" | "email" | "tel";
   full?: boolean; // occupe toute la largeur
+  /** Mise en forme d'AFFICHAGE (ex. téléphone « 06 58 24 33 61 ») ; la valeur brute reste éditée. */
+  format?: (v: string) => string;
 };
 
 // Carte de champs client modifiable sur place, avec trace journalisée.
@@ -99,7 +101,9 @@ export function ChampsEditables({
                 className="mt-0.5 h-9 w-full rounded-md border border-border bg-white px-2 text-sm outline-none focus:border-primary"
               />
             ) : (
-              <div className="mt-0.5 text-sm text-foreground">{c.value || "—"}</div>
+              <div className="mt-0.5 text-sm text-foreground">
+                {c.value ? (c.format ? c.format(c.value) : c.value) : "—"}
+              </div>
             )}
           </div>
         ))}

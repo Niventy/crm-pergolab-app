@@ -1,25 +1,22 @@
 "use client";
 
-import { useState, useTransition } from "react";
-import { useRouter } from "next/navigation";
-import { Trash2, CheckSquare } from "lucide-react";
+import { useEffect, useState, useTransition } from "react";
+import { usePathname, useRouter, useSearchParams } from "next/navigation";
+import { Trash2, CheckSquare, RotateCcw, Archive } from "lucide-react";
 import { toast } from "sonner";
 import { cn } from "@/lib/utils";
-import { deleteLead, deleteLeads } from "./actions";
+import { ConfirmDialog } from "@/components/confirm-dialog";
+import { FilterSelect, Td } from "@/components/data-table";
+import { deleteLeads, restoreLeads, purgeLeads } from "./actions";
 import {
   formatEuros,
   formatHorodatage,
   formatDateCourte,
   tempsRelatif,
   humanise,
+  ymParis,
+  moisLabelFr,
 } from "@/lib/format";
-import {
-  Select,
-  SelectContent,
-  SelectItem,
-  SelectTrigger,
-  SelectValue,
-} from "@/components/ui/select";
 import type { Lead, Stage, Profile } from "@/db/schema";
 
 type Row = Lead & {
@@ -27,17 +24,9 @@ type Row = Lead & {
   responsable: Profile | null;
 };
 
-const MOIS_FR = [
-  "JANVIER", "FÉVRIER", "MARS", "AVRIL", "MAI", "JUIN",
-  "JUILLET", "AOÛT", "SEPTEMBRE", "OCTOBRE", "NOVEMBRE", "DÉCEMBRE",
-];
-function ymOf(d: Date | string): string {
-  return (d instanceof Date ? d : new Date(d)).toISOString().slice(0, 7);
-}
-function moisLabel(key: string): string {
-  const [y, m] = key.split("-");
-  return `${MOIS_FR[Number(m) - 1]} ${y.slice(2)}`;
-}
+// Mois de réception en heure de Paris (pas UTC) ; libellé partagé.
+const ymOf = ymParis;
+const moisLabel = (key: string) => moisLabelFr(key);
 
 const STATUT: Record<string, { label: string; cls: string }> = {
   en_cours: { label: "En cours", cls: "bg-slate-200 text-slate-700" },
@@ -52,12 +41,11 @@ const COLS = [
   "Responsable",
   "Étape",
   "Statut",
-  "Type de projet",
+  "Dimensions",
   "Code postal",
   "Appel souhaité",
   "Installation",
   "Montant",
-  "Proba",
   "RDV",
   "Relances",
 ];
@@ -75,38 +63,58 @@ const FILTERS = [
   { id: 3, label: "Pose & technique" },
 ];
 
+// Confirmation en attente : quoi (corbeille / restaurer / purger) et sur qui.
+type Confirm =
+  | { kind: "corbeille" | "restaurer" | "purger"; ids: string[]; nom?: string }
+  | null;
+
 export function ListeTable({
   leads,
+  corbeille = [],
   stages,
   currentUserId,
+  admin = false,
 }: {
   leads: Row[];
+  /** Fiches supprimées (soft delete), admin uniquement. */
+  corbeille?: Row[];
   stages: Stage[];
   currentUserId?: string | null;
+  admin?: boolean;
 }) {
   const router = useRouter();
-  const [filter, setFilter] = useState(0); // cycle
-  const [etape, setEtape] = useState("all");
-  const [resp, setResp] = useState("all");
-  const [mois, setMois] = useState("all");
-  const [dept, setDept] = useState("all");
+  const pathname = usePathname();
+  const sp = useSearchParams();
+  // Filtres dans l'URL (comme le Kanban et le Dashboard) : ils survivent à la
+  // navigation vers une fiche et au retour, et se partagent par lien.
+  const [filter, setFilter] = useState(() => {
+    const c = Number(sp.get("cycle") ?? 0);
+    return [0, 1, 2, 3].includes(c) ? c : 0;
+  }); // cycle
+  const [etape, setEtape] = useState(sp.get("etape") ?? "all");
+  const [resp, setResp] = useState(sp.get("resp") ?? "all");
+  const [mois, setMois] = useState(sp.get("mois") ?? "all");
+  const [dept, setDept] = useState(sp.get("dept") ?? "all");
+  useEffect(() => {
+    const p = new URLSearchParams();
+    if (filter !== 0) p.set("cycle", String(filter));
+    if (etape !== "all") p.set("etape", etape);
+    if (resp !== "all") p.set("resp", resp);
+    if (mois !== "all") p.set("mois", mois);
+    if (dept !== "all") p.set("dept", dept);
+    const qs = p.toString();
+    const cible = qs ? `${pathname}?${qs}` : pathname;
+    if (cible !== `${pathname}${sp.toString() ? `?${sp.toString()}` : ""}`)
+      router.replace(cible, { scroll: false });
+  }, [filter, etape, resp, mois, dept, pathname, router, sp]);
   const [selectMode, setSelectMode] = useState(false);
   const [selected, setSelected] = useState<Set<string>>(new Set());
-  const [pending, startDelete] = useTransition();
+  const [vueCorbeille, setVueCorbeille] = useState(false);
+  const [confirm, setConfirm] = useState<Confirm>(null);
+  const [pending, start] = useTransition();
 
-  function onDelete(e: React.MouseEvent, lead: Row) {
-    e.stopPropagation();
-    if (!confirm(`Supprimer définitivement « ${lead.nom} » ? Cette action est irréversible.`))
-      return;
-    startDelete(async () => {
-      try {
-        await deleteLead(lead.id);
-        toast.success("Lead supprimé");
-      } catch {
-        toast.error("Échec de la suppression");
-      }
-    });
-  }
+  // Source affichée : liste active ou corbeille (admin).
+  const source = vueCorbeille ? corbeille : leads;
 
   function toggleSelect(id: string) {
     setSelected((prev) => {
@@ -122,26 +130,75 @@ export function ListeTable({
     setSelected(new Set());
   }
 
-  function deleteSelection() {
-    const ids = [...selected];
-    if (ids.length === 0) return;
-    if (!confirm(`Supprimer définitivement ${ids.length} lead(s) ? Cette action est irréversible.`))
-      return;
-    startDelete(async () => {
-      try {
-        await deleteLeads(ids);
-        toast.success(`${ids.length} lead(s) supprimé(s)`);
+  function basculerCorbeille() {
+    setVueCorbeille((v) => !v);
+    exitSelect();
+  }
+
+  // Exécute l'action confirmée (corbeille / restauration / purge).
+  function executer() {
+    if (!confirm) return;
+    const { kind, ids } = confirm;
+    start(async () => {
+      const r =
+        kind === "corbeille"
+          ? await deleteLeads(ids)
+          : kind === "restaurer"
+            ? await restoreLeads(ids)
+            : await purgeLeads(ids);
+      if (!r.ok) {
+        toast.error(r.error ?? "Échec");
+      } else {
+        const n = ids.length;
+        toast.success(
+          kind === "corbeille"
+            ? `${n} fiche${n > 1 ? "s" : ""} mise${n > 1 ? "s" : ""} à la corbeille`
+            : kind === "restaurer"
+              ? `${n} fiche${n > 1 ? "s" : ""} restaurée${n > 1 ? "s" : ""}`
+              : `${n} fiche${n > 1 ? "s" : ""} supprimée${n > 1 ? "s" : ""} définitivement`,
+        );
         exitSelect();
-      } catch {
-        toast.error("Échec de la suppression");
+        router.refresh();
       }
+      setConfirm(null);
     });
   }
+
+  const CONFIRM_TEXTS: Record<
+    NonNullable<Confirm>["kind"],
+    { titre: (n: number, nom?: string) => string; description: string; label: string; danger: boolean }
+  > = {
+    corbeille: {
+      titre: (n, nom) =>
+        nom ? `Mettre « ${nom} » à la corbeille ?` : `Mettre ${n} fiche${n > 1 ? "s" : ""} à la corbeille ?`,
+      description:
+        "La fiche disparaît du Kanban, de la Liste et des statistiques. Un admin peut la restaurer depuis la corbeille.",
+      label: "Mettre à la corbeille",
+      danger: false,
+    },
+    restaurer: {
+      titre: (n, nom) =>
+        nom ? `Restaurer « ${nom} » ?` : `Restaurer ${n} fiche${n > 1 ? "s" : ""} ?`,
+      description: "La fiche réapparaît partout, avec son historique intact.",
+      label: "Restaurer",
+      danger: false,
+    },
+    purger: {
+      titre: (n, nom) =>
+        nom
+          ? `Supprimer définitivement « ${nom} » ?`
+          : `Supprimer définitivement ${n} fiche${n > 1 ? "s" : ""} ?`,
+      description:
+        "Irréversible : notes, activités, devis, factures et documents liés sont effacés.",
+      label: "Supprimer définitivement",
+      danger: true,
+    },
+  };
 
   // Responsables présents dans les leads.
   const respMap = new Map<string, string>();
   let hasUnassigned = false;
-  for (const l of leads) {
+  for (const l of source) {
     if (l.assignedTo && l.responsable) {
       respMap.set(l.assignedTo, l.responsable.nom ?? l.responsable.email);
     } else if (!l.assignedTo) {
@@ -172,7 +229,7 @@ export function ListeTable({
   // Mois de réception présents (du plus récent au plus ancien).
   const moisOptions = [
     { value: "all", label: "Tous les mois" },
-    ...[...new Set(leads.map((l) => ymOf(l.createdAt)))]
+    ...[...new Set(source.map((l) => ymOf(l.createdAt)))]
       .sort()
       .reverse()
       .map((m) => ({ value: m, label: moisLabel(m) })),
@@ -180,7 +237,7 @@ export function ListeTable({
 
   // Départements présents (2 premiers chiffres du code postal) + nb de leads.
   const deptCounts = new Map<string, number>();
-  for (const l of leads) {
+  for (const l of source) {
     const cpv = l.codePostal?.trim();
     if (cpv && cpv.length >= 2) {
       const d = cpv.slice(0, 2);
@@ -203,7 +260,7 @@ export function ListeTable({
   const matchEtape = (l: Row) => etape === "all" || l.stageId === etape;
 
   // Base hors cycle (pour les compteurs de cycle), puis cycle + étape.
-  const preCycle = leads.filter((l) => matchResp(l) && matchMois(l) && matchDept(l));
+  const preCycle = source.filter((l) => matchResp(l) && matchMois(l) && matchDept(l));
   const rows = preCycle
     .filter((l) => filter === 0 || l.stage?.cycle === filter)
     .filter(matchEtape);
@@ -229,44 +286,79 @@ export function ListeTable({
     });
   }
 
+  // Colonne d'actions : uniquement pour un admin (corbeille / restauration).
+  const actionsCol = admin && !selectMode;
+  const ids = [...selected];
+
   return (
     <div className="flex min-h-0 flex-1 flex-col">
       <div className="space-y-2 px-6 pb-3">
+        {/* Bandeau corbeille */}
+        {vueCorbeille ? (
+          <div className="flex flex-wrap items-center gap-3 rounded-lg border border-amber-300 bg-amber-50 px-3 py-2 text-sm text-amber-800">
+            <Archive className="size-4" />
+            <span className="font-semibold">Corbeille</span>
+            <span className="text-xs">
+              {corbeille.length} fiche{corbeille.length > 1 ? "s" : ""} supprimée
+              {corbeille.length > 1 ? "s" : ""} — restaurables, ou à supprimer définitivement.
+            </span>
+            <button
+              type="button"
+              onClick={basculerCorbeille}
+              className="ml-auto text-xs font-medium underline-offset-2 hover:underline"
+            >
+              ← Retour à la liste
+            </button>
+          </div>
+        ) : null}
+
         {/* Cycle */}
-        <div className="inline-flex rounded-lg border border-border bg-muted/50 p-0.5">
-          {FILTERS.map((f) => {
-            const active = filter === f.id;
-            const count =
-              f.id === 0
-                ? preCycle.length
-                : preCycle.filter((l) => l.stage?.cycle === f.id).length;
-            return (
-              <button
-                key={f.id}
-                type="button"
-                onClick={() => {
-                  setFilter(f.id);
-                  setEtape("all"); // l'étape dépend du cycle
-                }}
-                className={cn(
-                  "flex items-center gap-1.5 rounded-md px-3 py-1.5 text-xs font-semibold uppercase tracking-wide transition-colors",
-                  active
-                    ? "bg-primary text-primary-foreground shadow-sm"
-                    : "text-muted-foreground hover:text-foreground",
-                )}
-              >
-                {f.label}
-                <span
+        <div className="flex flex-wrap items-center gap-2">
+          <div className="inline-flex rounded-lg border border-border bg-muted/50 p-0.5">
+            {FILTERS.map((f) => {
+              const active = filter === f.id;
+              const count =
+                f.id === 0
+                  ? preCycle.length
+                  : preCycle.filter((l) => l.stage?.cycle === f.id).length;
+              return (
+                <button
+                  key={f.id}
+                  type="button"
+                  onClick={() => {
+                    setFilter(f.id);
+                    setEtape("all"); // l'étape dépend du cycle
+                  }}
                   className={cn(
-                    "rounded-full px-1.5 text-[10px] font-bold",
-                    active ? "bg-white/20 text-white" : "bg-primary/10 text-primary",
+                    "flex items-center gap-1.5 rounded-md px-3 py-1.5 text-xs font-semibold uppercase tracking-wide transition-colors",
+                    active
+                      ? "bg-primary text-primary-foreground shadow-sm"
+                      : "text-muted-foreground hover:text-foreground",
                   )}
                 >
-                  {count}
-                </span>
-              </button>
-            );
-          })}
+                  {f.label}
+                  <span
+                    className={cn(
+                      "rounded-full px-1.5 text-[10px] font-bold",
+                      active ? "bg-white/20 text-white" : "bg-primary/10 text-primary",
+                    )}
+                  >
+                    {count}
+                  </span>
+                </button>
+              );
+            })}
+          </div>
+          {admin && !vueCorbeille && corbeille.length > 0 ? (
+            <button
+              type="button"
+              onClick={basculerCorbeille}
+              className="inline-flex items-center gap-1.5 rounded-md border border-border px-2.5 py-1 text-xs font-medium text-muted-foreground hover:bg-muted hover:text-foreground"
+              title="Fiches supprimées, restaurables"
+            >
+              <Archive className="size-3.5" /> Corbeille ({corbeille.length})
+            </button>
+          ) : null}
         </div>
 
         {/* Filtres : étape · responsable · mois · code postal */}
@@ -316,15 +408,35 @@ export function ListeTable({
               >
                 {allFilteredSelected ? "Tout décocher" : "Tout cocher"}
               </button>
-              <button
-                type="button"
-                onClick={deleteSelection}
-                disabled={selected.size === 0 || pending}
-                className="inline-flex items-center gap-1 rounded-md bg-red-600 px-2.5 py-1 text-xs font-semibold text-white hover:bg-red-700 disabled:opacity-50"
-              >
-                <Trash2 className="size-3.5" />
-                Supprimer
-              </button>
+              {vueCorbeille ? (
+                <>
+                  <button
+                    type="button"
+                    onClick={() => setConfirm({ kind: "restaurer", ids })}
+                    disabled={selected.size === 0 || pending}
+                    className="inline-flex items-center gap-1 rounded-md bg-primary px-2.5 py-1 text-xs font-semibold text-primary-foreground hover:bg-primary/90 disabled:opacity-50"
+                  >
+                    <RotateCcw className="size-3.5" /> Restaurer
+                  </button>
+                  <button
+                    type="button"
+                    onClick={() => setConfirm({ kind: "purger", ids })}
+                    disabled={selected.size === 0 || pending}
+                    className="inline-flex items-center gap-1 rounded-md bg-red-600 px-2.5 py-1 text-xs font-semibold text-white hover:bg-red-700 disabled:opacity-50"
+                  >
+                    <Trash2 className="size-3.5" /> Supprimer définitivement
+                  </button>
+                </>
+              ) : (
+                <button
+                  type="button"
+                  onClick={() => setConfirm({ kind: "corbeille", ids })}
+                  disabled={selected.size === 0 || pending}
+                  className="inline-flex items-center gap-1 rounded-md bg-red-600 px-2.5 py-1 text-xs font-semibold text-white hover:bg-red-700 disabled:opacity-50"
+                >
+                  <Trash2 className="size-3.5" /> Mettre à la corbeille
+                </button>
+              )}
               <button
                 type="button"
                 onClick={exitSelect}
@@ -338,14 +450,16 @@ export function ListeTable({
               <span className="text-xs text-muted-foreground">
                 {rows.length} résultat{rows.length > 1 ? "s" : ""}
               </span>
-              <button
-                type="button"
-                onClick={() => setSelectMode(true)}
-                className="inline-flex items-center gap-1.5 rounded-md border border-border px-2.5 py-1 text-xs font-medium text-foreground hover:bg-muted"
-              >
-                <CheckSquare className="size-3.5" />
-                Sélectionner
-              </button>
+              {admin ? (
+                <button
+                  type="button"
+                  onClick={() => setSelectMode(true)}
+                  className="inline-flex items-center gap-1.5 rounded-md border border-border px-2.5 py-1 text-xs font-medium text-foreground hover:bg-muted"
+                >
+                  <CheckSquare className="size-3.5" />
+                  Sélectionner
+                </button>
+              ) : null}
             </div>
           )}
         </div>
@@ -353,12 +467,14 @@ export function ListeTable({
 
       {rows.length === 0 ? (
         <div className="px-6 py-16 text-center text-sm text-muted-foreground">
-          Aucun prospect dans cette vue.
+          {vueCorbeille ? "La corbeille est vide." : "Aucun prospect dans cette vue."}
         </div>
       ) : (
-        <div className="flex-1 overflow-auto px-6 pb-6">
-          <div className="overflow-hidden rounded-lg border border-border">
-            <table className="w-full border-collapse text-sm">
+        <div className="flex min-h-0 flex-1 flex-col px-6 pb-24">
+          {/* overflow-auto (pas hidden) : 13 colonnes défilent horizontalement
+              au lieu d'être écrasées / coupées sur un écran de portable. */}
+          <div className="min-h-0 flex-1 overflow-auto rounded-lg border border-border">
+            <table className="min-w-full border-collapse text-sm">
           <thead className="sticky top-0 z-10">
             <tr className="bg-muted">
               {selectMode ? (
@@ -380,8 +496,8 @@ export function ListeTable({
                   {c}
                 </th>
               ))}
-              {!selectMode ? (
-                <th className="w-10 border-b border-border px-3 py-2" />
+              {actionsCol ? (
+                <th className="border-b border-border px-3 py-2" />
               ) : null}
             </tr>
           </thead>
@@ -402,6 +518,7 @@ export function ListeTable({
                     selected.has(lead.id)
                       ? "bg-primary/10 hover:bg-primary/15"
                       : "hover:bg-primary/[0.06]",
+                    vueCorbeille && "opacity-80",
                   )}
                 >
                   {selectMode ? (
@@ -415,7 +532,14 @@ export function ListeTable({
                       />
                     </Td>
                   ) : null}
-                  <Td className="font-medium text-foreground">{lead.nom}</Td>
+                  <Td className="font-medium text-foreground">
+                    {lead.nom}
+                    {vueCorbeille && lead.deletedAt ? (
+                      <span className="ml-2 text-[10px] font-normal text-amber-700">
+                        supprimé {tempsRelatif(lead.deletedAt)}
+                      </span>
+                    ) : null}
+                  </Td>
                   <Td
                     className="whitespace-nowrap text-muted-foreground"
                     title={formatHorodatage(lead.createdAt)}
@@ -451,14 +575,11 @@ export function ListeTable({
                       {s.label}
                     </span>
                   </Td>
-                  <Td>{humanise(lead.typeProjet) || "—"}</Td>
+                  <Td>{humanise(lead.dimensions) || humanise(lead.typeProjet) || "—"}</Td>
                   <Td>{lead.codePostal || "—"}</Td>
                   <Td>{humanise(lead.dateSouhaiteeAppel) || "—"}</Td>
                   <Td>{humanise(lead.dateInstallation) || "—"}</Td>
                   <Td className="tabular-nums">{formatEuros(lead.montant)}</Td>
-                  <Td className="tabular-nums">
-                    {lead.probabilite !== null ? `${lead.probabilite} %` : "—"}
-                  </Td>
                   <Td className="whitespace-nowrap">
                     {lead.rdvDate ? (
                       <span className="text-blue-700">
@@ -481,17 +602,49 @@ export function ListeTable({
                       "—"
                     )}
                   </Td>
-                  {!selectMode ? (
-                    <Td className="w-10 text-center">
-                      <button
-                        type="button"
-                        onClick={(e) => onDelete(e, lead)}
-                        title="Supprimer"
-                        aria-label="Supprimer"
-                        className="inline-flex size-7 items-center justify-center rounded-md text-muted-foreground transition-colors hover:bg-red-50 hover:text-red-600"
-                      >
-                        <Trash2 className="size-4" />
-                      </button>
+                  {actionsCol ? (
+                    <Td className="whitespace-nowrap text-center">
+                      {vueCorbeille ? (
+                        <span className="inline-flex items-center gap-1">
+                          <button
+                            type="button"
+                            onClick={(e) => {
+                              e.stopPropagation();
+                              setConfirm({ kind: "restaurer", ids: [lead.id], nom: lead.nom });
+                            }}
+                            title="Restaurer"
+                            aria-label="Restaurer"
+                            className="inline-flex size-7 items-center justify-center rounded-md text-muted-foreground transition-colors hover:bg-primary/10 hover:text-primary"
+                          >
+                            <RotateCcw className="size-4" />
+                          </button>
+                          <button
+                            type="button"
+                            onClick={(e) => {
+                              e.stopPropagation();
+                              setConfirm({ kind: "purger", ids: [lead.id], nom: lead.nom });
+                            }}
+                            title="Supprimer définitivement"
+                            aria-label="Supprimer définitivement"
+                            className="inline-flex size-7 items-center justify-center rounded-md text-muted-foreground transition-colors hover:bg-red-50 hover:text-red-600"
+                          >
+                            <Trash2 className="size-4" />
+                          </button>
+                        </span>
+                      ) : (
+                        <button
+                          type="button"
+                          onClick={(e) => {
+                            e.stopPropagation();
+                            setConfirm({ kind: "corbeille", ids: [lead.id], nom: lead.nom });
+                          }}
+                          title="Mettre à la corbeille"
+                          aria-label="Mettre à la corbeille"
+                          className="inline-flex size-7 items-center justify-center rounded-md text-muted-foreground transition-colors hover:bg-red-50 hover:text-red-600"
+                        >
+                          <Trash2 className="size-4" />
+                        </button>
+                      )}
                     </Td>
                   ) : null}
                 </tr>
@@ -502,55 +655,20 @@ export function ListeTable({
           </div>
         </div>
       )}
+
+      {confirm ? (
+        <ConfirmDialog
+          open
+          titre={CONFIRM_TEXTS[confirm.kind].titre(confirm.ids.length, confirm.nom)}
+          description={CONFIRM_TEXTS[confirm.kind].description}
+          confirmLabel={CONFIRM_TEXTS[confirm.kind].label}
+          danger={CONFIRM_TEXTS[confirm.kind].danger}
+          pending={pending}
+          onConfirm={executer}
+          onCancel={() => !pending && setConfirm(null)}
+        />
+      ) : null}
     </div>
   );
 }
 
-function FilterSelect({
-  options,
-  value,
-  onChange,
-  width,
-}: {
-  options: { value: string; label: string }[];
-  value: string;
-  onChange: (v: string) => void;
-  width: string;
-}) {
-  return (
-    <Select items={options} value={value} onValueChange={(v) => onChange(v ?? "all")}>
-      <SelectTrigger className={cn("h-8", width)}>
-        <SelectValue />
-      </SelectTrigger>
-      <SelectContent>
-        {options.map((o) => (
-          <SelectItem key={o.value} value={o.value}>
-            {o.label}
-          </SelectItem>
-        ))}
-      </SelectContent>
-    </Select>
-  );
-}
-
-function Td({
-  children,
-  className,
-  title,
-}: {
-  children: React.ReactNode;
-  className?: string;
-  title?: string;
-}) {
-  return (
-    <td
-      title={title}
-      className={cn(
-        "border-b border-r border-border px-3 py-2 align-middle last:border-r-0",
-        className,
-      )}
-    >
-      {children}
-    </td>
-  );
-}

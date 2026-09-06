@@ -1,6 +1,6 @@
 "use client";
 
-import { useState, useTransition } from "react";
+import { useEffect, useState, useTransition } from "react";
 import { useRouter } from "next/navigation";
 import { Plus, X, Loader2 } from "lucide-react";
 import { toast } from "sonner";
@@ -31,7 +31,7 @@ export function NouveauProspect({
   const [entreprise, setEntreprise] = useState("");
   const [codePostal, setCodePostal] = useState("");
   const [ville, setVille] = useState("");
-  const [typeProjet, setTypeProjet] = useState("");
+  const [typeProjet, setTypeProjet] = useState(""); // = dimensions saisies (cf. label)
   const [montant, setMontant] = useState("");
   const [source, setSource] = useState("");
   const [assignedTo, setAssignedTo] = useState<string>(currentUserId ?? "");
@@ -54,6 +54,17 @@ export function NouveauProspect({
     setOpen(false);
   }
 
+  // Échap ferme la modale.
+  useEffect(() => {
+    if (!open) return;
+    function onKey(e: KeyboardEvent) {
+      if (e.key === "Escape") fermer();
+    }
+    window.addEventListener("keydown", onKey);
+    return () => window.removeEventListener("keydown", onKey);
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [open, pending]);
+
   function submit(e: React.FormEvent) {
     e.preventDefault();
     if (!nom.trim()) {
@@ -68,7 +79,7 @@ export function NouveauProspect({
         entreprise,
         codePostal,
         ville,
-        typeProjet,
+        dimensions: typeProjet,
         montant,
         source,
         assignedTo: assignedTo || null,
@@ -92,13 +103,16 @@ export function NouveauProspect({
 
       {open ? (
         <div
+          role="dialog"
+          aria-modal="true"
           className="fixed inset-0 z-50 flex items-start justify-center overflow-y-auto bg-black/40 p-4 sm:items-center"
-          onMouseDown={fermer}
+          // onClick (pas onMouseDown) : sélectionner du texte et relâcher hors
+          // du cadre ne fermait la modale et ne perdait plus la saisie.
+          onClick={(e) => {
+            if (e.target === e.currentTarget) fermer();
+          }}
         >
-          <div
-            className="w-full max-w-lg rounded-2xl border border-border bg-white shadow-xl"
-            onMouseDown={(e) => e.stopPropagation()}
-          >
+          <div className="w-full max-w-lg rounded-2xl border border-border bg-white shadow-xl">
             <div className="flex items-center justify-between border-b border-border px-5 py-3.5">
               <h2 className="text-display text-lg">Nouveau prospect</h2>
               <button
@@ -171,12 +185,12 @@ export function NouveauProspect({
 
               <div className="grid grid-cols-2 gap-3">
                 <div className="space-y-1.5">
-                  <Label htmlFor="np-type">Type de projet</Label>
+                  <Label htmlFor="np-type">Dimensions de la pergola</Label>
                   <Input
                     id="np-type"
                     value={typeProjet}
                     onChange={(e) => setTypeProjet(e.target.value)}
-                    placeholder="Pergola bioclimatique"
+                    placeholder="ex. 4 x 3 m"
                   />
                 </div>
                 <div className="space-y-1.5">

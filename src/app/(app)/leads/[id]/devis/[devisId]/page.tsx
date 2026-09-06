@@ -7,7 +7,8 @@ import {
   getDescriptionsSurMesure,
   getProduitsCatalogue,
 } from "@/app/(app)/reglages/actions";
-import { DevisForm } from "./devis-form";
+import { getQuoteStatus } from "@/lib/pennylane";
+import { DevisForm, type DevisConfig } from "./devis-form";
 
 export const dynamic = "force-dynamic";
 
@@ -30,13 +31,28 @@ export default async function DevisEditPage({
     : await db.query.devis.findFirst({ where: eq(devisTable.id, devisId) });
   if (!isNew && !devisRow) notFound();
 
-  // Descriptions pré-stockées par composant sur-mesure (injectées sur les lignes).
-  const surMesureDescriptions = await getDescriptionsSurMesure();
-  // Catalogue de produits ajoutables directement en ligne de devis.
-  const catalogue = await getProduitsCatalogue();
+  // Descriptions pré-stockées par composant sur-mesure (injectées sur les lignes)
+  // + catalogue de produits, + statut Pennylane du devis (verrou si signé).
+  const [surMesureDescriptions, catalogue, statutPl] = await Promise.all([
+    getDescriptionsSurMesure(),
+    getProduitsCatalogue(),
+    devisRow?.externalId ? getQuoteStatus(devisRow.externalId) : Promise.resolve(null),
+  ]);
+
+  // Verrou : devis accepté dans le CRM, ou accepté/signé/facturé côté Pennylane.
+  const verrou = devisRow?.accepteAt
+    ? { actif: true, motif: "Signé par le client : le contenu ne peut plus changer." }
+    : statutPl?.ok && statutPl.verrouille
+      ? {
+          actif: true,
+          motif: `Statut Pennylane « ${statutPl.status ?? "verrouillé"} » : le contenu ne peut plus changer.`,
+        }
+      : null;
+
+  const statutAffiche = devisRow?.accepteAt ? "Signé" : (devisRow?.statut ?? null);
 
   return (
-    <main className="flex w-full flex-1 flex-col gap-3 px-4 py-4">
+    <main className="mx-auto flex w-full max-w-[1600px] flex-1 flex-col gap-3 px-4 pt-4 pb-28">
       <div className="flex flex-wrap items-baseline gap-x-4 gap-y-1">
         <Link
           href={`/leads/${id}`}
@@ -48,6 +64,11 @@ export default async function DevisEditPage({
           {isNew ? "Nouveau devis" : `Devis ${devisRow?.numero ?? ""}`}
         </h1>
         <p className="text-sm text-muted-foreground">{lead.nom}</p>
+        {statutAffiche ? (
+          <span className="rounded-full bg-muted px-2 py-0.5 text-xs text-muted-foreground">
+            {statutAffiche}
+          </span>
+        ) : null}
       </div>
 
       <DevisForm
@@ -55,11 +76,22 @@ export default async function DevisEditPage({
         devisId={devisRow?.id ?? null}
         quoteId={devisRow?.externalId ?? null}
         numero={devisRow?.numero ?? null}
+        statut={statutAffiche}
         pennylaneConfigured={!!process.env.PENNYLANE_API_KEY}
         surMesureDescriptions={surMesureDescriptions}
         catalogue={catalogue}
+        config={(devisRow?.config as DevisConfig | null) ?? null}
+        lignesSnapshot={
+          (devisRow?.lignes as
+            | { designation: string; description?: string | null; quantite: number; prixHt: number; tva: number; remisePct?: number | null; productId?: number | null }[]
+            | null) ?? null
+        }
+        verrou={verrou}
         client={{
           nom: lead.nom,
+          entreprise: lead.entreprise,
+          siret: lead.siret,
+          tvaIntracom: lead.tvaIntracom,
           email: lead.email,
           telephone: lead.telephone,
           adresse: lead.adresse,

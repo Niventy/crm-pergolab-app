@@ -6,10 +6,10 @@ export const dynamic = "force-dynamic";
 // Vue globale : tous les commentaires laissés par l'équipe sur les fiches —
 // conversation (notes) + activités commentées (échanges avec texte).
 export default async function CommentairesPage() {
-  const [echangesRows, notesRows, profiles] = await Promise.all([
+  const [echangesAll, notesAll, profiles] = await Promise.all([
     db.query.echanges.findMany({
       with: {
-        lead: { columns: { id: true, nom: true } },
+        lead: { columns: { id: true, nom: true, deletedAt: true } },
         auteur: { columns: { id: true, nom: true, email: true } },
       },
       orderBy: (e, { desc }) => [desc(e.date)],
@@ -17,7 +17,7 @@ export default async function CommentairesPage() {
     }),
     db.query.notes.findMany({
       with: {
-        lead: { columns: { id: true, nom: true } },
+        lead: { columns: { id: true, nom: true, deletedAt: true } },
         auteur: { columns: { id: true, nom: true, email: true } },
       },
       orderBy: (n, { desc }) => [desc(n.createdAt)],
@@ -25,6 +25,9 @@ export default async function CommentairesPage() {
     }),
     db.query.profiles.findMany({ orderBy: (p, { asc }) => [asc(p.nom)] }),
   ]);
+  // Les commentaires d'une fiche en corbeille sont masqués avec elle.
+  const echangesRows = echangesAll.filter((e) => !e.lead?.deletedAt);
+  const notesRows = notesAll.filter((n) => !n.lead?.deletedAt);
 
   const items: Commentaire[] = [
     ...notesRows.map((n) => ({
@@ -55,7 +58,7 @@ export default async function CommentairesPage() {
   ].sort((a, b) => b.date.localeCompare(a.date));
 
   return (
-    <main className="mx-auto w-full max-w-4xl flex-1 space-y-4 px-6 py-6">
+    <main className="mx-auto w-full max-w-4xl flex-1 space-y-4 px-6 pt-6 pb-28">
       <div>
         <h1 className="text-display text-2xl">Commentaires</h1>
         <p className="text-sm text-muted-foreground">
