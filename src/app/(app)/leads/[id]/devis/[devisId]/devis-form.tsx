@@ -8,7 +8,7 @@ import {
   Mail, Send, X, Copy, Lock, AlertTriangle, Check, ChevronDown, Pencil, Package,
 } from "lucide-react";
 import { toast } from "sonner";
-import { formatEurosCents, formatTelephone } from "@/lib/format";
+import { formatEurosCents } from "@/lib/format";
 import {
   TVA_OPTIONS,
   ligneHt as netLigne,
@@ -904,7 +904,7 @@ export function DevisForm({
               leadId={leadId}
               champs={[
                 { key: "nom", label: "Nom & prénom", value: client.nom, full: true },
-                { key: "telephone", label: "Téléphone", value: client.telephone, type: "tel", format: formatTelephone },
+                { key: "telephone", label: "Téléphone", value: client.telephone, type: "tel" },
                 { key: "email", label: "Email", value: client.email, type: "email" },
                 { key: "adresse", label: "Adresse", value: client.adresse, full: true },
                 { key: "codePostal", label: "Code postal", value: client.codePostal },

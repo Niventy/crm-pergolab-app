@@ -1,0 +1,82 @@
+
+> crm-pergolab@0.1.0 dev
+> next dev
+
+▲ Next.js 16.2.6 (Turbopack)
+- Local:         http://localhost:3000
+- Network:       http://192.168.1.210:3000
+- Environments: .env.local
+✓ Ready in 645ms
+- Experiments (use with caution):
+  · serverActions
+
+○ Compiling /leads/[id] ...
+⨯ Error: Functions cannot be passed directly to Client Components unless you explicitly expose it by marking it with "use server". Or maybe you meant to call this function rather than return it.
+  {key: ..., label: ..., value: ..., type: ..., format: function formatTelephone}
+                                                        ^^^^^^^^^^^^^^^^^^^^^^^^
+    at stringify (<anonymous>)
+    at stringify (<anonymous>)
+    at stringify (<anonymous>) {
+  digest: '267154620'
+}
+ GET /leads/975f2e27-1e9c-48c3-bb5c-4fee4ea1dd39 500 in 8.4s (next.js: 5.4s, proxy.ts: 831ms, application-code: 2.2s)
+[browser] Uncaught Error: Functions cannot be passed directly to Client Components unless you explicitly expose it by marking it with "use server". Or maybe you meant to call this function rather than return it.
+  {key: ..., label: ..., value: ..., type: ..., format: function formatTelephone}
+                                                        ^^^^^^^^^^^^^^^^^^^^^^^^
+    at stringify (<anonymous>:1:18)
+    at stringify (<anonymous>:1:18)
+    at stringify (<anonymous>:1:18)
+    at Bloc (src\app\(app)\leads\[id]\page.tsx:91:7)
+    at LeadPage (src\app\(app)\leads\[id]\page.tsx:573:13)
+  89 |         </CardTitle>
+  90 |       </CardHeader>
+> 91 |       <CardContent>{children}</CardContent>
+     |       ^
+  92 |     </Card>
+  93 |   );
+  94 | }
+[browser] ObjectMultiplex - orphaned data for stream "metamask-multichain-provider" (moz-extension://ef9af51c-e82b-46b1-a4f7-06771c41e53f/scripts/inpage.js;:1:28380)
+[browser] ObjectMultiplex - orphaned data for stream "metamask-multichain-provider" (moz-extension://ef9af51c-e82b-46b1-a4f7-06771c41e53f/scripts/inpage.js;:1:28380)
+[browser] ObjectMultiplex - orphaned data for stream "metamask-multichain-provider" (moz-extension://ef9af51c-e82b-46b1-a4f7-06771c41e53f/scripts/inpage.js;:1:28380)
+[browser] ObjectMultiplex - orphaned data for stream "metamask-multichain-provider" (moz-extension://ef9af51c-e82b-46b1-a4f7-06771c41e53f/scripts/inpage.js;:1:28380)
+ GET /login 200 in 843ms (next.js: 742ms, proxy.ts: 8ms, application-code: 92ms)
+✓ Compiled in 127ms
+⨯ Error: Functions cannot be passed directly to Client Components unless you explicitly expose it by marking it with "use server". Or maybe you meant to call this function rather than return it.
+  {key: ..., label: ..., value: ..., type: ..., format: function formatTelephone}
+                                                        ^^^^^^^^^^^^^^^^^^^^^^^^
+    at stringify (<anonymous>)
+    at stringify (<anonymous>)
+    at stringify (<anonymous>) {
+  digest: '267154620'
+}
+⚠ Fast Refresh had to perform a full reload due to a runtime error.
+✓ Compiled in 0ms
+ GET /leads/975f2e27-1e9c-48c3-bb5c-4fee4ea1dd39 500 in 1900ms (next.js: 143ms, proxy.ts: 253ms, application-code: 1504ms)
+[browser] Uncaught Error: Functions cannot be passed directly to Client Components unless you explicitly expose it by marking it with "use server". Or maybe you meant to call this function rather than return it.
+  {key: ..., label: ..., value: ..., type: ..., format: function formatTelephone}
+                                                        ^^^^^^^^^^^^^^^^^^^^^^^^
+    at stringify (<anonymous>:1:18)
+    at stringify (<anonymous>:1:18)
+    at stringify (<anonymous>:1:18)
+    at Bloc (src\app\(app)\leads\[id]\page.tsx:91:7)
+    at LeadPage (src\app\(app)\leads\[id]\page.tsx:573:13)
+  89 |         </CardTitle>
+  90 |       </CardHeader>
+> 91 |       <CardContent>{children}</CardContent>
+     |       ^
+  92 |     </Card>
+  93 |   );
+  94 | }
+[browser] ObjectMultiplex - orphaned data for stream "metamask-multichain-provider" (moz-extension://ef9af51c-e82b-46b1-a4f7-06771c41e53f/scripts/inpage.js;:1:28380)
+[browser] ObjectMultiplex - orphaned data for stream "metamask-multichain-provider" (moz-extension://ef9af51c-e82b-46b1-a4f7-06771c41e53f/scripts/inpage.js;:1:28380)
+[browser] ObjectMultiplex - orphaned data for stream "metamask-multichain-provider" (moz-extension://ef9af51c-e82b-46b1-a4f7-06771c41e53f/scripts/inpage.js;:1:28380)
+[browser] ObjectMultiplex - orphaned data for stream "metamask-multichain-provider" (moz-extension://ef9af51c-e82b-46b1-a4f7-06771c41e53f/scripts/inpage.js;:1:28380)
+✓ Compiled in 98ms
+ GET /leads/975f2e27-1e9c-48c3-bb5c-4fee4ea1dd39 200 in 1196ms (next.js: 155ms, proxy.ts: 201ms, application-code: 841ms)
+[browser] ObjectMultiplex - orphaned data for stream "metamask-multichain-provider" (moz-extension://ef9af51c-e82b-46b1-a4f7-06771c41e53f/scripts/inpage.js;:1:28380)
+[browser] ObjectMultiplex - orphaned data for stream "metamask-multichain-provider" (moz-extension://ef9af51c-e82b-46b1-a4f7-06771c41e53f/scripts/inpage.js;:1:28380)
+[browser] ObjectMultiplex - orphaned data for stream "metamask-multichain-provider" (moz-extension://ef9af51c-e82b-46b1-a4f7-06771c41e53f/scripts/inpage.js;:1:28380)
+[browser] ObjectMultiplex - orphaned data for stream "metamask-multichain-provider" (moz-extension://ef9af51c-e82b-46b1-a4f7-06771c41e53f/scripts/inpage.js;:1:28380)
+✓ Compiled in 85ms
+ GET /leads/975f2e27-1e9c-48c3-bb5c-4fee4ea1dd39 200 in 1268ms (next.js: 153ms, proxy.ts: 312ms, application-code: 803ms)
+ GET /leads/975f2e27-1e9c-48c3-bb5c-4fee4ea1dd39 200 in 585ms (next.js: 18ms, proxy.ts: 70ms, application-code: 497ms)

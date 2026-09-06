@@ -4,17 +4,23 @@ import { useState, useTransition } from "react";
 import { useRouter } from "next/navigation";
 import { Pencil, Check, X, Loader2 } from "lucide-react";
 import { toast } from "sonner";
+import { formatTelephone } from "@/lib/format";
 import { saveLeadChamps } from "./actions";
 
 export type Champ = {
   key: string;
   label: string;
   value: string | null;
+  /** `tel` → affiché « 06 58 24 33 61 » (formaté ICI, côté client : une fonction
+   *  ne peut pas être passée en prop depuis un composant serveur). */
   type?: "text" | "email" | "tel";
   full?: boolean; // occupe toute la largeur
-  /** Mise en forme d'AFFICHAGE (ex. téléphone « 06 58 24 33 61 ») ; la valeur brute reste éditée. */
-  format?: (v: string) => string;
 };
+
+// Mise en forme d'AFFICHAGE selon le type ; la valeur brute reste éditée.
+function afficher(c: Champ, v: string): string {
+  return c.type === "tel" ? formatTelephone(v) : v;
+}
 
 // Carte de champs client modifiable sur place, avec trace journalisée.
 export function ChampsEditables({
@@ -102,7 +108,7 @@ export function ChampsEditables({
               />
             ) : (
               <div className="mt-0.5 text-sm text-foreground">
-                {c.value ? (c.format ? c.format(c.value) : c.value) : "—"}
+                {c.value ? afficher(c, c.value) : "—"}
               </div>
             )}
           </div>

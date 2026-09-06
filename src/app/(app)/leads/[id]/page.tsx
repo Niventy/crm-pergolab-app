@@ -13,7 +13,6 @@ import {
   formatEuros,
   formatEurosCents,
   formatDate,
-  formatTelephone,
   tempsRelatif,
   humanise,
   todayParis,
@@ -577,7 +576,7 @@ export default async function LeadPage({
                   isClient
                     ? [
                         { key: "nom", label: "Nom", value: lead.nom, full: true },
-                        { key: "telephone", label: "Téléphone", value: lead.telephone, type: "tel", format: formatTelephone },
+                        { key: "telephone", label: "Téléphone", value: lead.telephone, type: "tel" },
                         { key: "email", label: "Email", value: lead.email, type: "email" },
                         { key: "adresse", label: "Adresse", value: lead.adresse, full: true },
                         { key: "codePostal", label: "Code postal", value: lead.codePostal },
@@ -594,7 +593,7 @@ export default async function LeadPage({
                         { key: "entreprise", label: "Société (si pro)", value: lead.entreprise },
                         { key: "siret", label: "SIRET", value: lead.siret },
                         { key: "tvaIntracom", label: "N° TVA intracom", value: lead.tvaIntracom },
-                        { key: "telephone", label: "Téléphone", value: lead.telephone, type: "tel", format: formatTelephone },
+                        { key: "telephone", label: "Téléphone", value: lead.telephone, type: "tel" },
                         { key: "email", label: "Email", value: lead.email, type: "email" },
                         { key: "codePostal", label: "Code postal", value: lead.codePostal },
                         // Meta envoie les dimensions dans `dimensions` (type_projet reste vide).
