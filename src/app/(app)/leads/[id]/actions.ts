@@ -364,6 +364,71 @@ export async function modifierDevis(
   return r;
 }
 
+// Supprime un devis du CRM (brouillon, envoyé ou non retenu). Un devis SIGNÉ
+// (accepté dans le CRM ou verrouillé côté Pennylane) ne se supprime pas.
+// Pennylane n'expose pas de suppression de devis : le brouillon y reste, à
+// archiver à la main si besoin (signalé à l'ADV).
+export async function supprimerDevis(leadId: string, devisId: string) {
+  const d = await db.query.devis.findFirst({
+    where: and(eq(devis.id, devisId), eq(devis.leadId, leadId)),
+  });
+  if (!d) return { ok: false as const, error: "Devis introuvable." };
+  if (d.accepteAt)
+    return { ok: false as const, error: "Ce devis est signé : il ne peut pas être supprimé." };
+  if (d.externalId) {
+    const st = await getQuoteStatus(d.externalId);
+    if (st.ok && st.verrouille)
+      return {
+        ok: false as const,
+        error: `Ce devis est ${st.status ?? "verrouillé"} dans Pennylane : il ne peut pas être supprimé.`,
+      };
+  }
+
+  const userId = await currentUserId();
+  await db.delete(devis).where(eq(devis.id, devisId));
+
+  // Le montant du lead suit le devis signé s'il existe, sinon le devis restant
+  // le plus récent ; plus aucun devis → montant vide (le CA ne compte rien).
+  const restants = await db
+    .select({
+      montant: devis.montant,
+      montantTtc: devis.montantTtc,
+      externalId: devis.externalId,
+      accepteAt: devis.accepteAt,
+    })
+    .from(devis)
+    .where(eq(devis.leadId, leadId))
+    .orderBy(desc(devis.createdAt));
+  const ref = restants.find((r) => r.accepteAt) ?? restants[0] ?? null;
+  await db
+    .update(leads)
+    .set({
+      montant: ref?.montant ?? null,
+      montantTtc: ref?.montantTtc ?? null,
+      pennylaneQuoteId: ref?.externalId ?? null,
+      updatedAt: new Date(),
+      updatedBy: userId,
+    })
+    .where(eq(leads.id, leadId));
+
+  await db.insert(echanges).values({
+    leadId,
+    userId,
+    type: "devis_supprime",
+    contenu: `Devis ${d.numero ?? ""} supprimé${
+      d.montant ? ` (${Number(d.montant).toLocaleString("fr-FR")} € HT)` : ""
+    }`.replace(/\s+/g, " "),
+  });
+
+  revalidatePath(`/leads/${leadId}`);
+  revalidatePath("/kanban");
+  revalidatePath("/liste");
+  revalidatePath("/devis");
+  revalidatePath("/dashboard");
+  revalidatePath("/clients", "layout");
+  return { ok: true as const, error: null, pennylaneRestant: !!d.externalId };
+}
+
 // URL de l'éditeur Pennylane pour un devis déjà créé.
 export async function devisAppUrl(quoteId: string) {
   return buildQuoteAppUrl(quoteId);

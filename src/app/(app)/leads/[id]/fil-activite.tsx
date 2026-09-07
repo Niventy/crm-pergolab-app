@@ -44,6 +44,7 @@ const META: Record<string, { label: string; Icon: typeof Phone; cls: string }> =
   devis_cree: { label: "Devis créé", Icon: FileText, cls: "bg-slate-100 text-slate-700" },
   devis_envoye: { label: "Devis envoyé", Icon: FileText, cls: "bg-emerald-100 text-emerald-700" },
   devis_accepte: { label: "Devis signé", Icon: FileText, cls: "bg-green-600 text-white" },
+  devis_supprime: { label: "Devis supprimé", Icon: FileText, cls: "bg-red-100 text-red-700" },
   metre: { label: "Métré", Icon: Ruler, cls: "bg-violet-100 text-violet-700" },
   commande: { label: "Commande", Icon: ShoppingCart, cls: "bg-indigo-100 text-indigo-700" },
   livre: { label: "Livré", Icon: Truck, cls: "bg-sky-100 text-sky-700" },

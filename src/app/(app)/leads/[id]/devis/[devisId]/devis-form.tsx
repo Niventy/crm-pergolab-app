@@ -19,6 +19,8 @@ import {
 } from "@/lib/devis-calc";
 import { cn } from "@/lib/utils";
 import { ouvrirDans } from "@/lib/ouvrir-dans";
+import { memeLignes } from "@/lib/devis-lignes";
+import { ConfirmDialog } from "@/components/confirm-dialog";
 import { ChampsEditables } from "../../champs-editables";
 import { SurMesureCalc } from "./sur-mesure-calc";
 import {
@@ -39,6 +41,7 @@ import {
   devisPdfUrl,
   devisSignatureUrl,
   dupliquerDevis,
+  supprimerDevis,
 } from "../../actions";
 
 // Ligne du devis. `uid` = clé React STABLE.
@@ -107,6 +110,21 @@ const taguerConfig = (ls: Line[]): Line[] => {
   });
 };
 const eur = (n: number) => formatEurosCents(r2(n));
+
+// Lignes brutes (Pennylane ou instantané CRM) → état de l'éditeur : la remise
+// commerciale (lignes négatives) redevient un %, la TVA dominante devient la
+// TVA par défaut, les lignes du configurateur sont taguées. Fonction PURE.
+function decomposer(raw: LineIn[]) {
+  const rems = raw.filter(estRemise);
+  const autres = raw.filter((l) => !estRemise(l)).map(withUid);
+  const htAutres = autres.reduce((a, l) => a + netLigne(l), 0);
+  const remAbs = rems.reduce((a, r) => a + Math.abs(r.prixHt || 0), 0);
+  return {
+    remisePct: remAbs > 0 && htAutres > 0 ? Math.round((remAbs / htAutres) * 1000) / 10 : 0,
+    tauxDefaut: tauxDominant(autres),
+    lines: ordonner(taguerConfig(autres)),
+  };
+}
 
 function ordonner(ls: Line[]): Line[] {
   const estPergola = (l: Line) => /^Pergola\b/i.test(l.designation.trim());
@@ -237,18 +255,40 @@ export function DevisForm({
   const router = useRouter();
   const [pending, start] = useTransition();
   const readOnly = !!verrou?.actif;
+  // Devis existant : les lignes ENREGISTRÉES DANS LE CRM font foi au montage
+  // (exactement ce qui a été envoyé à Pennylane au dernier enregistrement, textes
+  // compris). Pennylane est relu en arrière-plan ; s'il diffère, on prévient au
+  // lieu d'écraser en silence ce que l'ADV a composé (des options
+  // « disparaissaient » quand la relecture ramenait l'ancienne version).
+  const [initial] = useState(() => {
+    const snap = (lignesSnapshot ?? []).filter((l) => !estClause(l));
+    if (!quoteId || !snap.length) return null;
+    const d = decomposer(snap);
+    // Sans config mémorisée : on RECONSTRUIT la config depuis les lignes.
+    const cfgs = config?.pergola ? [] : deduireConfigs(d.lines);
+    return {
+      ...d,
+      pergola: cfgs[0] ?? null,
+      supplements: cfgs.slice(1).map((cfg, i) => ({ key: i + 1, cfg })),
+    };
+  });
   // Configurateur : ouvert d'emblée sur un nouveau devis ; replié (résumé) sinon.
   const [smOpen, setSmOpen] = useState(!quoteId);
-  const [smConfig, setSmConfig] = useState<ConfigSM | null>(config?.pergola ?? null);
-  const [supplements, setSupplements] = useState<{ key: number; cfg: ConfigSM | null }[]>(
-    config?.supplements ?? [],
+  const [smConfig, setSmConfig] = useState<ConfigSM | null>(
+    config?.pergola ?? initial?.pergola ?? null,
   );
-  const suppKeyRef = useRef((config?.supplements ?? []).reduce((m, s) => Math.max(m, s.key), 0) + 1);
+  const suppInit = config?.supplements?.length ? config.supplements : (initial?.supplements ?? []);
+  const [supplements, setSupplements] = useState<{ key: number; cfg: ConfigSM | null }[]>(suppInit);
+  const suppKeyRef = useRef(suppInit.reduce((m, s) => Math.max(m, s.key), 0) + 1);
   const [pdfUrl, setPdfUrl] = useState<string | null>(null);
   const [pdfLoading, setPdfLoading] = useState(!!quoteId);
   const [pdfError, setPdfError] = useState<string | null>(null);
   const [pdfKey, setPdfKey] = useState(0);
-  const [chargement, setChargement] = useState<"pennylane" | "snapshot" | null>(null);
+  // Lignes relues dans Pennylane quand elles DIFFÈRENT de celles du CRM (édition
+  // faite là-bas, ou lignes non appliquées) : on prévient, on n'écrase pas.
+  const [ecart, setEcart] = useState<LineIn[] | null>(null);
+  const [delOpen, setDelOpen] = useState(false);
+  const [delPending, startDel] = useTransition();
   const [mailOpen, setMailOpen] = useState(false);
   const [mailTo, setMailTo] = useState(client.email ?? "");
   const [mailSubject, setMailSubject] = useState(`Votre devis PERGOLAB${numero ? ` N° ${numero}` : ""}`);
@@ -258,25 +298,24 @@ export function DevisForm({
   const [mailPending, startMail] = useTransition();
   const [dupPending, startDup] = useTransition();
   const [plusOpen, setPlusOpen] = useState(false);
-  const [lines, setLines] = useState<Line[]>([]);
-  const [remisePct, setRemisePct] = useState(config?.remisePct ?? 0);
-  const [tauxDefaut, setTauxDefaut] = useState<number>(config?.tauxDefaut ?? 20);
+  const [lines, setLines] = useState<Line[]>(initial?.lines ?? []);
+  const [remisePct, setRemisePct] = useState(initial?.remisePct ?? config?.remisePct ?? 0);
+  const [tauxDefaut, setTauxDefaut] = useState<number>(
+    initial?.tauxDefaut ?? config?.tauxDefaut ?? 20,
+  );
   // Détails d'une ligne (description, remise) dépliés.
   const [ouverts, setOuverts] = useState<Set<string>>(new Set());
 
   const appliquerChargement = (raw: LineIn[]) => {
-    const rems = raw.filter(estRemise);
-    const autres = raw.filter((l) => !estRemise(l)).map(withUid);
-    const htAutres = autres.reduce((a, l) => a + netLigne(l), 0);
-    const remAbs = rems.reduce((a, r) => a + Math.abs(r.prixHt || 0), 0);
-    setRemisePct(remAbs > 0 && htAutres > 0 ? Math.round((remAbs / htAutres) * 1000) / 10 : 0);
-    setTauxDefaut(tauxDominant(autres));
-    setLines(ordonner(taguerConfig(autres)));
+    const d = decomposer(raw);
+    setRemisePct(d.remisePct);
+    setTauxDefaut(d.tauxDefaut);
+    setLines(d.lines);
     // Devis sans config mémorisée (créé avant la persistance, ou dupliqué depuis
     // l'un d'eux) : on RECONSTRUIT la config depuis les lignes pour que
     // « Modifier la pergola » rouvre le configurateur pré-rempli.
     if (!config?.pergola) {
-      const cfgs = deduireConfigs(autres);
+      const cfgs = deduireConfigs(d.lines);
       if (cfgs.length) {
         setSmConfig(cfgs[0]);
         if (cfgs.length > 1 && !config?.supplements?.length)
@@ -294,16 +333,18 @@ export function DevisForm({
   useEffect(() => {
     if (!quoteId) return;
     let alive = true;
+    // Relecture Pennylane en arrière-plan (cf. `initial`) : sans instantané CRM
+    // (devis ancien) elle alimente l'éditeur ; sinon elle sert à détecter un écart.
+    const snap = (lignesSnapshot ?? []).filter((l) => !estClause(l));
     getDevisLines(quoteId).then((r) => {
       if (!alive) return;
-      if (r.ok && r.lines?.length) {
-        appliquerChargement(r.lines as LineIn[]);
-        setChargement("pennylane");
-      } else if (lignesSnapshot?.length) {
-        appliquerChargement(lignesSnapshot.filter((l) => !estClause(l)));
-        setChargement("snapshot");
-        toast.warning("Pennylane ne répond pas : lignes reprises depuis le CRM.");
-      } else toast.error(r.error ?? "Lignes du devis indisponibles.");
+      const pl = (r.ok ? ((r.lines ?? []) as LineIn[]) : []).filter((l) => !estClause(l));
+      if (snap.length) {
+        if (pl.length && !memeLignes(snap, pl)) setEcart(pl);
+        return;
+      }
+      if (pl.length) appliquerChargement(pl);
+      else toast.error(r.error ?? "Lignes du devis indisponibles.");
     });
     devisPdfUrl(quoteId).then((r) => {
       if (!alive) return;
@@ -445,10 +486,21 @@ export function DevisForm({
         const r = await modifierDevis(leadId, devisId, quoteId, versServeur(utiles), cfg);
         if (r.ok) {
           toast.success("Devis mis à jour — le PDF se régénère");
-          const fresh = await getDevisLines(quoteId);
-          if (fresh.ok && fresh.lines?.length) appliquerChargement(fresh.lines as LineIn[]);
+          if ("avertissement" in r && r.avertissement)
+            toast.warning(r.avertissement, { duration: 10000 });
+          // On GARDE les lignes composées ici (elles sont enregistrées dans le
+          // CRM) : relire Pennylane immédiatement ramenait parfois l'ancienne
+          // version et faisait « disparaître » des options. Vérification différée.
+          setEcart(null);
           rafraichirPdf(2500);
           router.refresh();
+          setTimeout(() => {
+            getDevisLines(quoteId).then((v) => {
+              if (!v.ok || !v.lines?.length) return;
+              const pl = (v.lines as LineIn[]).filter((l) => !estClause(l));
+              if (!memeLignes(utiles, pl)) setEcart(pl);
+            });
+          }, 4000);
         } else toast.error(r.error ?? "Échec de la mise à jour");
       } else {
         const r = await creerDevis(leadId, versServeur(utiles), cfg);
@@ -459,6 +511,21 @@ export function DevisForm({
       }
     });
   }
+
+  const supprimer = () =>
+    startDel(async () => {
+      if (!devisId) return;
+      const r = await supprimerDevis(leadId, devisId);
+      setDelOpen(false);
+      if (r.ok) {
+        toast.success(`Devis ${numero ?? ""} supprimé`.trim(), {
+          description: r.pennylaneRestant
+            ? "Le brouillon reste dans Pennylane : archive-le là-bas si besoin."
+            : undefined,
+        });
+        router.push(`/leads/${leadId}`);
+      } else toast.error(r.error ?? "Échec de la suppression");
+    });
 
   const dupliquer = () =>
     startDup(async () => {
@@ -565,10 +632,39 @@ export function DevisForm({
               </button>
             </div>
           ) : null}
-          {chargement === "snapshot" ? (
-            <p className="flex items-center gap-1.5 rounded-md bg-amber-50 px-3 py-2 text-xs text-amber-800">
-              <AlertTriangle className="size-3.5" /> Lignes reprises depuis le CRM (Pennylane injoignable).
-            </p>
+          {ecart ? (
+            <div className="rounded-xl border border-amber-300 bg-amber-50 px-4 py-3 text-xs text-amber-800">
+              <div className="flex items-center gap-1.5 font-semibold">
+                <AlertTriangle className="size-3.5" /> Les lignes dans Pennylane diffèrent de celles du CRM
+              </div>
+              <p className="mt-1">
+                Le PDF suit Pennylane. Soit tu « Enregistres les modifications » pour que les lignes
+                composées ici fassent foi, soit tu reprends celles de Pennylane (si le devis a été
+                modifié là-bas).
+              </p>
+              <div className="mt-2 flex flex-wrap gap-2">
+                {!readOnly ? (
+                  <button
+                    type="button"
+                    onClick={() => {
+                      appliquerChargement(ecart);
+                      setEcart(null);
+                      toast.success("Lignes Pennylane reprises");
+                    }}
+                    className="rounded-md border border-amber-400 bg-white px-2.5 py-1 font-medium text-amber-900 hover:bg-amber-100"
+                  >
+                    Reprendre les lignes Pennylane
+                  </button>
+                ) : null}
+                <button
+                  type="button"
+                  onClick={() => setEcart(null)}
+                  className="rounded-md px-2.5 py-1 text-amber-800 hover:underline"
+                >
+                  Garder les lignes du CRM
+                </button>
+              </div>
+            </div>
           ) : null}
 
           {/* ---- 1. La pergola ---- */}
@@ -859,6 +955,11 @@ export function DevisForm({
                           <MenuItem onClick={() => { setPlusOpen(false); ouvrirDans(() => devisAppUrl(quoteId)); }} Icon={ExternalLink}>
                             Ouvrir dans Pennylane
                           </MenuItem>
+                          {!readOnly && devisId ? (
+                            <MenuItem onClick={() => { setPlusOpen(false); setDelOpen(true); }} Icon={Trash2}>
+                              Supprimer ce devis
+                            </MenuItem>
+                          ) : null}
                         </div>
                       ) : null}
                     </div>
@@ -1013,6 +1114,17 @@ export function DevisForm({
           </section>
         </div>
       </div>
+
+      <ConfirmDialog
+        open={delOpen}
+        titre={`Supprimer le devis ${numero ?? ""} ?`}
+        description="Il disparaît du CRM et le montant de la fiche est recalculé sur les devis restants. Le brouillon reste dans Pennylane (à archiver là-bas si besoin)."
+        confirmLabel="Supprimer"
+        danger
+        pending={delPending}
+        onConfirm={supprimer}
+        onCancel={() => setDelOpen(false)}
+      />
     </div>
   );
 }

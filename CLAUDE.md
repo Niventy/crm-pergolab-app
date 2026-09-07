@@ -153,6 +153,17 @@ sociale) + `siret` + `tva_intracom` → Pennylane `company_customer` (type mémo
   Lignes relues : la description est TOUJOURS reprise (`descriptionTexteBrut` convertit
   JSON enrichi / HTML en texte) ; à l'envoi, une ligne avec texte CRM part en ligne
   libre (label + description) même si Pennylane l'avait liée à un `product_id`.
+  **Source des lignes à l'ouverture d'un devis = l'instantané CRM** (`devis.lignes`,
+  exactement ce qui a été envoyé au dernier enregistrement) ; Pennylane est relu en
+  arrière-plan et, s'il diffère (`lib/devis-lignes.ts › memeLignes`), un bandeau
+  propose « Reprendre les lignes Pennylane » — on n'écrase plus la composition (des
+  options disparaissaient quand la relecture immédiate ramenait l'ancienne version).
+  Après enregistrement : vérification différée (4 s) + `avertissement` serveur si
+  Pennylane ne relit pas les mêmes lignes (loggé côté Vercel).
+  **Suppression d'un devis** (`supprimerDevis`) : fiche, éditeur (menu Plus) et liste
+  `/devis`, avec confirmation ; refusée si signé (CRM ou Pennylane) ; montant du lead
+  recalculé (devis signé sinon plus récent restant) ; journal `devis_supprime`. Pennylane
+  n'a PAS d'API de suppression de devis : le brouillon y reste (signalé à l'ADV).
 - **Gmail / Agenda** (`email-actions.ts`, `google-calendar.ts`) : OAuth par ADV via
   `GOOGLE_SENDERS` ; le token agit sur SA boîte, `Reply-To` = ADV connecté.
 

@@ -12,12 +12,20 @@ import {
   Copy,
   RefreshCw,
   BadgeCheck,
+  Trash2,
 } from "lucide-react";
 import { toast } from "sonner";
 import { cn } from "@/lib/utils";
 import { formatEurosCents } from "@/lib/format";
 import { ouvrirDans } from "@/lib/ouvrir-dans";
-import { devisAppUrl, devisPdfUrl, dupliquerDevis, marquerDevisAccepte } from "./actions";
+import { ConfirmDialog } from "@/components/confirm-dialog";
+import {
+  devisAppUrl,
+  devisPdfUrl,
+  dupliquerDevis,
+  marquerDevisAccepte,
+  supprimerDevis,
+} from "./actions";
 
 type DevisRow = {
   id: string;
@@ -46,6 +54,24 @@ export function DevisEditor({
   const [pending, start] = useTransition();
   const [dupId, setDupId] = useState<string | null>(null);
   const [accId, setAccId] = useState<string | null>(null);
+  const [aSupprimer, setASupprimer] = useState<DevisRow | null>(null);
+
+  const supprimer = () => {
+    const d = aSupprimer;
+    if (!d) return;
+    start(async () => {
+      const r = await supprimerDevis(leadId, d.id);
+      setASupprimer(null);
+      if (r.ok) {
+        toast.success(`Devis ${d.numero ?? ""} supprimé`.trim(), {
+          description: r.pennylaneRestant
+            ? "Le brouillon reste dans Pennylane : archive-le là-bas si besoin."
+            : undefined,
+        });
+        router.refresh();
+      } else toast.error(r.error ?? "Échec de la suppression");
+    });
+  };
 
   const dupliquer = (quoteId: string, id: string) => {
     setDupId(id);
@@ -166,6 +192,17 @@ export function DevisEditor({
                     </button>
                   </>
                 ) : null}
+                {!d.accepte ? (
+                  <button
+                    type="button"
+                    disabled={pending}
+                    onClick={() => setASupprimer(d)}
+                    className="inline-flex items-center gap-1 text-xs font-medium text-muted-foreground hover:text-red-600 disabled:opacity-50"
+                    title="Supprimer ce devis du CRM (un devis signé ne se supprime pas)"
+                  >
+                    <Trash2 className="size-3.5" /> Supprimer
+                  </button>
+                ) : null}
               </span>
             </li>
           ))}
@@ -173,6 +210,17 @@ export function DevisEditor({
       ) : (
         <p className="text-sm text-muted-foreground">Aucun devis pour l&apos;instant.</p>
       )}
+
+      <ConfirmDialog
+        open={!!aSupprimer}
+        titre={`Supprimer le devis ${aSupprimer?.numero ?? ""} ?`}
+        description="Il disparaît du CRM et le montant de la fiche est recalculé sur les devis restants. Le brouillon reste dans Pennylane (à archiver là-bas si besoin)."
+        confirmLabel="Supprimer"
+        danger
+        pending={pending}
+        onConfirm={supprimer}
+        onCancel={() => setASupprimer(null)}
+      />
 
       {!pennylaneConfigured ? (
         <p className="rounded-md bg-amber-50 px-3 py-2 text-xs text-amber-800">

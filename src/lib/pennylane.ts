@@ -5,6 +5,7 @@
 import { and, eq, isNotNull } from "drizzle-orm";
 import { db } from "@/db";
 import { leads, devis, factures, type Lead } from "@/db/schema";
+import { memeLignes, signatureLignes } from "@/lib/devis-lignes";
 import {
   totalHt as calcTotalHt,
   totalTtc,
@@ -633,6 +634,8 @@ export async function updateQuotePennylane(
   totalHt?: number;
   totalTtc?: number;
   lignes?: ReturnType<typeof snapshotLignes>;
+  // Pennylane a répondu OK mais ne relit pas les mêmes lignes (à signaler).
+  avertissement?: string;
   error?: string;
 }> {
   if (!process.env.PENNYLANE_API_KEY)
@@ -670,12 +673,30 @@ export async function updateQuotePennylane(
     const t = await res.text();
     return { ok: false, error: `Maj devis ${res.status} — ${t.slice(0, 200)}` };
   }
+
+  // Vérification : Pennylane a-t-il bien TOUTES les lignes envoyées ? Des options
+  // « disparaissaient » après enregistrement ; on relit et on compare, sans
+  // bloquer (le CRM garde de toute façon l'instantané des lignes envoyées).
+  let avertissement: string | undefined;
+  const relu = await getQuoteLines(quoteId);
+  if (relu.ok && relu.lines && !memeLignes(lignes, relu.lines)) {
+    const attendu = signatureLignes(lignes).length;
+    const obtenu = signatureLignes(relu.lines).length;
+    avertissement = `Pennylane relit ${obtenu} ligne${obtenu > 1 ? "s" : ""} au lieu de ${attendu} : vérifie le PDF et réenregistre si besoin.`;
+    console.error("[pennylane] lignes relues ≠ lignes envoyées", {
+      quoteId,
+      envoyees: signatureLignes(lignes),
+      relues: signatureLignes(relu.lines),
+    });
+  }
+
   const metier = sansClause(lignes);
   return {
     ok: true,
     totalHt: calcTotalHt(metier),
     totalTtc: totalTtc(metier),
     lignes: snapshotLignes(lignes),
+    avertissement,
   };
 }
 

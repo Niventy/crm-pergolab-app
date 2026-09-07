@@ -164,6 +164,8 @@ export default async function DevisPage() {
                         externalId={d.externalId}
                         leadId={d.lead.id}
                         devisId={d.id}
+                        numero={d.numero}
+                        accepte={!!d.accepteAt}
                       />
                     ) : null}
                   </td>

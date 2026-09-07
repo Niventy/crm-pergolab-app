@@ -61,6 +61,7 @@ const META: Record<
     Icon: FileText,
     cls: "bg-green-600 text-white",
   },
+  devis_supprime: { label: "Devis supprimé", Icon: FileText, cls: "bg-red-100 text-red-700" },
   suppression: { label: "Corbeille", Icon: ArrowRight, cls: "bg-red-100 text-red-700" },
   restauration: { label: "Restauré", Icon: ArrowRight, cls: "bg-green-100 text-green-700" },
   creation: { label: "Création", Icon: Plus, cls: "bg-slate-100 text-slate-700" },
