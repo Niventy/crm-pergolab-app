@@ -5,6 +5,7 @@ import { usePathname, useRouter, useSearchParams } from "next/navigation";
 import { Trash2, CheckSquare, RotateCcw, Archive } from "lucide-react";
 import { toast } from "sonner";
 import { cn } from "@/lib/utils";
+import { normaliserCodePostal } from "@/lib/departements";
 import { ConfirmDialog } from "@/components/confirm-dialog";
 import { FilterSelect, Td } from "@/components/data-table";
 import { deleteLeads, restoreLeads, purgeLeads } from "./actions";
@@ -238,7 +239,7 @@ export function ListeTable({
   // Départements présents (2 premiers chiffres du code postal) + nb de leads.
   const deptCounts = new Map<string, number>();
   for (const l of source) {
-    const cpv = l.codePostal?.trim();
+    const cpv = normaliserCodePostal(l.codePostal);
     if (cpv && cpv.length >= 2) {
       const d = cpv.slice(0, 2);
       deptCounts.set(d, (deptCounts.get(d) ?? 0) + 1);
@@ -256,7 +257,7 @@ export function ListeTable({
     resp === "all" ? true : resp === "none" ? !l.assignedTo : l.assignedTo === resp;
   const matchMois = (l: Row) => mois === "all" || ymOf(l.createdAt) === mois;
   const matchDept = (l: Row) =>
-    dept === "all" || (l.codePostal ?? "").slice(0, 2) === dept;
+    dept === "all" || (normaliserCodePostal(l.codePostal) ?? "").slice(0, 2) === dept;
   const matchEtape = (l: Row) => etape === "all" || l.stageId === etape;
 
   // Base hors cycle (pour les compteurs de cycle), puis cycle + étape.

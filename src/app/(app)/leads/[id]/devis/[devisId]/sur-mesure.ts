@@ -29,6 +29,8 @@ export const MODELES: Modele[] = [
 export const PRIX_LED = 28; // €/m de périmètre
 export const PRIX_ECLAIRAGE = 297.5; // €/unité (Lighting Control System)
 
+const r2 = (n: number) => Math.round(n * 100) / 100;
+
 export type OptionType = "surface" | "surface_forfait" | "unite";
 
 export type OptionSM = {
@@ -86,6 +88,11 @@ export const COULEURS_RAL: CouleurRal[] = [
   { code: "RAL 5003", nom: "Bleu saphir" },
 ];
 export const COULEUR_AUTRE = "AUTRE"; // saisie libre (code + nom)
+export const COULEUR_STANDARD = `${COULEURS_RAL[0].code} ${COULEURS_RAL[0].nom}`;
+
+// Éclairage LED intégré aux lames (libellé de la ligne de devis quand il est
+// facturé en supplément ; mentionné dans la description dans tous les cas).
+export const LED_LAMES_LABEL = "Éclairage LED intégré aux lames";
 
 export type ConfigSM = {
   modele: string;
@@ -97,16 +104,44 @@ export type ConfigSM = {
   elements: Element[];
   // Option couleur : libellé complet (« RAL 9010 Blanc pur ») ; vide/absent = teinte standard.
   couleur?: string | null;
-  couleurPrix?: number; // supplément HT (0 = offerte)
+  couleurPrix?: number; // supplément HT (0 = offerte) — couvre structure ET lames
+  // Couleur des LAMES si différente de la structure (pergola bicolore) ;
+  // vide/absent = lames de la même teinte que la structure.
+  couleurLames?: string | null;
+  // Éclairage LED intégré aux lames : coché = rappelé sur le devis ; le
+  // supplément HT (0 = inclus) crée une ligne de devis quand il est > 0.
+  ledLames?: boolean;
+  ledLamesPrix?: number;
 };
 
-// Couleur choisie, hors teinte standard (celle-ci ne fait pas l'objet d'une option).
-export function couleurOption(cfg: ConfigSM): string | null {
-  const c = (cfg.couleur ?? "").trim();
-  if (!c) return null;
+type Coloris = Pick<ConfigSM, "couleur" | "couleurLames">;
+const estTeinteStandard = (c: string) => {
   const std = COULEURS_RAL.find((x) => x.standard);
-  if (std && c.toUpperCase().startsWith(std.code.toUpperCase())) return null;
-  return c;
+  return !!std && c.toUpperCase().startsWith(std.code.toUpperCase());
+};
+// Teinte de la structure (standard si rien de choisi).
+export const couleurStructure = (cfg: Coloris): string =>
+  (cfg.couleur ?? "").trim() || COULEUR_STANDARD;
+// Teinte des lames UNIQUEMENT si elle diffère de la structure, sinon null.
+export function couleurLamesDe(cfg: Coloris): string | null {
+  const l = (cfg.couleurLames ?? "").trim();
+  if (!l) return null;
+  return l.toUpperCase() === couleurStructure(cfg).toUpperCase() ? null : l;
+}
+
+// Libellé de l'option couleur, ou null si tout est standard :
+// « RAL 9010 Blanc pur » (structure seule) · « structure RAL 9010 Blanc pur ·
+// lames RAL 7016 Gris anthracite » (bicolore) · « lames RAL 9010 Blanc pur »
+// (structure standard, lames différentes). Des lames d'une autre teinte sont
+// toujours une option, même en teinte standard (fabrication bicolore).
+export function couleurOption(cfg: Coloris): string | null {
+  const s = (cfg.couleur ?? "").trim();
+  const sOpt = s && !estTeinteStandard(s) ? s : null;
+  const l = couleurLamesDe(cfg);
+  if (sOpt && l) return `structure ${sOpt} · lames ${l}`;
+  if (sOpt) return sOpt;
+  if (l) return `lames ${l}`;
+  return null;
 }
 const libelleCouleur = (cfg: ConfigSM) => {
   const c = couleurOption(cfg);
@@ -114,8 +149,9 @@ const libelleCouleur = (cfg: ConfigSM) => {
   const offerte = !((cfg.couleurPrix ?? 0) > 0);
   return `Option couleur — ${c}${offerte ? " (offerte)" : ""}`;
 };
-
-const r2 = (n: number) => Math.round(n * 100) / 100;
+// Ligne « éclairage LED des lames » seulement s'il est facturé en supplément.
+const prixLedLames = (cfg: ConfigSM) =>
+  cfg.ledLames && (cfg.ledLamesPrix ?? 0) > 0 ? r2(cfg.ledLamesPrix ?? 0) : 0;
 
 // Dimensions d'une option au format métier « 3350 L × 2500 H mm » (m → mm).
 const dimsMM = (L: number, H: number) =>
@@ -148,6 +184,7 @@ export const COMPOSANTS: { id: string; label: string }[] = [
   { id: "led", label: "Bandeau LED" },
   { id: "eclairage", label: "Système d'éclairage" },
   { id: "couleur", label: "Option couleur (RAL)" },
+  { id: "led_lames", label: LED_LAMES_LABEL },
   ...OPTIONS.map((o) => ({ id: o.id, label: o.label })),
 ];
 
@@ -219,6 +256,17 @@ export function construireLignes(
       tva: 20,
     });
 
+  // Éclairage LED intégré aux lames (seulement s'il est en supplément).
+  const ledLames = prixLedLames(cfg);
+  if (ledLames > 0)
+    lignes.push({
+      designation: LED_LAMES_LABEL,
+      description: descriptions["led_lames"] || null,
+      quantite: 1,
+      prixHt: ledLames,
+      tva: 20,
+    });
+
   // Éléments (options posées, avec leur face)
   for (const el of cfg.elements) {
     const o = OPTIONS.find((x) => x.id === el.optionId);
@@ -255,7 +303,8 @@ export const TOKENS_DESCRIPTION: { token: string; libelle: string }[] = [
   { token: "{surface}", libelle: "Surface au sol en m²" },
   { token: "{perimetre}", libelle: "Périmètre en m" },
   { token: "{gamme}", libelle: "Gamme (ESSENTIA / HORIZON / SIGNATURE)" },
-  { token: "{couleur}", libelle: "Coloris (ex. RAL 9010 Blanc pur)" },
+  { token: "{couleur}", libelle: "Coloris de la structure (ex. RAL 9010 Blanc pur)" },
+  { token: "{couleur_lames}", libelle: "Coloris des lames (= structure si non précisé)" },
 ];
 
 // Remplace les tokens {…} d'un texte par les valeurs de la config.
@@ -276,9 +325,9 @@ function injecterTokens(texte: string, cfg: ConfigSM): string {
     perimetre: fr(r2((L + W) * 2)),
     gamme: m.code,
     modele: m.code,
-    couleur:
-      (cfg.couleur ?? "").trim() ||
-      `${COULEURS_RAL[0].code} ${COULEURS_RAL[0].nom}`,
+    couleur: couleurStructure(cfg),
+    couleur_structure: couleurStructure(cfg),
+    couleur_lames: couleurLamesDe(cfg) ?? couleurStructure(cfg),
   };
   return texte.replace(/\{(\w+)\}/g, (whole, key: string) => {
     const k = key.toLowerCase();
@@ -334,11 +383,17 @@ export function construireDescription(
     if (struct.length) blocs.push(`Structure : ${struct.join(" · ")}`);
   }
 
-  // Coloris de la structure (toujours rappelé : standard ou option).
-  const coul = (cfg.couleur ?? "").trim();
+  // Coloris (toujours rappelé : standard ou option ; lames si bicolore).
+  const lames = couleurLamesDe(cfg);
   blocs.push(
-    `Coloris : ${coul || `${COULEURS_RAL[0].code} ${COULEURS_RAL[0].nom}`} (thermolaquage)`,
+    `Coloris : ${
+      lames ? `structure ${couleurStructure(cfg)} · lames ${lames}` : couleurStructure(cfg)
+    } (thermolaquage)`,
   );
+  if (cfg.ledLames)
+    blocs.push(
+      `Éclairage : LED intégrées aux lames${(cfg.ledLamesPrix ?? 0) > 0 ? " (en option)" : " (inclus)"}`,
+    );
 
   // Extras (LED / éclairage) si une description est renseignée.
   const ledDesc = reel(descriptions["led"]);
@@ -411,10 +466,10 @@ export function construireLignesDevis(
   //    du prix (la couleur a sa propre ligne) mais coloris rappelé dans la description.
   const cfgBase: ConfigSM = { ...cfg, elements: [] };
   const baseTotal = r2(
-    construireLignes({ ...cfgBase, couleur: null }, descriptions).reduce(
-      (a, l) => a + l.prixHt,
-      0,
-    ),
+    construireLignes(
+      { ...cfgBase, couleur: null, couleurLames: null, ledLames: false },
+      descriptions,
+    ).reduce((a, l) => a + l.prixHt, 0),
   );
   if (baseTotal > 0) {
     const gamme = m.code.charAt(0) + m.code.slice(1).toLowerCase();
@@ -440,6 +495,22 @@ export function construireLignesDevis(
         brut && brut.toLowerCase() !== "manquant" ? injecterTokens(brut, cfg) : null,
       quantite: 1,
       prixHt: r2(cfg.couleurPrix ?? 0),
+      tva: 20,
+      config: true,
+    });
+  }
+
+  // 2 bis) Éclairage LED intégré aux lames : ligne à part s'il est en supplément
+  //    (sinon simplement rappelé dans la description du kit).
+  const ledLames = prixLedLames(cfg);
+  if (ledLames > 0) {
+    const brut = descriptions["led_lames"]?.trim();
+    lignes.push({
+      designation: LED_LAMES_LABEL,
+      description:
+        brut && brut.toLowerCase() !== "manquant" ? injecterTokens(brut, cfg) : null,
+      quantite: 1,
+      prixHt: ledLames,
       tva: 20,
       config: true,
     });
@@ -540,8 +611,19 @@ export function deduireConfigs(lignes: LigneBrute[]): ConfigSM[] {
 
     const c = COULEUR_RE.exec(d);
     if (c) {
-      courante.couleur = c[1].trim();
+      const inner = c[1].trim();
+      const bi = /^structure (.+?) · lames (.+)$/i.exec(inner);
+      if (bi) {
+        courante.couleur = bi[1].trim();
+        courante.couleurLames = bi[2].trim();
+      } else if (/^lames /i.test(inner)) courante.couleurLames = inner.replace(/^lames /i, "").trim();
+      else courante.couleur = inner;
       courante.couleurPrix = Math.max(0, l.prixHt || 0);
+      continue;
+    }
+    if (d.toLowerCase().startsWith(LED_LAMES_LABEL.toLowerCase())) {
+      courante.ledLames = true;
+      courante.ledLamesPrix = Math.max(0, l.prixHt || 0);
       continue;
     }
 

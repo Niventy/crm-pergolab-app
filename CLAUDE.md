@@ -96,9 +96,15 @@ Annulée (`annulee`, perdue — commande annulée après signature).
   d'étapes (Composer → Vérifier → Envoyer → Signé) : **1 · La pergola**
   (configurateur `sur-mesure-calc.tsx`, prix HT vendeur ; **couleur RAL** : teinte
   standard RAL 7016 ou option → ligne « Option couleur — RAL … », supplément HT libre,
-  0 = offerte, `ConfigSM.couleur` ; validée → résumé repliable), **2 · Options & produits** (catalogue interne par catégorie),
-  **3 · Lignes** (Désignation · Qté · PU HT · TVA · Total ; description / remise
-  ligne en détail replié ; ligne libre), remise commerciale globale répartie par
+  0 = offerte, `ConfigSM.couleur` ; **couleur des lames** `couleurLames` si différente
+  de la structure → bicolore = option « structure … · lames … » (même supplément) ;
+  **éclairage LED intégré aux lames** `ledLames` + `ledLamesPrix` : rappelé dans la
+  description, ligne « Éclairage LED intégré aux lames » seulement si supplément > 0 ;
+  validée → résumé repliable), **2 · Options & produits** (catalogue interne par catégorie),
+  **3 · Lignes** (Désignation · Qté · PU HT · TVA · Total ; sous chaque désignation,
+  bouton « Texte du devis / Ajouter un texte » → textarea TOUJOURS éditable, même
+  pour une ligne relue de Pennylane avec `product_id` ; remise ligne au même
+  endroit ; ligne libre), remise commerciale globale répartie par
   taux, clause suspensive auto, TVA du devis (10 % rénovation / 20 % neuf).
   Bandeau totaux collant (HT / TVA / **TTC**) + actions : Créer / Enregistrer,
   **Envoyer au client** (Gmail + PDF → « Devis envoyé »), **Faire signer** (Yousign,
@@ -138,8 +144,15 @@ sociale) + `siret` + `tva_intracom` → Pennylane `company_customer` (type mémo
 - **Meta → CRM** : `POST /api/leads/inbound` (Bearer `INBOUND_WEBHOOK_SECRET`,
   comparaison à temps constant), dédoublonnage email / téléphone (chiffres),
   entrée en `a_traiter`. Seule route API publique dans `PUBLIC_PATHS`.
+  **Code postal** : `normaliserCodePostal` (`lib/departements.ts`) à CHAQUE écriture
+  (inbound, création, modification, champs en place) — Meta/Make envoient le CP en
+  nombre, « 06000 » arrivait « 6000 » ⇒ département 60 ; 4 chiffres = zéro remis.
+  Migration 0031 rattrape les données existantes.
 - **Pennylane** (`src/lib/pennylane.ts`) : client, devis (lignes recréées à chaque
   enregistrement), factures (une ligne HT par taux, `special_mention`), PDF, statut.
+  Lignes relues : la description est TOUJOURS reprise (`descriptionTexteBrut` convertit
+  JSON enrichi / HTML en texte) ; à l'envoi, une ligne avec texte CRM part en ligne
+  libre (label + description) même si Pennylane l'avait liée à un `product_id`.
 - **Gmail / Agenda** (`email-actions.ts`, `google-calendar.ts`) : OAuth par ADV via
   `GOOGLE_SENDERS` ; le token agit sur SA boîte, `Reply-To` = ADV connecté.
 

@@ -171,17 +171,64 @@ export function vatCode(tva: number, prixHt = 1): string {
   return `FR_${String(r).padStart(2, "0")}`;
 }
 
+// Description d'une ligne relue depuis Pennylane → texte brut éditable.
+// Pennylane renvoie tantôt le texte tel quel, tantôt du texte enrichi (JSON de
+// nœuds « text ») ou du HTML : on extrait le texte pour ne jamais afficher du
+// JSON/HTML brut dans l'éditeur (cf. commit 549bff8).
+export function descriptionTexteBrut(d: unknown): string | null {
+  if (d == null) return null;
+  let s = typeof d === "string" ? d : JSON.stringify(d);
+  s = s.trim();
+  if (!s) return null;
+  if (s.startsWith("{") || s.startsWith("[")) {
+    try {
+      const j = JSON.parse(s) as unknown;
+      const out: string[] = [];
+      const walk = (n: unknown) => {
+        if (Array.isArray(n)) return n.forEach(walk);
+        if (!n || typeof n !== "object") return;
+        const o = n as Record<string, unknown>;
+        if (typeof o.text === "string") out.push(o.text);
+        if (o.type === "hardBreak" || o.type === "hard_break") out.push("\n");
+        if (Array.isArray(o.content)) {
+          walk(o.content);
+          if (o.type === "paragraph" || o.type === "listItem" || o.type === "list_item")
+            out.push("\n");
+        } else if (Array.isArray(o.children)) walk(o.children);
+      };
+      walk(j);
+      s = out.join("");
+    } catch {
+      /* pas du JSON : on garde le texte */
+    }
+  }
+  if (/<[a-z][^>]*>/i.test(s))
+    s = s
+      .replace(/<br\s*\/?>/gi, "\n")
+      .replace(/<\/(?:p|div|li|h[1-6])>/gi, "\n")
+      .replace(/<[^>]+>/g, "")
+      .replace(/&nbsp;/g, " ")
+      .replace(/&amp;/g, "&")
+      .replace(/&lt;/g, "<")
+      .replace(/&gt;/g, ">")
+      .replace(/&quot;/g, '"')
+      .replace(/&#39;/g, "'");
+  s = s.replace(/\n{3,}/g, "\n\n").trim();
+  return s || null;
+}
+
 // Une ligne du CRM → payload de CRÉATION Pennylane.
 // Issue d'une présélection => reste liée au produit (product_id).
 function toLinePayload(l: DevisLine) {
-  // Ligne-produit : Pennylane gère la description via product_id → on n'envoie
-  // pas de description (sinon on écrase le texte enrichi du produit par du brut).
-  // Ligne libre : on envoie la description saisie dans le CRM.
-  const desc = l.productId ? undefined : l.description?.trim() || undefined;
+  // Le texte saisi dans le CRM fait TOUJOURS foi : Pennylane relie chaque ligne
+  // à un produit (product_id auto-créé), mais une description CRM doit pouvoir
+  // être modifiée. Ligne avec texte → ligne libre (label + description) ; sans
+  // texte et liée à un produit → on garde le product_id (description du produit).
+  const desc = l.description?.trim() || undefined;
   // Arrondi au centime AVANT envoi : le configurateur produit des flottants
   // (1234.5600000001) que Pennylane arrondit à sa façon → écarts CRM / PDF.
   const prix = String(r2(l.prixHt ?? 0));
-  return l.productId
+  return l.productId && !desc
     ? {
         product_id: l.productId,
         quantity: l.quantite || 1,
@@ -546,9 +593,9 @@ export async function getQuoteLines(
   const lines: DevisLine[] = items.map((l) => ({
     id: l.id ? Number(l.id) : null,
     designation: String(l.label ?? ""),
-    // Description CRM uniquement pour les lignes libres (les lignes-produit ont
-    // un texte enrichi géré par Pennylane, qu'on ne veut pas afficher en brut).
-    description: l.product_id ? null : ((l.description as string) ?? null),
+    // Texte de la ligne, toujours relu (et converti en texte brut s'il revient
+    // enrichi) : c'est ce que l'ADV modifie dans le CRM.
+    description: descriptionTexteBrut(l.description),
     quantite: Number(l.quantity ?? 1) || 1,
     prixHt:
       Number(

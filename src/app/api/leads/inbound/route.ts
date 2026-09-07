@@ -4,6 +4,7 @@ import { revalidatePath } from "next/cache";
 import { db } from "@/db";
 import { leads } from "@/db/schema";
 import { stageEntree } from "@/lib/pipeline-server";
+import { normaliserCodePostal } from "@/lib/departements";
 
 export const dynamic = "force-dynamic";
 
@@ -147,7 +148,10 @@ export async function POST(req: Request) {
       typeProjet: pick(data, ["typeProjet", "type_projet", "type de projet", "type_de_projet", "projet"]),
       dimensions: pick(data, ["dimensions", "dimension", "taille"]),
       gamme: pick(data, ["gamme"]),
-      codePostal: pick(data, ["codePostal", "code_postal", "code postal", "zip", "postal_code", "cp"]),
+      // Le CP arrive parfois en nombre (« 06000 » → 6000) : on remet le zéro de tête.
+      codePostal: normaliserCodePostal(
+        pick(data, ["codePostal", "code_postal", "code postal", "zip", "postal_code", "cp"]),
+      ),
       dateSouhaiteeAppel: pick(data, [
         "dateSouhaiteeAppel",
         "date_souhaitee_appel",

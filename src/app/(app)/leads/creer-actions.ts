@@ -3,6 +3,7 @@
 import { revalidatePath } from "next/cache";
 import { db } from "@/db";
 import { leads, echanges } from "@/db/schema";
+import { normaliserCodePostal } from "@/lib/departements";
 import { currentUserId } from "@/lib/current-user";
 import { stageEntree } from "@/lib/pipeline-server";
 
@@ -57,7 +58,7 @@ export async function creerProspect(input: NouveauProspect) {
       telephone: txt(input.telephone),
       email: txt(input.email),
       entreprise: txt(input.entreprise),
-      codePostal: txt(input.codePostal),
+      codePostal: normaliserCodePostal(input.codePostal),
       ville: txt(input.ville),
       typeProjet: txt(input.typeProjet),
       dimensions: txt(input.dimensions),

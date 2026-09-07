@@ -5,6 +5,7 @@ import { revalidatePath } from "next/cache";
 import { redirect } from "next/navigation";
 import { db } from "@/db";
 import { leads, stages } from "@/db/schema";
+import { normaliserCodePostal } from "@/lib/departements";
 import { currentUserId, isAdmin } from "@/lib/current-user";
 import { autoAccepterDevisSiUnique } from "@/lib/devis-accepte";
 import { statutPourStage } from "@/lib/pipeline";
@@ -109,7 +110,7 @@ export async function updateLead(leadId: string, data: LeadEditInput) {
       typeProjet: orNull(data.typeProjet),
       adresse: orNull(data.adresse),
       ville: orNull(data.ville),
-      codePostal: orNull(data.codePostal),
+      codePostal: normaliserCodePostal(data.codePostal),
       dateInstallation: orNull(data.dateInstallation),
       dateSouhaiteeAppel: orNull(data.dateSouhaiteeAppel),
       stageId,

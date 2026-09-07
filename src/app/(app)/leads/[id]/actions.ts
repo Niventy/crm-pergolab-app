@@ -4,6 +4,7 @@ import { and, desc, eq, sql } from "drizzle-orm";
 import { revalidatePath } from "next/cache";
 import { db } from "@/db";
 import { leads, stages, notes, echanges, profiles, devis } from "@/db/schema";
+import { normaliserCodePostal } from "@/lib/departements";
 import { currentUserId } from "@/lib/current-user";
 import { notifier } from "@/lib/notifications";
 import { accepterDevis, autoAccepterDevisSiUnique } from "@/lib/devis-accepte";
@@ -624,7 +625,10 @@ export async function saveLeadChamps(
   const set: Record<string, unknown> = { updatedAt: new Date(), updatedBy: userId };
   const changed: string[] = [];
   for (const k of keys) {
-    const val = (data[k] ?? "").toString().trim() || null;
+    const val =
+      k === "codePostal"
+        ? normaliserCodePostal(data[k])
+        : (data[k] ?? "").toString().trim() || null;
     set[k] = val;
     const before = (cur[k] ?? null) as string | null;
     if ((before ?? null) !== val) changed.push(CHAMPS_CLIENT[k]);

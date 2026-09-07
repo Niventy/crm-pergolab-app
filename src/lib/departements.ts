@@ -24,9 +24,19 @@ export const DEPT_NOMS: Record<string, string> = {
   "973": "Guyane", "974": "La Réunion", "976": "Mayotte",
 };
 
+// Normalise un code postal saisi ou reçu : « 6000 » (Meta / Make envoient parfois
+// le CP en NOMBRE, le zéro de tête saute) → « 06000 ». Un CP français fait
+// toujours 5 chiffres : 4 chiffres = zéro perdu. Vide → null.
+export function normaliserCodePostal(v: string | number | null | undefined): string | null {
+  const t = (v ?? "").toString().trim();
+  if (!t) return null;
+  if (/^\d{4}$/.test(t)) return `0${t}`;
+  return t;
+}
+
 // Code postal → { code, nom } du département (Corse et DOM gérés), ou null.
 export function departementDe(codePostal: string | null | undefined): { code: string; nom: string } | null {
-  const cp = (codePostal ?? "").replace(/\D/g, "");
+  const cp = (normaliserCodePostal(codePostal) ?? "").replace(/\D/g, "");
   if (cp.length < 2) return null;
   let code = cp.slice(0, 2);
   if (cp.startsWith("97") || cp.startsWith("98")) code = cp.slice(0, 3);

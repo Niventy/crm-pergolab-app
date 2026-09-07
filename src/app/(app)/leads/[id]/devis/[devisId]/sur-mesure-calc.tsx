@@ -9,10 +9,12 @@ import {
   FACES,
   COULEURS_RAL,
   COULEUR_AUTRE,
+  LED_LAMES_LABEL,
   PRIX_LED,
   PRIX_ECLAIRAGE,
   construireLignes,
   construireLignesDevis,
+  couleurOption,
   prixOption,
   type ConfigSM,
   type Element,
@@ -78,17 +80,35 @@ export function SurMesureCalc({
     couleurInit && !ralInit ? couleurInit : "",
   );
   const [couleurPrix, setCouleurPrix] = useState(initial?.couleurPrix ?? 0);
-  const couleur: string | null =
-    couleurSel === COULEUR_AUTRE
-      ? couleurLibre.trim() || null
-      : couleurSel
+  const libelleRal = (sel: string, libre: string): string | null =>
+    sel === COULEUR_AUTRE
+      ? libre.trim() || null
+      : sel
         ? (() => {
-            const c = COULEURS_RAL.find((x) => x.code === couleurSel);
+            const c = COULEURS_RAL.find((x) => x.code === sel);
             return c ? `${c.code} ${c.nom}` : null;
           })()
         : null;
-  const couleurStandard =
-    !couleurSel || COULEURS_RAL.find((x) => x.code === couleurSel)?.standard;
+  const couleur = libelleRal(couleurSel, couleurLibre);
+
+  // Lames : par défaut de la même teinte que la structure ; sinon pergola
+  // bicolore (toujours une option, couverte par le même supplément).
+  const lamesInit = (initial?.couleurLames ?? "").trim();
+  const ralLamesInit = COULEURS_RAL.find((c) =>
+    lamesInit.toUpperCase().startsWith(c.code.toUpperCase()),
+  );
+  const [lamesSel, setLamesSel] = useState<string>(
+    !lamesInit ? "" : ralLamesInit ? ralLamesInit.code : COULEUR_AUTRE,
+  );
+  const [lamesLibre, setLamesLibre] = useState(lamesInit && !ralLamesInit ? lamesInit : "");
+  const couleurLames = libelleRal(lamesSel, lamesLibre);
+  const optionCouleur = couleurOption({ couleur, couleurLames });
+  const couleurStandard = !optionCouleur;
+
+  // Éclairage LED intégré aux lames : mentionné sur le devis ; ligne à part si
+  // facturé (supplément HT > 0), sinon « inclus ».
+  const [ledLames, setLedLames] = useState(!!initial?.ledLames);
+  const [ledLamesPrix, setLedLamesPrix] = useState(initial?.ledLamesPrix ?? 0);
 
   // Clés initiales = index ; les éléments ajoutés ensuite démarrent au-dessus
   // (1000+) pour éviter toute collision de clé.
@@ -146,8 +166,14 @@ export function SurMesureCalc({
       elements,
       couleur,
       couleurPrix: couleurStandard ? 0 : couleurPrix,
+      couleurLames,
+      ledLames,
+      ledLamesPrix: ledLames ? ledLamesPrix : 0,
     }),
-    [modele, toitL, toitW, toitQte, poteaux, eclairage, elements, couleur, couleurPrix, couleurStandard],
+    [
+      modele, toitL, toitW, toitQte, poteaux, eclairage, elements,
+      couleur, couleurPrix, couleurStandard, couleurLames, ledLames, ledLamesPrix,
+    ],
   );
   const apercu = useMemo(
     () => construireLignes(cfg, descriptions),
@@ -263,13 +289,73 @@ export function SurMesureCalc({
           {!couleurStandard ? (
             <Champ label="Supplément couleur HT (€)" value={couleurPrix} onChange={setCouleurPrix} />
           ) : null}
+
+          {/* Couleur des lames (bicolore) */}
+          <label className="col-span-2 block">
+            <span className="text-[0.65rem] uppercase tracking-wide text-muted-foreground">
+              Couleur des lames
+            </span>
+            <select
+              value={lamesSel}
+              onChange={(e) => setLamesSel(e.target.value)}
+              className="mt-0.5 h-9 w-full rounded-md border border-border bg-white px-1 text-sm outline-none focus:border-primary"
+            >
+              <option value="">Identique à la structure</option>
+              {COULEURS_RAL.map((c) => (
+                <option key={c.code} value={c.code}>
+                  {c.code} — {c.nom}
+                </option>
+              ))}
+              <option value={COULEUR_AUTRE}>Autre RAL…</option>
+            </select>
+          </label>
+          {lamesSel === COULEUR_AUTRE ? (
+            <label className="col-span-2 block">
+              <span className="text-[0.65rem] uppercase tracking-wide text-muted-foreground">
+                Code + nom des lames
+              </span>
+              <input
+                type="text"
+                value={lamesLibre}
+                onChange={(e) => setLamesLibre(e.target.value)}
+                placeholder="RAL …"
+                className="mt-0.5 h-9 w-full rounded-md border border-border bg-white px-2 text-sm outline-none focus:border-primary"
+              />
+            </label>
+          ) : (
+            <div className="hidden sm:col-span-2 sm:block" />
+          )}
+          <div className="hidden sm:block" />
         </div>
         {!couleurStandard ? (
           <p className="mt-1.5 text-xs text-muted-foreground">
-            Ligne « Option couleur — {couleur ?? "…"} » ajoutée au devis
+            Ligne « Option couleur — {optionCouleur ?? "…"} » ajoutée au devis
             {couleurPrix > 0 ? ` : ${eur(couleurPrix)} HT` : " : offerte (0 €)"}.
           </p>
         ) : null}
+
+        {/* Éclairage LED intégré aux lames */}
+        <div className="mt-3 grid grid-cols-2 gap-2 border-t border-border pt-3 sm:grid-cols-5">
+          <label className="col-span-2 flex h-9 items-center gap-2 text-sm text-foreground sm:col-span-4">
+            <input
+              type="checkbox"
+              checked={ledLames}
+              onChange={(e) => setLedLames(e.target.checked)}
+              className="size-4 accent-primary"
+            />
+            {LED_LAMES_LABEL}
+            <span className="text-xs text-muted-foreground">
+              {ledLames
+                ? ledLamesPrix > 0
+                  ? `— ligne « ${LED_LAMES_LABEL} » à ${eur(ledLamesPrix)} HT`
+                  : "— inclus (rappelé dans la description, pas de ligne)"
+                : "— non mentionné sur le devis"}
+            </span>
+          </label>
+          {ledLames ? (
+            <Champ label="Supplément LED lames HT (€)" value={ledLamesPrix} onChange={setLedLamesPrix} />
+          ) : null}
+        </div>
       </div>
 
       {/* Éléments / options avec face */}

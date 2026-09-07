@@ -5,7 +5,7 @@ import Link from "next/link";
 import { useRouter } from "next/navigation";
 import {
   Plus, Trash2, FileText, Download, ExternalLink, RefreshCw, Calculator, PenLine,
-  Mail, Send, X, Copy, Lock, AlertTriangle, Check, ChevronDown, Pencil, Package,
+  Mail, Send, X, Copy, Lock, AlertTriangle, Check, ChevronDown, Pencil, Package, AlignLeft,
 } from "lucide-react";
 import { toast } from "sonner";
 import { formatEurosCents } from "@/lib/format";
@@ -21,7 +21,14 @@ import { cn } from "@/lib/utils";
 import { ouvrirDans } from "@/lib/ouvrir-dans";
 import { ChampsEditables } from "../../champs-editables";
 import { SurMesureCalc } from "./sur-mesure-calc";
-import { MODELES, FACES, construireLigneUnique, deduireConfigs, type ConfigSM } from "./sur-mesure";
+import {
+  MODELES,
+  FACES,
+  LED_LAMES_LABEL,
+  construireLigneUnique,
+  deduireConfigs,
+  type ConfigSM,
+} from "./sur-mesure";
 import type { ProduitCatalogueDTO } from "@/app/(app)/reglages/actions";
 import { sendDevisParGmail } from "../../email-actions";
 import {
@@ -79,6 +86,10 @@ const GAMME_RE = new RegExp(
 const FACE_RE = new RegExp(
   ` — (${FACES.map((f) => f.replace(/[.*+?^${}()|[\]\\]/g, "\\$&")).join("|")}) \\(`,
 );
+// Lignes « option couleur » et « LED des lames » : produites par le configurateur
+// elles aussi (sinon elles doublonnaient après rechargement + modification).
+const COULEUR_LIGNE_RE = /^Option couleur — /i;
+const LED_LAMES_RE = new RegExp(`^${LED_LAMES_LABEL.replace(/[.*+?^${}()|[\]\\]/g, "\\$&")}`, "i");
 const taguerConfig = (ls: Line[]): Line[] => {
   let kitVu = false;
   return ls.map((l) => {
@@ -90,7 +101,8 @@ const taguerConfig = (ls: Line[]): Line[] => {
       }
       return { ...l, config: false };
     }
-    if (FACE_RE.test(d)) return { ...l, config: true };
+    if (FACE_RE.test(d) || COULEUR_LIGNE_RE.test(d) || LED_LAMES_RE.test(d))
+      return { ...l, config: true };
     return l;
   });
 };
@@ -480,7 +492,9 @@ export function DevisForm({
       titre: kit?.designation ?? `Pergola ${smConfig.modele}`,
       detail: `${smConfig.toitL} × ${smConfig.toitW} m · ${smConfig.poteaux} poteau${smConfig.poteaux > 1 ? "x" : ""}${
         smConfig.eclairage ? ` · ${smConfig.eclairage} spot${smConfig.eclairage > 1 ? "s" : ""}` : ""
-      }${smConfig.couleur ? ` · ${smConfig.couleur}` : ""}${nbOptions ? ` · ${nbOptions} option${nbOptions > 1 ? "s" : ""}` : ""}`,
+      }${smConfig.couleur ? ` · ${smConfig.couleur}` : ""}${
+        smConfig.couleurLames ? ` · lames ${smConfig.couleurLames}` : ""
+      }${smConfig.ledLames ? " · LED lames" : ""}${nbOptions ? ` · ${nbOptions} option${nbOptions > 1 ? "s" : ""}` : ""}`,
       total: totalConfig,
     };
   })();
@@ -1023,6 +1037,8 @@ function LigneRow({
 }) {
   const total = netLigne(l);
   const aDetails = !!l.description || (l.remisePct ?? 0) > 0;
+  const lignesTexte = (l.description ?? "").split("\n");
+  const apercuTexte = lignesTexte.map((t) => t.trim()).find(Boolean) ?? null;
   return (
     <>
       <tr className="align-middle">
@@ -1034,6 +1050,28 @@ function LigneRow({
             placeholder="Désignation…"
             className={cn(inputCls, "w-full", l.config && "font-medium")}
           />
+          {/* Texte de la ligne (visible sur le PDF) : accès direct, pas caché dans un chevron. */}
+          <button
+            type="button"
+            onClick={onToggle}
+            className={cn(
+              "mt-1 flex max-w-full items-center gap-1 text-left text-xs hover:underline",
+              l.description ? "text-muted-foreground" : "text-primary",
+            )}
+            title={readOnly ? "Voir le texte du devis" : "Modifier le texte affiché sous la désignation sur le devis"}
+          >
+            <AlignLeft className="size-3 shrink-0" />
+            {l.description ? (
+              <span className="truncate">
+                {ouvert ? "Texte du devis" : apercuTexte}
+                {!ouvert && lignesTexte.length > 1 ? (
+                  <span className="opacity-70"> · {lignesTexte.length} lignes</span>
+                ) : null}
+              </span>
+            ) : (
+              <span>{readOnly ? "Sans texte" : ouvert ? "Texte du devis" : "Ajouter un texte"}</span>
+            )}
+          </button>
         </td>
         <td className="py-1.5 pr-2">
           <NumInput value={l.quantite} min={1} disabled={readOnly} onChange={(v) => onChange({ quantite: v ?? 1 })} className={cn(inputCls, "w-full text-right")} ariaLabel="Quantité" />
@@ -1088,18 +1126,17 @@ function LigneRow({
         <tr>
           <td colSpan={6} className="pb-2">
             <div className="grid grid-cols-1 gap-2 rounded-md bg-muted/40 p-2 sm:grid-cols-[1fr_9rem]">
-              {l.productId ? (
-                <p className="px-1 text-xs text-muted-foreground">Description gérée par le produit Pennylane.</p>
-              ) : (
+              <label className="text-xs text-muted-foreground">
+                Texte affiché sur le devis (sous la désignation)
                 <textarea
                   value={l.description ?? ""}
                   disabled={readOnly}
                   onChange={(e) => onChange({ description: e.target.value })}
                   placeholder="Description visible sur le devis…"
-                  rows={3}
-                  className="w-full resize-y rounded-md border border-border bg-white px-2 py-1.5 text-xs outline-none focus:border-primary disabled:bg-muted/40"
+                  rows={Math.min(14, Math.max(3, lignesTexte.length + 1))}
+                  className="mt-0.5 w-full resize-y rounded-md border border-border bg-white px-2 py-1.5 text-xs text-foreground outline-none focus:border-primary disabled:bg-muted/40"
                 />
-              )}
+              </label>
               <label className="text-xs text-muted-foreground">
                 Remise sur la ligne (%)
                 <NumInput

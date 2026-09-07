@@ -13,6 +13,7 @@ import { createClient } from "@/lib/supabase/server";
 import { isAdmin } from "@/lib/current-user";
 import { formatEuros, ymParis, ymdParis } from "@/lib/format";
 import { STAGE } from "@/lib/pipeline";
+import { normaliserCodePostal } from "@/lib/departements";
 import { DEPT_TO_REGION } from "./france-geo";
 
 export const MOIS = [
@@ -250,7 +251,7 @@ export async function getStats(sp: StatsParams) {
   const regionCounts: Record<string, number> = {};
   let horsMetropole = 0;
   for (const l of leads) {
-    const cp = (l.codePostal ?? "").replace(/\D/g, "");
+    const cp = (normaliserCodePostal(l.codePostal) ?? "").replace(/\D/g, "");
     if (cp.length < 2) {
       horsMetropole++;
       continue;
