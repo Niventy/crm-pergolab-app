@@ -20,8 +20,6 @@ export type Modele = {
   // Pergola bioclimatique : lames orientables (LED périmétrique, spots, couleur
   // et éclairage des lames). Faux pour un carport (toit plein).
   lames: boolean;
-  // Pas de grille tarifaire : le prix HT se saisit à la main sur la ligne du devis.
-  saisiePrix?: boolean;
 };
 
 // Seuls le toit et les poteaux changent selon le modèle (le reste est identique).
@@ -30,9 +28,9 @@ export const MODELES: Modele[] = [
   { code: "ESSENTIA", libelle: "Pergola Essentia", prixToit: 521.5, prixPoteau: 262.5, lames: true },
   { code: "HORIZON", libelle: "Pergola Horizon", prixToit: 588, prixPoteau: 325.5, lames: true },
   { code: "SIGNATURE", libelle: "Pergola Signature", prixToit: 707, prixPoteau: 392, lames: true },
-  // Carport : mention sur le devis (libellé + dimensions + description type),
-  // prix HT saisi à la main sur la ligne (pas de grille dans le classeur).
-  { code: "CARPORT", libelle: "Carport", prixToit: 0, prixPoteau: 0, lames: false, saisiePrix: true },
+  // Carport : toit plein 519 € HT/m² (tarif vendeur), poteaux inclus, ni LED ni
+  // spots ni lames ; description type CARPORT avec les dimensions.
+  { code: "CARPORT", libelle: "Carport", prixToit: 519, prixPoteau: 0, lames: false },
 ];
 export const modeleDe = (code: string): Modele =>
   MODELES.find((m) => m.code === code) ?? MODELES[0];
@@ -444,7 +442,7 @@ export function construireLigneUnique(
   const detail = construireLignes(cfg, descriptions);
   const total = r2(detail.reduce((a, l) => a + l.prixHt, 0));
   const m = MODELES.find((x) => x.code === cfg.modele) ?? MODELES[0];
-  if (total <= 0 && !m.saisiePrix) return [];
+  if (total <= 0) return [];
 
   const L = cfg.toitL || 0;
   const W = cfg.toitW || 0;
@@ -484,8 +482,7 @@ export function construireLignesDevis(
       descriptions,
     ).reduce((a, l) => a + l.prixHt, 0),
   );
-  // Carport (prix à saisir) : la ligne existe même à 0 € pour qu'on y mette le prix.
-  if (baseTotal > 0 || m.saisiePrix) {
+  if (baseTotal > 0) {
     const dims = L > 0 && W > 0 ? ` ${fr(L)}x${fr(W)} (longueur x largeur)` : "";
     lignes.push({
       designation: `${m.libelle}${dims}${suffixePose(cfg)}`,

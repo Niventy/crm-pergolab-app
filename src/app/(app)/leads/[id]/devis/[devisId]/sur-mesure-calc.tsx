@@ -257,8 +257,8 @@ export function SurMesureCalc({
             </>
           ) : (
             <>
-              {modeleSel.libelle} : pas de grille tarifaire — le prix HT se saisit sur la ligne
-              du devis après validation · 2 poteaux = adossé, 4 = autoportant
+              {modeleSel.libelle} : toit {modeleSel.prixToit} € HT/m², poteaux inclus · 2 poteaux =
+              adossé, 4 = autoportant · ni LED ni spots
             </>
           )}
         </p>
@@ -569,7 +569,7 @@ export function SurMesureCalc({
         <div className="text-sm">
           <span className="text-muted-foreground">Sous-total {modeleSel.lames ? "pergola" : modeleSel.libelle.toLowerCase()} : </span>
           <span className="text-lg font-bold tabular-nums text-foreground">
-            {modeleSel.saisiePrix && total <= 0 ? "prix à saisir" : eur(total)}
+            {eur(total)}
           </span>
           <span className="ml-2 text-xs text-muted-foreground">
             → {lignesDevis.length} ligne{lignesDevis.length > 1 ? "s" : ""} de devis

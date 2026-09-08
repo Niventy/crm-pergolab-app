@@ -95,8 +95,8 @@ Annulée (`annulee`, perdue — commande annulée après signature).
 - **Devis** (`/devis`, `/leads/[id]/devis/[devisId]`) — éditeur en 3 temps + fil
   d'étapes (Composer → Vérifier → Envoyer → Signé) : **1 · La pergola**
   (configurateur `sur-mesure-calc.tsx`, prix HT vendeur ; gammes `MODELES` = ESSENTIA /
-  HORIZON / SIGNATURE (`lames: true`) + **CARPORT** (`lames: false`, `saisiePrix` : ligne
-  « Carport LxW » émise à 0 € et prix HT saisi à la main, pas de LED / spots / lames) ;
+  HORIZON / SIGNATURE (`lames: true`) + **CARPORT** (`lames: false` : toit 519 € HT/m²,
+  poteaux inclus, ligne « Carport LxW », pas de LED / spots / lames) ;
   **couleur RAL** : teinte
   standard RAL 7016 ou option → ligne « Option couleur — RAL … », supplément HT libre,
   0 = offerte, `ConfigSM.couleur` ; **couleur des lames** `couleurLames` si différente
