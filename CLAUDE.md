@@ -94,7 +94,10 @@ Annulée (`annulee`, perdue — commande annulée après signature).
   manuel, mode de paiement. `/modifier` = « Tout modifier », sans l'étape pour un client.
 - **Devis** (`/devis`, `/leads/[id]/devis/[devisId]`) — éditeur en 3 temps + fil
   d'étapes (Composer → Vérifier → Envoyer → Signé) : **1 · La pergola**
-  (configurateur `sur-mesure-calc.tsx`, prix HT vendeur ; **couleur RAL** : teinte
+  (configurateur `sur-mesure-calc.tsx`, prix HT vendeur ; gammes `MODELES` = ESSENTIA /
+  HORIZON / SIGNATURE (`lames: true`) + **CARPORT** (`lames: false`, `saisiePrix` : ligne
+  « Carport LxW » émise à 0 € et prix HT saisi à la main, pas de LED / spots / lames) ;
+  **couleur RAL** : teinte
   standard RAL 7016 ou option → ligne « Option couleur — RAL … », supplément HT libre,
   0 = offerte, `ConfigSM.couleur` ; **couleur des lames** `couleurLames` si différente
   de la structure → bicolore = option « structure … · lames … » (même supplément) ;
@@ -117,7 +120,9 @@ Annulée (`annulee`, perdue — commande annulée après signature).
   devis, sommeil, chantiers) + tâches + agenda Google.
 - **Dashboard / Commercial / Comptabilité (admin)** : `dashboard/data.ts › getStats`,
   périodes = toutes années/mois présents (`?mois=YYYY`, `YYYY-MM`, défaut année en cours).
-- **Commentaires**, **Réglages** (admin : descriptions sur-mesure, catalogue produits).
+- **Commentaires**, **Descriptions du devis** (`/reglages/sur-mesure`, OUVERT À TOUS :
+  texte type par gamme / extra / option, injecté sur les lignes des nouveaux devis, lien
+  « Descriptions types ↗ » depuis l'éditeur), **Réglages** (admin : + catalogue produits).
 - **Nav** : à plat (Kanban · Liste · Clients · Devis · Planning · Dashboard · Plus),
   menu mobile ; recherche globale flottante en bas (⌘K) → pages avec `pb-24/28`.
 

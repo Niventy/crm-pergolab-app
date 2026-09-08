@@ -1,4 +1,3 @@
-import { notFound } from "next/navigation";
 import { FileText } from "lucide-react";
 import { isAdmin } from "@/lib/current-user";
 import {
@@ -11,24 +10,25 @@ import { DescriptionsSurMesure } from "./mapping-client";
 
 export const dynamic = "force-dynamic";
 
+// Page ouverte à TOUTE l'équipe (pas seulement les admins) : ce sont les textes
+// commerciaux du devis, que l'ADV doit pouvoir ajuster elle-même.
 export default async function ReglagesSurMesurePage() {
-  if (!(await isAdmin())) notFound();
-
-  const descriptions = await getDescriptionsSurMesure();
+  const [descriptions, admin] = await Promise.all([getDescriptionsSurMesure(), isAdmin()]);
 
   return (
-    <main className="mx-auto w-full max-w-3xl flex-1 space-y-5 px-6 py-6 pb-28">
-      <ReglagesNav />
+    <main className="mx-auto w-full max-w-4xl flex-1 space-y-5 px-6 py-6 pb-28">
+      <ReglagesNav admin={admin} />
       <div className="flex items-center gap-3">
         <span className="flex size-10 items-center justify-center rounded-xl bg-brand text-brand-foreground">
           <FileText className="size-5" />
         </span>
         <div>
-          <h1 className="text-display text-2xl">Descriptions sur-mesure</h1>
+          <h1 className="text-display text-2xl">Descriptions du devis</h1>
           <p className="text-sm text-muted-foreground">
-            Rédige la description pré-stockée de chaque composant. Elle s&apos;ajoute
-            automatiquement sur la ligne correspondante quand on configure une pergola
-            sur-mesure, et s&apos;affiche dans le CRM comme sur le devis.
+            Le texte type de chaque gamme et de chaque option. Il est injecté sur la
+            ligne correspondante à chaque nouveau devis (et reste modifiable ligne par
+            ligne dans l&apos;éditeur, via « Texte du devis »). Les devis déjà créés ne
+            changent pas.
           </p>
         </div>
       </div>

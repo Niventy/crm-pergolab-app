@@ -15,6 +15,7 @@ import {
   construireLignes,
   construireLignesDevis,
   couleurOption,
+  modeleDe,
   prixOption,
   type ConfigSM,
   type Element,
@@ -61,6 +62,7 @@ export function SurMesureCalc({
   // Une pergola a TOUJOURS un toit (qté 1). Poteaux : 4 par défaut (autoportée),
   // mais minimum 2 car les pergolas adossées à l'existant n'en ont que 2.
   const [modele, setModele] = useState(initial?.modele ?? MODELES[0].code);
+  const modeleSel = modeleDe(modele);
   const [toitL, setToitL] = useState(initial?.toitL ?? 0);
   const [toitW, setToitW] = useState(initial?.toitW ?? 0);
   const [toitQte, setToitQte] = useState(initial?.toitQte ?? 1);
@@ -239,15 +241,26 @@ export function SurMesureCalc({
           />
           <Champ label="Nb de toits" value={toitQte} onChange={setToitQte} min={1} />
           <Champ label="Nb de poteaux" value={poteaux} onChange={setPoteaux} min={1} />
-          <Champ label="Spots d'éclairage" value={eclairage} onChange={setEclairage} />
+          {modeleSel.lames ? (
+            <Champ label="Spots d'éclairage" value={eclairage} onChange={setEclairage} />
+          ) : null}
         </div>
         <p className="mt-2 text-xs text-muted-foreground">
           {toitL > 0 && toitW > 0
             ? `${(toitL * toitW).toFixed(2).replace(".", ",")} m² · `
             : ""}
-          Bandeau LED inclus automatiquement sur le périmètre ({perimetre} m ×{" "}
-          {PRIX_LED} € = {eur(perimetre * PRIX_LED)}) · 2 poteaux = autoportée · spot{" "}
-          {PRIX_ECLAIRAGE} €/u
+          {modeleSel.lames ? (
+            <>
+              Bandeau LED inclus automatiquement sur le périmètre ({perimetre} m ×{" "}
+              {PRIX_LED} € = {eur(perimetre * PRIX_LED)}) · 2 poteaux = autoportée · spot{" "}
+              {PRIX_ECLAIRAGE} €/u
+            </>
+          ) : (
+            <>
+              {modeleSel.libelle} : pas de grille tarifaire — le prix HT se saisit sur la ligne
+              du devis après validation · 2 poteaux = adossé, 4 = autoportant
+            </>
+          )}
         </p>
 
         {/* Coloris (option couleur RAL) */}
@@ -290,7 +303,8 @@ export function SurMesureCalc({
             <Champ label="Supplément couleur HT (€)" value={couleurPrix} onChange={setCouleurPrix} />
           ) : null}
 
-          {/* Couleur des lames (bicolore) */}
+          {/* Couleur des lames (bicolore) — pergolas bioclimatiques uniquement */}
+          {modeleSel.lames ? (
           <label className="col-span-2 block">
             <span className="text-[0.65rem] uppercase tracking-wide text-muted-foreground">
               Couleur des lames
@@ -309,7 +323,8 @@ export function SurMesureCalc({
               <option value={COULEUR_AUTRE}>Autre RAL…</option>
             </select>
           </label>
-          {lamesSel === COULEUR_AUTRE ? (
+          ) : null}
+          {modeleSel.lames && lamesSel === COULEUR_AUTRE ? (
             <label className="col-span-2 block">
               <span className="text-[0.65rem] uppercase tracking-wide text-muted-foreground">
                 Code + nom des lames
@@ -334,7 +349,8 @@ export function SurMesureCalc({
           </p>
         ) : null}
 
-        {/* Éclairage LED intégré aux lames */}
+        {/* Éclairage LED intégré aux lames — pergolas bioclimatiques uniquement */}
+        {modeleSel.lames ? (
         <div className="mt-3 grid grid-cols-2 gap-2 border-t border-border pt-3 sm:grid-cols-5">
           <label className="col-span-2 flex h-9 items-center gap-2 text-sm text-foreground sm:col-span-4">
             <input
@@ -356,6 +372,7 @@ export function SurMesureCalc({
             <Champ label="Supplément LED lames HT (€)" value={ledLamesPrix} onChange={setLedLamesPrix} />
           ) : null}
         </div>
+        ) : null}
       </div>
 
       {/* Éléments / options avec face */}
@@ -550,9 +567,9 @@ export function SurMesureCalc({
       {/* Total + action */}
       <div className="flex flex-wrap items-center justify-between gap-3">
         <div className="text-sm">
-          <span className="text-muted-foreground">Sous-total pergola : </span>
+          <span className="text-muted-foreground">Sous-total {modeleSel.lames ? "pergola" : modeleSel.libelle.toLowerCase()} : </span>
           <span className="text-lg font-bold tabular-nums text-foreground">
-            {eur(total)}
+            {modeleSel.saisiePrix && total <= 0 ? "prix à saisir" : eur(total)}
           </span>
           <span className="ml-2 text-xs text-muted-foreground">
             → {lignesDevis.length} ligne{lignesDevis.length > 1 ? "s" : ""} de devis

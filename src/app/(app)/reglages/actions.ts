@@ -19,14 +19,12 @@ export async function getDescriptionsSurMesure(): Promise<
   return map;
 }
 
-// Définit (ou efface) la description d'un composant. Réservé aux admins.
+// Définit (ou efface) la description d'un composant. Ouvert à toute l'équipe
+// (textes commerciaux du devis) ; seul le catalogue produits reste admin.
 export async function setDescriptionSurMesure(
   composant: string,
   description: string | null,
 ) {
-  if (!(await isAdmin()))
-    return { ok: false as const, error: "Réservé aux admins." };
-
   const desc = description?.trim() || null;
   await db
     .insert(surMesureMapping)

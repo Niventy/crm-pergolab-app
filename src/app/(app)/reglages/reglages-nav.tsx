@@ -5,15 +5,15 @@ import { usePathname } from "next/navigation";
 import { cn } from "@/lib/utils";
 
 const SOUS_ONGLETS = [
-  { href: "/reglages/sur-mesure", label: "Descriptions sur-mesure" },
-  { href: "/reglages/produits", label: "Produits & options" },
+  { href: "/reglages/sur-mesure", label: "Descriptions du devis", admin: false },
+  { href: "/reglages/produits", label: "Produits & options", admin: true },
 ];
 
-export function ReglagesNav() {
+export function ReglagesNav({ admin = false }: { admin?: boolean }) {
   const pathname = usePathname();
   return (
     <nav className="flex flex-wrap gap-1 border-b border-border">
-      {SOUS_ONGLETS.map((o) => {
+      {SOUS_ONGLETS.filter((o) => admin || !o.admin).map((o) => {
         const active = pathname.startsWith(o.href);
         return (
           <Link

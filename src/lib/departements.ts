@@ -28,8 +28,11 @@ export const DEPT_NOMS: Record<string, string> = {
 // le CP en NOMBRE, le zéro de tête saute) → « 06000 ». Un CP français fait
 // toujours 5 chiffres : 4 chiffres = zéro perdu. Vide → null.
 export function normaliserCodePostal(v: string | number | null | undefined): string | null {
-  const t = (v ?? "").toString().trim();
+  let t = (v ?? "").toString().trim();
   if (!t) return null;
+  // Nombre décimal (« 11160.0 » : Make formate parfois le CP en flottant) → entier.
+  const dec = /^(\d{4,5})[.,]0+$/.exec(t);
+  if (dec) t = dec[1];
   if (/^\d{4}$/.test(t)) return `0${t}`;
   return t;
 }

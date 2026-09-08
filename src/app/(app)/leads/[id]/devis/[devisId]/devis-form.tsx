@@ -29,6 +29,7 @@ import {
   LED_LAMES_LABEL,
   construireLigneUnique,
   deduireConfigs,
+  modeleDe,
   type ConfigSM,
 } from "./sur-mesure";
 import type { ProduitCatalogueDTO } from "@/app/(app)/reglages/actions";
@@ -83,7 +84,7 @@ const estRemise = (l: LineIn) =>
 // Reconnaît une ligne issue du CONFIGURATEUR à partir de son libellé (Pennylane
 // ne renvoie pas le drapeau `config`).
 const GAMME_RE = new RegExp(
-  `^Pergola\\s+(${MODELES.map((m) => m.code.charAt(0) + m.code.slice(1).toLowerCase()).join("|")})`,
+  `^(${MODELES.map((m) => m.libelle.replace(/[.*+?^${}()|[\]\\]/g, "\\$&")).join("|")})\\b`,
   "i",
 );
 const FACE_RE = new RegExp(
@@ -127,7 +128,7 @@ function decomposer(raw: LineIn[]) {
 }
 
 function ordonner(ls: Line[]): Line[] {
-  const estPergola = (l: Line) => /^Pergola\b/i.test(l.designation.trim());
+  const estPergola = (l: Line) => /^(Pergola|Carport)\b/i.test(l.designation.trim());
   return [...ls].sort((a, b) =>
     estPergola(a) === estPergola(b) ? 0 : estPergola(a) ? -1 : 1,
   );
@@ -556,7 +557,7 @@ export function DevisForm({
     const nbOptions = lines.filter((l) => l.config && !GAMME_RE.test(l.designation)).length;
     const totalConfig = lines.filter((l) => l.config).reduce((a, l) => a + netLigne(l), 0);
     return {
-      titre: kit?.designation ?? `Pergola ${smConfig.modele}`,
+      titre: kit?.designation ?? modeleDe(smConfig.modele).libelle,
       detail: `${smConfig.toitL} × ${smConfig.toitW} m · ${smConfig.poteaux} poteau${smConfig.poteaux > 1 ? "x" : ""}${
         smConfig.eclairage ? ` · ${smConfig.eclairage} spot${smConfig.eclairage > 1 ? "s" : ""}` : ""
       }${smConfig.couleur ? ` · ${smConfig.couleur}` : ""}${
@@ -778,6 +779,16 @@ export function DevisForm({
               <h2 className="text-eyebrow flex items-center gap-1.5 text-primary">
                 <FileText className="size-4" /> {readOnly ? "Lignes du devis" : "3 · Lignes du devis"}
               </h2>
+              {!readOnly ? (
+                <Link
+                  href="/reglages/sur-mesure"
+                  target="_blank"
+                  className="text-xs text-muted-foreground hover:text-primary hover:underline"
+                  title="Textes types injectés sur chaque ligne (gammes, options…) — modifiables pour tous les prochains devis"
+                >
+                  Descriptions types ↗
+                </Link>
+              ) : null}
               <label className="ml-auto flex items-center gap-1.5 text-xs text-muted-foreground">
                 TVA
                 <select

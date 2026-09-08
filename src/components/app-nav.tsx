@@ -30,9 +30,8 @@ function buildNav(admin: boolean): { principaux: Item[]; plus: Item[] } {
       { href: "/commentaires", label: "Commentaires" },
       { href: "/commercial", label: "Commercial" },
       ...(admin ? [{ href: "/comptabilite", label: "Comptabilité" }] : []),
-      ...(admin
-        ? [{ href: "/reglages/sur-mesure", label: "Réglages", match: "/reglages" }]
-        : []),
+      // Descriptions du devis : pour toute l'équipe ; l'admin y trouve aussi le catalogue.
+      { href: "/reglages/sur-mesure", label: admin ? "Réglages" : "Descriptions devis", match: "/reglages" },
     ],
   };
 }

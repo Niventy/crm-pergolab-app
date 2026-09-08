@@ -14,17 +14,28 @@ export type Ligne = {
 
 export type Modele = {
   code: string;
+  libelle: string; // libellé du kit sur le devis (« Pergola Horizon », « Carport »)
   prixToit: number; // €/m²
   prixPoteau: number; // €/pièce
+  // Pergola bioclimatique : lames orientables (LED périmétrique, spots, couleur
+  // et éclairage des lames). Faux pour un carport (toit plein).
+  lames: boolean;
+  // Pas de grille tarifaire : le prix HT se saisit à la main sur la ligne du devis.
+  saisiePrix?: boolean;
 };
 
 // Seuls le toit et les poteaux changent selon le modèle (le reste est identique).
 // Gammes commerciales : ESSENTIA (140U) / HORIZON (175U) / SIGNATURE (220).
 export const MODELES: Modele[] = [
-  { code: "ESSENTIA", prixToit: 521.5, prixPoteau: 262.5 },
-  { code: "HORIZON", prixToit: 588, prixPoteau: 325.5 },
-  { code: "SIGNATURE", prixToit: 707, prixPoteau: 392 },
+  { code: "ESSENTIA", libelle: "Pergola Essentia", prixToit: 521.5, prixPoteau: 262.5, lames: true },
+  { code: "HORIZON", libelle: "Pergola Horizon", prixToit: 588, prixPoteau: 325.5, lames: true },
+  { code: "SIGNATURE", libelle: "Pergola Signature", prixToit: 707, prixPoteau: 392, lames: true },
+  // Carport : mention sur le devis (libellé + dimensions + description type),
+  // prix HT saisi à la main sur la ligne (pas de grille dans le classeur).
+  { code: "CARPORT", libelle: "Carport", prixToit: 0, prixPoteau: 0, lames: false, saisiePrix: true },
 ];
+export const modeleDe = (code: string): Modele =>
+  MODELES.find((m) => m.code === code) ?? MODELES[0];
 
 export const PRIX_LED = 28; // €/m de périmètre
 export const PRIX_ECLAIRAGE = 297.5; // €/unité (Lighting Control System)
@@ -176,16 +187,17 @@ export function prixOption(o: OptionSM, c: OptionConfig): number {
 // Une pergola est vendue comme un KIT (toit + poteaux = un seul produit) : une
 // seule description par gamme, clé = le code de la gamme (ESSENTIA/HORIZON/…).
 // Les extras (LED, éclairage, options) ont leur propre description.
-export const COMPOSANTS: { id: string; label: string }[] = [
+export const COMPOSANTS: { id: string; label: string; groupe: string }[] = [
   ...MODELES.map((m) => ({
     id: m.code,
-    label: `Pergola ${m.code} (kit toit + poteaux)`,
+    label: `${m.libelle} (kit toit + poteaux)`,
+    groupe: "Gammes (texte principal du devis)",
   })),
-  { id: "led", label: "Bandeau LED" },
-  { id: "eclairage", label: "Système d'éclairage" },
-  { id: "couleur", label: "Option couleur (RAL)" },
-  { id: "led_lames", label: LED_LAMES_LABEL },
-  ...OPTIONS.map((o) => ({ id: o.id, label: o.label })),
+  { id: "led", label: "Bandeau LED", groupe: "Structure & finitions" },
+  { id: "eclairage", label: "Système d'éclairage", groupe: "Structure & finitions" },
+  { id: "couleur", label: "Option couleur (RAL)", groupe: "Structure & finitions" },
+  { id: "led_lames", label: LED_LAMES_LABEL, groupe: "Structure & finitions" },
+  ...OPTIONS.map((o) => ({ id: o.id, label: o.label, groupe: "Options (une ligne par option sur le devis)" })),
 ];
 
 // Construit les lignes de devis détaillées à partir de la config.
@@ -204,7 +216,7 @@ export function construireLignes(
   const toit = r2(m.prixToit * L * W * (cfg.toitQte || 0));
   if (toit > 0)
     lignes.push({
-      designation: `Pergola ${m.code} — toit ${L}×${W} m`,
+      designation: `${m.libelle} — toit ${L}×${W} m`,
       description: descriptions[`toit_${m.code}`] || null,
       quantite: 1,
       prixHt: toit,
@@ -222,9 +234,9 @@ export function construireLignes(
       tva: 20,
     });
 
-  // LED (périmètre)
+  // LED (périmètre) — pergolas bioclimatiques uniquement
   const perimetre = r2((L + W) * 2);
-  const led = r2(perimetre * PRIX_LED);
+  const led = m.lames ? r2(perimetre * PRIX_LED) : 0;
   if (led > 0)
     lignes.push({
       designation: `Bandeau LED (${perimetre} m de périmètre)`,
@@ -235,7 +247,7 @@ export function construireLignes(
     });
 
   // Système d'éclairage
-  const ecl = r2((cfg.eclairage || 0) * PRIX_ECLAIRAGE);
+  const ecl = m.lames ? r2((cfg.eclairage || 0) * PRIX_ECLAIRAGE) : 0;
   if (ecl > 0)
     lignes.push({
       designation: `Système d'éclairage (×${cfg.eclairage})`,
@@ -367,7 +379,9 @@ export function construireDescription(
         ? ` — ${fr(L)} × ${fr(W)} m${surface > 0 ? ` (${fr(surface)} m²)` : ""}`
         : "";
     const modules = (cfg.toitQte || 0) > 1 ? ` · ${cfg.toitQte} modules` : "";
-    blocs.push(`Pergola bioclimatique ${m.code}${dims}${modules}`);
+    blocs.push(
+      `${m.lames ? `Pergola bioclimatique ${m.code}` : `${m.libelle} aluminium`}${dims}${modules}`,
+    );
 
     const struct: string[] = [];
     if ((cfg.poteaux || 0) > 0)
@@ -376,9 +390,9 @@ export function construireDescription(
           estAutoportee(cfg) ? " (autoportée)" : ""
         }`,
       );
-    if (perimetre > 0)
+    if (m.lames && perimetre > 0)
       struct.push(`bandeau LED périmétrique (${fr(perimetre)} m)`);
-    if ((cfg.eclairage || 0) > 0)
+    if (m.lames && (cfg.eclairage || 0) > 0)
       struct.push(`système d'éclairage ×${cfg.eclairage}`);
     if (struct.length) blocs.push(`Structure : ${struct.join(" · ")}`);
   }
@@ -390,7 +404,7 @@ export function construireDescription(
       lames ? `structure ${couleurStructure(cfg)} · lames ${lames}` : couleurStructure(cfg)
     } (thermolaquage)`,
   );
-  if (cfg.ledLames)
+  if (m.lames && cfg.ledLames)
     blocs.push(
       `Éclairage : LED intégrées aux lames${(cfg.ledLamesPrix ?? 0) > 0 ? " (en option)" : " (inclus)"}`,
     );
@@ -398,8 +412,8 @@ export function construireDescription(
   // Extras (LED / éclairage) si une description est renseignée.
   const ledDesc = reel(descriptions["led"]);
   const eclDesc = reel(descriptions["eclairage"]);
-  if (perimetre > 0 && ledDesc) blocs.push(sub(ledDesc));
-  if ((cfg.eclairage || 0) > 0 && eclDesc) blocs.push(sub(eclDesc));
+  if (m.lames && perimetre > 0 && ledDesc) blocs.push(sub(ledDesc));
+  if (m.lames && (cfg.eclairage || 0) > 0 && eclDesc) blocs.push(sub(eclDesc));
 
   // Options posées, avec face et dimensions exactes + description pré-stockée.
   const opts: string[] = [];
@@ -429,19 +443,18 @@ export function construireLigneUnique(
 ): Ligne[] {
   const detail = construireLignes(cfg, descriptions);
   const total = r2(detail.reduce((a, l) => a + l.prixHt, 0));
-  if (total <= 0) return [];
-
   const m = MODELES.find((x) => x.code === cfg.modele) ?? MODELES[0];
+  if (total <= 0 && !m.saisiePrix) return [];
+
   const L = cfg.toitL || 0;
   const W = cfg.toitW || 0;
   // Titre normalisé : « Pergola Signature 5x3 (longueur x largeur) ».
-  const gamme = m.code.charAt(0) + m.code.slice(1).toLowerCase();
   const dims =
     L > 0 && W > 0 ? ` ${fr(L)}x${fr(W)} (longueur x largeur)` : "";
 
   return [
     {
-      designation: `Pergola ${gamme}${dims}${suffixePose(cfg)}`,
+      designation: `${m.libelle}${dims}${suffixePose(cfg)}`,
       description: construireDescription(cfg, descriptions),
       quantite: 1,
       prixHt: total,
@@ -471,11 +484,11 @@ export function construireLignesDevis(
       descriptions,
     ).reduce((a, l) => a + l.prixHt, 0),
   );
-  if (baseTotal > 0) {
-    const gamme = m.code.charAt(0) + m.code.slice(1).toLowerCase();
+  // Carport (prix à saisir) : la ligne existe même à 0 € pour qu'on y mette le prix.
+  if (baseTotal > 0 || m.saisiePrix) {
     const dims = L > 0 && W > 0 ? ` ${fr(L)}x${fr(W)} (longueur x largeur)` : "";
     lignes.push({
-      designation: `Pergola ${gamme}${dims}${suffixePose(cfg)}`,
+      designation: `${m.libelle}${dims}${suffixePose(cfg)}`,
       description: construireDescription(cfgBase, descriptions),
       quantite: 1,
       prixHt: baseTotal,
@@ -502,7 +515,7 @@ export function construireLignesDevis(
 
   // 2 bis) Éclairage LED intégré aux lames : ligne à part s'il est en supplément
   //    (sinon simplement rappelé dans la description du kit).
-  const ledLames = prixLedLames(cfg);
+  const ledLames = m.lames ? prixLedLames(cfg) : 0;
   if (ledLames > 0) {
     const brut = descriptions["led_lames"]?.trim();
     lignes.push({
@@ -552,7 +565,10 @@ export type LigneBrute = { designation: string; prixHt: number; quantite?: numbe
 
 // « Pergola Horizon 5x3 (longueur x largeur) — Autoportée » ou l'ancien
 // « Pergola HORIZON — toit 5×3 m » : gamme + 2 dimensions.
-const KIT_RE = /^Pergola\s+(ESSENTIA|HORIZON|SIGNATURE)\b\D*?(\d+(?:[.,]\d+)?)\s*[x×]\s*(\d+(?:[.,]\d+)?)/i;
+const KIT_RE = new RegExp(
+  `^(?:Pergola\\s+)?(${MODELES.map((m) => m.code).join("|")})\\b\\D*?(\\d+(?:[.,]\\d+)?)\\s*[x×]\\s*(\\d+(?:[.,]\\d+)?)`,
+  "i",
+);
 const OPTION_RE = /^(.*?)(?: — (.*?))? \((?:(\d+) L × (\d+) H mm · )?×(\d+)\)\s*$/;
 const COULEUR_RE = /^Option couleur — (.*?)(?: \(offerte\))?\s*$/i;
 
@@ -576,7 +592,7 @@ function deduireKit(designation: string, prixHt: number): ConfigSM | null {
     eclairage: 0,
     elements: [],
   };
-  if (!(prixHt > 0)) return base;
+  if (!(prixHt > 0) || !modele.lames) return base;
   // Cherche la combinaison poteaux × spots la plus proche du prix (±1 €).
   let best = { poteaux: base.poteaux, eclairage: 0, ecart: Infinity };
   for (const poteaux of autoportee ? [2] : [4, 3, 5, 6, 8, 2]) {
