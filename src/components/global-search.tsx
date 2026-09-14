@@ -4,6 +4,7 @@ import { useEffect, useRef, useState, useTransition } from "react";
 import { useRouter } from "next/navigation";
 import { Search, X } from "lucide-react";
 import { cn } from "@/lib/utils";
+import { formatTelephone } from "@/lib/format";
 import { searchLeads, type SearchResult } from "@/app/(app)/search-actions";
 
 const STATUT: Record<string, { label: string; cls: string }> = {
@@ -112,6 +113,9 @@ export function GlobalSearch() {
                             </span>
                           ) : null}
                           {r.codePostal ? <span>· {r.codePostal}</span> : null}
+                          {r.telephone ? (
+                            <span className="tabular-nums">· {formatTelephone(r.telephone)}</span>
+                          ) : null}
                         </span>
                       </span>
                       <span
@@ -143,7 +147,7 @@ export function GlobalSearch() {
           value={query}
           onChange={(e) => setQuery(e.target.value)}
           onFocus={() => setOpen(true)}
-          placeholder="Rechercher un prospect ou client…"
+          placeholder="Rechercher un nom, un téléphone, un email…"
           className="flex-1 bg-transparent text-sm outline-none placeholder:text-muted-foreground"
         />
         {query ? (
