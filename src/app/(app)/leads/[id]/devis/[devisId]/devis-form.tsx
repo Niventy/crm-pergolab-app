@@ -30,7 +30,10 @@ import {
   construireLigneUnique,
   deduireConfigs,
   modeleDe,
+  poseDe,
+  libellePose,
   type ConfigSM,
+  type OptionSM,
 } from "./sur-mesure";
 import type { ProduitCatalogueDTO } from "@/app/(app)/reglages/actions";
 import { sendDevisParGmail } from "../../email-actions";
@@ -127,6 +130,22 @@ function decomposer(raw: LineIn[]) {
   };
 }
 
+// Rattache les lignes des pergolas SUPPLÉMENTAIRES (2ᵉ kit, 3ᵉ…) à leur
+// configurateur, dans l'ordre : le 1ᵉʳ kit est la pergola principale.
+function rattacherSupplements(ls: Line[], supps: { key: number }[]): Line[] {
+  let kitVu = false;
+  let i = 0;
+  return ls.map((l) => {
+    if (!GAMME_RE.test(l.designation.trim())) return l;
+    if (!kitVu) {
+      kitVu = true;
+      return l;
+    }
+    const s = supps[i++];
+    return s ? { ...l, suppKey: s.key } : l;
+  });
+}
+
 function ordonner(ls: Line[]): Line[] {
   const estPergola = (l: Line) => /^(Pergola|Carport)\b/i.test(l.designation.trim());
   return [...ls].sort((a, b) =>
@@ -221,6 +240,7 @@ export function DevisForm({
   statut,
   pennylaneConfigured,
   surMesureDescriptions,
+  options,
   catalogue,
   client,
   infos,
@@ -236,6 +256,8 @@ export function DevisForm({
   statut: string | null;
   pennylaneConfigured: boolean;
   surMesureDescriptions: Record<string, string>;
+  /** Options du configurateur (table options_configurateur). */
+  options: OptionSM[];
   catalogue: ProduitCatalogueDTO[];
   client: {
     nom: string;
@@ -266,11 +288,18 @@ export function DevisForm({
     if (!quoteId || !snap.length) return null;
     const d = decomposer(snap);
     // Sans config mémorisée : on RECONSTRUIT la config depuis les lignes.
-    const cfgs = config?.pergola ? [] : deduireConfigs(d.lines);
+    const cfgs = config?.pergola ? [] : deduireConfigs(d.lines, options);
+    const supplements = config?.supplements?.length
+      ? config.supplements
+      : cfgs.slice(1).map((cfg, i) => ({ key: i + 1, cfg }));
     return {
       ...d,
+      // Les lignes des pergolas supplémentaires sont RATTACHÉES à leur
+      // configurateur (suppKey) — sinon, après rechargement, « Retirer » ou
+      // « Valider » une 2ᵉ pergola laissait l'ancienne ligne (doublon).
+      lines: rattacherSupplements(d.lines, supplements),
       pergola: cfgs[0] ?? null,
-      supplements: cfgs.slice(1).map((cfg, i) => ({ key: i + 1, cfg })),
+      supplements,
     };
   });
   // Configurateur : ouvert d'emblée sur un nouveau devis ; replié (résumé) sinon.
@@ -278,7 +307,7 @@ export function DevisForm({
   const [smConfig, setSmConfig] = useState<ConfigSM | null>(
     config?.pergola ?? initial?.pergola ?? null,
   );
-  const suppInit = config?.supplements?.length ? config.supplements : (initial?.supplements ?? []);
+  const suppInit = initial?.supplements ?? config?.supplements ?? [];
   const [supplements, setSupplements] = useState<{ key: number; cfg: ConfigSM | null }[]>(suppInit);
   const suppKeyRef = useRef(suppInit.reduce((m, s) => Math.max(m, s.key), 0) + 1);
   const [pdfUrl, setPdfUrl] = useState<string | null>(null);
@@ -311,18 +340,21 @@ export function DevisForm({
     const d = decomposer(raw);
     setRemisePct(d.remisePct);
     setTauxDefaut(d.tauxDefaut);
-    setLines(d.lines);
     // Devis sans config mémorisée (créé avant la persistance, ou dupliqué depuis
     // l'un d'eux) : on RECONSTRUIT la config depuis les lignes pour que
     // « Modifier la pergola » rouvre le configurateur pré-rempli.
+    let supps = supplements;
     if (!config?.pergola) {
-      const cfgs = deduireConfigs(d.lines);
+      const cfgs = deduireConfigs(d.lines, options);
       if (cfgs.length) {
         setSmConfig(cfgs[0]);
-        if (cfgs.length > 1 && !config?.supplements?.length)
-          setSupplements(cfgs.slice(1).map((cfg) => ({ key: suppKeyRef.current++, cfg })));
+        if (cfgs.length > 1 && !config?.supplements?.length) {
+          supps = cfgs.slice(1).map((cfg) => ({ key: suppKeyRef.current++, cfg }));
+          setSupplements(supps);
+        }
       }
     }
+    setLines(rattacherSupplements(d.lines, supps));
   };
 
   const changerTauxDefaut = (t: number) => {
@@ -403,7 +435,7 @@ export function DevisForm({
     setSmOpen(true);
   };
   const appliquerSupplement = (key: number, cfg: ConfigSM) => {
-    const ligne = construireLigneUnique(cfg, surMesureDescriptions);
+    const ligne = construireLigneUnique(cfg, surMesureDescriptions, options);
     setSupplements((s) => s.map((x) => (x.key === key ? { ...x, cfg } : x)));
     setLines((cur) =>
       ordonner([
@@ -558,7 +590,7 @@ export function DevisForm({
     const totalConfig = lines.filter((l) => l.config).reduce((a, l) => a + netLigne(l), 0);
     return {
       titre: kit?.designation ?? modeleDe(smConfig.modele).libelle,
-      detail: `${smConfig.toitL} × ${smConfig.toitW} m · ${smConfig.poteaux} poteau${smConfig.poteaux > 1 ? "x" : ""}${
+      detail: `${smConfig.toitL} × ${smConfig.toitW} m · ${libellePose(poseDe(smConfig), modeleDe(smConfig.modele)).toLowerCase()} · ${smConfig.poteaux} poteau${smConfig.poteaux > 1 ? "x" : ""}${
         smConfig.eclairage ? ` · ${smConfig.eclairage} spot${smConfig.eclairage > 1 ? "s" : ""}` : ""
       }${smConfig.couleur ? ` · ${smConfig.couleur}` : ""}${
         smConfig.couleurLames ? ` · lames ${smConfig.couleurLames}` : ""
@@ -689,6 +721,7 @@ export function DevisForm({
                 <>
                   <SurMesureCalc
                     descriptions={surMesureDescriptions}
+                    options={options}
                     initial={smConfig}
                     titre={smConfig ? "Modifier la pergola" : "Configurer la pergola"}
                     ctaLabel={smConfig ? "Valider les modifications" : "Valider la pergola"}
@@ -722,6 +755,7 @@ export function DevisForm({
                 <div key={sup.key} className="mt-3">
                   <SurMesureCalc
                     descriptions={surMesureDescriptions}
+                    options={options}
                     initial={sup.cfg}
                     titre={`Pergola supplémentaire n° ${i + 2}`}
                     ctaLabel={sup.cfg ? "Valider les modifications" : "Valider cette pergola"}

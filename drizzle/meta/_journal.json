@@ -239,6 +239,20 @@
       "when": 1788876584532,
       "tag": "0033_description_carport",
       "breakpoints": true
+    },
+    {
+      "idx": 34,
+      "version": "7",
+      "when": 1788966233998,
+      "tag": "0034_legal_shriek",
+      "breakpoints": true
+    },
+    {
+      "idx": 35,
+      "version": "7",
+      "when": 1788966255560,
+      "tag": "0035_options_configurateur_amorcage",
+      "breakpoints": true
     }
   ]
 }

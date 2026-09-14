@@ -1,15 +1,13 @@
-import { notFound } from "next/navigation";
 import { PackageOpen } from "lucide-react";
-import { isAdmin } from "@/lib/current-user";
 import { getProduitsCatalogue } from "../actions";
 import { ReglagesNav } from "../reglages-nav";
 import { ProduitsCatalogueClient } from "./produits-client";
 
 export const dynamic = "force-dynamic";
 
+// Page ouverte à TOUTE l'équipe : le catalogue est composé par l'ADV au fil
+// des devis (menuiseries, forfaits, clauses…), pas seulement par l'admin.
 export default async function ReglagesProduitsPage() {
-  if (!(await isAdmin())) notFound();
-
   const produits = await getProduitsCatalogue(true);
 
   return (

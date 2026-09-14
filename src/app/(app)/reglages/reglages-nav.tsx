@@ -4,16 +4,18 @@ import Link from "next/link";
 import { usePathname } from "next/navigation";
 import { cn } from "@/lib/utils";
 
+// Les trois pages de réglages du devis sont ouvertes à toute l'équipe.
 const SOUS_ONGLETS = [
-  { href: "/reglages/sur-mesure", label: "Descriptions du devis", admin: false },
-  { href: "/reglages/produits", label: "Produits & options", admin: true },
+  { href: "/reglages/sur-mesure", label: "Descriptions du devis" },
+  { href: "/reglages/options", label: "Options du configurateur" },
+  { href: "/reglages/produits", label: "Produits & forfaits" },
 ];
 
-export function ReglagesNav({ admin = false }: { admin?: boolean }) {
+export function ReglagesNav() {
   const pathname = usePathname();
   return (
     <nav className="flex flex-wrap gap-1 border-b border-border">
-      {SOUS_ONGLETS.filter((o) => admin || !o.admin).map((o) => {
+      {SOUS_ONGLETS.map((o) => {
         const active = pathname.startsWith(o.href);
         return (
           <Link

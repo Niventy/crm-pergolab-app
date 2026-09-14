@@ -43,9 +43,9 @@ function isClauseLine(l: DevisLine): boolean {
   return l.designation.trim().toLowerCase().startsWith("clause suspensive");
 }
 
-// La pergola (kit) reste toujours en tête du devis.
+// La pergola (ou le carport) — le kit — reste toujours en tête du devis.
 function isPergolaKit(l: DevisLine): boolean {
-  return /^Pergola\s+\S/i.test(l.designation.trim());
+  return /^(Pergola|Carport)\s+\S/i.test(l.designation.trim());
 }
 
 // Ligne de remise commerciale (montant négatif), placée avant la clause.

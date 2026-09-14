@@ -20,18 +20,38 @@ export type Modele = {
   // Pergola bioclimatique : lames orientables (LED périmétrique, spots, couleur
   // et éclairage des lames). Faux pour un carport (toit plein).
   lames: boolean;
+  // Genre du libellé, pour accorder la pose : « Pergola … — Adossée » / « Carport — Adossé ».
+  genre: "f" | "m";
 };
 
 // Seuls le toit et les poteaux changent selon le modèle (le reste est identique).
 // Gammes commerciales : ESSENTIA (140U) / HORIZON (175U) / SIGNATURE (220).
 export const MODELES: Modele[] = [
-  { code: "ESSENTIA", libelle: "Pergola Essentia", prixToit: 521.5, prixPoteau: 262.5, lames: true },
-  { code: "HORIZON", libelle: "Pergola Horizon", prixToit: 588, prixPoteau: 325.5, lames: true },
-  { code: "SIGNATURE", libelle: "Pergola Signature", prixToit: 707, prixPoteau: 392, lames: true },
+  { code: "ESSENTIA", libelle: "Pergola Essentia", prixToit: 521.5, prixPoteau: 262.5, lames: true, genre: "f" },
+  { code: "HORIZON", libelle: "Pergola Horizon", prixToit: 588, prixPoteau: 325.5, lames: true, genre: "f" },
+  { code: "SIGNATURE", libelle: "Pergola Signature", prixToit: 707, prixPoteau: 392, lames: true, genre: "f" },
   // Carport : toit plein 519 € HT/m² (tarif vendeur), poteaux inclus, ni LED ni
   // spots ni lames ; description type CARPORT avec les dimensions.
-  { code: "CARPORT", libelle: "Carport", prixToit: 519, prixPoteau: 0, lames: false },
+  { code: "CARPORT", libelle: "Carport", prixToit: 519, prixPoteau: 0, lames: false, genre: "m" },
 ];
+
+// Type de pose, CHOISI explicitement dans le configurateur (avant : déduit du
+// nombre de poteaux, et à l'envers — 2 poteaux affichait « Autoportée »).
+// Adossée = fixée au mur, 2 poteaux par défaut · Autoportée = 4 poteaux.
+export type Pose = "adossee" | "autoportee";
+export const POSES: { id: Pose; label: string; poteaux: number }[] = [
+  { id: "adossee", label: "Adossée", poteaux: 2 },
+  { id: "autoportee", label: "Autoportée", poteaux: 4 },
+];
+// Pose effective : celle choisie ; à défaut (anciennes configs) 2 poteaux ou
+// moins = adossée, sinon autoportée.
+export const poseDe = (cfg: { pose?: Pose | null; poteaux?: number }): Pose =>
+  cfg.pose ?? ((cfg.poteaux || 0) <= 2 ? "adossee" : "autoportee");
+// Libellé accordé au modèle : « Adossée / Autoportée » (pergola), « Adossé / Autoportant » (carport).
+export function libellePose(pose: Pose, m: Modele): string {
+  if (m.genre === "m") return pose === "adossee" ? "Adossé" : "Autoportant";
+  return pose === "adossee" ? "Adossée" : "Autoportée";
+}
 export const modeleDe = (code: string): Modele =>
   MODELES.find((m) => m.code === code) ?? MODELES[0];
 
@@ -50,8 +70,18 @@ export type OptionSM = {
   forfait?: number; // pour surface_forfait
   defL?: number; // largeur par défaut (m)
   defH?: number; // hauteur par défaut (m)
+  actif?: boolean; // false = retirée du configurateur (table options_configurateur)
 };
+export const OPTION_TYPES: { id: OptionType; label: string }[] = [
+  { id: "surface", label: "Surface — € HT / m²" },
+  { id: "surface_forfait", label: "Surface + forfait — € HT / m² + forfait / pièce" },
+  { id: "unite", label: "À l'unité — € HT / pièce" },
+];
 
+// Options PAR DÉFAUT (classeur d'origine) : servent à l'amorçage de la table
+// options_configurateur et de secours si elle est vide. En fonctionnement
+// normal, la liste vient de la base (getOptionsConfigurateur) et est passée
+// en paramètre `options` aux fonctions ci-dessous.
 export const OPTIONS: OptionSM[] = [
   { id: "zip", label: "Store Motorisé", type: "surface_forfait", prix: 189, forfait: 255.5, defL: 4.76, defH: 2.33 },
   { id: "baie", label: "Rideau Verre", type: "surface", prix: 413, defL: 2.76, defH: 2.33 },
@@ -121,6 +151,8 @@ export type ConfigSM = {
   // supplément HT (0 = inclus) crée une ligne de devis quand il est > 0.
   ledLames?: boolean;
   ledLamesPrix?: number;
+  // Type de pose (adossée / autoportée) ; absent = déduit des poteaux (poseDe).
+  pose?: Pose | null;
 };
 
 type Coloris = Pick<ConfigSM, "couleur" | "couleurLames">;
@@ -166,9 +198,10 @@ const prixLedLames = (cfg: ConfigSM) =>
 const dimsMM = (L: number, H: number) =>
   `${Math.round((L || 0) * 1000)} L × ${Math.round((H || 0) * 1000)} H mm`;
 
-// 2 poteaux = pergola autoportée (mention à afficher sur le devis).
-const estAutoportee = (cfg: ConfigSM) => (cfg.poteaux || 0) === 2;
-const suffixePose = (cfg: ConfigSM) => (estAutoportee(cfg) ? " — Autoportée" : "");
+// Mention de pose sur la ligne du devis, TOUJOURS affichée (« — Adossée » ou
+// « — Autoportée ») pour lever toute ambiguïté.
+const suffixePose = (cfg: ConfigSM) =>
+  ` — ${libellePose(poseDe(cfg), MODELES.find((x) => x.code === cfg.modele) ?? MODELES[0])}`;
 
 // Prix d'une option (formule selon son type).
 export function prixOption(o: OptionSM, c: OptionConfig): number {
@@ -185,18 +218,26 @@ export function prixOption(o: OptionSM, c: OptionConfig): number {
 // Une pergola est vendue comme un KIT (toit + poteaux = un seul produit) : une
 // seule description par gamme, clé = le code de la gamme (ESSENTIA/HORIZON/…).
 // Les extras (LED, éclairage, options) ont leur propre description.
-export const COMPOSANTS: { id: string; label: string; groupe: string }[] = [
-  ...MODELES.map((m) => ({
-    id: m.code,
-    label: `${m.libelle} (kit toit + poteaux)`,
-    groupe: "Gammes (texte principal du devis)",
-  })),
-  { id: "led", label: "Bandeau LED", groupe: "Structure & finitions" },
-  { id: "eclairage", label: "Système d'éclairage", groupe: "Structure & finitions" },
-  { id: "couleur", label: "Option couleur (RAL)", groupe: "Structure & finitions" },
-  { id: "led_lames", label: LED_LAMES_LABEL, groupe: "Structure & finitions" },
-  ...OPTIONS.map((o) => ({ id: o.id, label: o.label, groupe: "Options (une ligne par option sur le devis)" })),
-];
+export type Composant = { id: string; label: string; groupe: string };
+export function composantsPour(options: OptionSM[]): Composant[] {
+  return [
+    ...MODELES.map((m) => ({
+      id: m.code,
+      label: `${m.libelle} (kit toit + poteaux)`,
+      groupe: "Gammes (texte principal du devis)",
+    })),
+    { id: "led", label: "Bandeau LED", groupe: "Structure & finitions" },
+    { id: "eclairage", label: "Système d'éclairage", groupe: "Structure & finitions" },
+    { id: "couleur", label: "Option couleur (RAL)", groupe: "Structure & finitions" },
+    { id: "led_lames", label: LED_LAMES_LABEL, groupe: "Structure & finitions" },
+    ...options.map((o) => ({
+      id: o.id,
+      label: o.label,
+      groupe: "Options (une ligne par option sur le devis)",
+    })),
+  ];
+}
+export const COMPOSANTS: Composant[] = composantsPour(OPTIONS);
 
 // Construit les lignes de devis détaillées à partir de la config.
 // `descriptions` : id de composant → description pré-stockée (injectée sur la ligne
@@ -204,6 +245,7 @@ export const COMPOSANTS: { id: string; label: string; groupe: string }[] = [
 export function construireLignes(
   cfg: ConfigSM,
   descriptions: Record<string, string> = {},
+  options: OptionSM[] = OPTIONS,
 ): Ligne[] {
   const m = MODELES.find((x) => x.code === cfg.modele) ?? MODELES[0];
   const lignes: Ligne[] = [];
@@ -279,7 +321,7 @@ export function construireLignes(
 
   // Éléments (options posées, avec leur face)
   for (const el of cfg.elements) {
-    const o = OPTIONS.find((x) => x.id === el.optionId);
+    const o = options.find((x) => x.id === el.optionId);
     if (!o) continue;
     const p = prixOption(o, { qte: el.qte, L: el.L, H: el.H });
     if (p <= 0) continue;
@@ -351,6 +393,7 @@ function injecterTokens(texte: string, cfg: ConfigSM): string {
 export function construireDescription(
   cfg: ConfigSM,
   descriptions: Record<string, string> = {},
+  options: OptionSM[] = OPTIONS,
 ): string {
   const m = MODELES.find((x) => x.code === cfg.modele) ?? MODELES[0];
   const L = cfg.toitL || 0;
@@ -384,9 +427,7 @@ export function construireDescription(
     const struct: string[] = [];
     if ((cfg.poteaux || 0) > 0)
       struct.push(
-        `${cfg.poteaux} poteau${cfg.poteaux > 1 ? "x" : ""}${
-          estAutoportee(cfg) ? " (autoportée)" : ""
-        }`,
+        `${cfg.poteaux} poteau${cfg.poteaux > 1 ? "x" : ""} (${libellePose(poseDe(cfg), m).toLowerCase()})`,
       );
     if (m.lames && perimetre > 0)
       struct.push(`bandeau LED périmétrique (${fr(perimetre)} m)`);
@@ -416,7 +457,7 @@ export function construireDescription(
   // Options posées, avec face et dimensions exactes + description pré-stockée.
   const opts: string[] = [];
   for (const el of cfg.elements) {
-    const o = OPTIONS.find((x) => x.id === el.optionId);
+    const o = options.find((x) => x.id === el.optionId);
     if (!o) continue;
     const d =
       o.type === "unite" ? `×${el.qte}` : `${dimsMM(el.L, el.H)} · ×${el.qte}`;
@@ -438,8 +479,9 @@ export function construireDescription(
 export function construireLigneUnique(
   cfg: ConfigSM,
   descriptions: Record<string, string> = {},
+  options: OptionSM[] = OPTIONS,
 ): Ligne[] {
-  const detail = construireLignes(cfg, descriptions);
+  const detail = construireLignes(cfg, descriptions, options);
   const total = r2(detail.reduce((a, l) => a + l.prixHt, 0));
   const m = MODELES.find((x) => x.code === cfg.modele) ?? MODELES[0];
   if (total <= 0) return [];
@@ -453,7 +495,7 @@ export function construireLigneUnique(
   return [
     {
       designation: `${m.libelle}${dims}${suffixePose(cfg)}`,
-      description: construireDescription(cfg, descriptions),
+      description: construireDescription(cfg, descriptions, options),
       quantite: 1,
       prixHt: total,
       tva: 20,
@@ -467,6 +509,7 @@ export function construireLigneUnique(
 export function construireLignesDevis(
   cfg: ConfigSM,
   descriptions: Record<string, string> = {},
+  options: OptionSM[] = OPTIONS,
 ): Ligne[] {
   const m = MODELES.find((x) => x.code === cfg.modele) ?? MODELES[0];
   const L = cfg.toitL || 0;
@@ -486,7 +529,7 @@ export function construireLignesDevis(
     const dims = L > 0 && W > 0 ? ` ${fr(L)}x${fr(W)} (longueur x largeur)` : "";
     lignes.push({
       designation: `${m.libelle}${dims}${suffixePose(cfg)}`,
-      description: construireDescription(cfgBase, descriptions),
+      description: construireDescription(cfgBase, descriptions, options),
       quantite: 1,
       prixHt: baseTotal,
       tva: 20,
@@ -528,7 +571,7 @@ export function construireLignesDevis(
 
   // 3) Une ligne par option posée (avec sa face, ses dimensions, sa description).
   for (const el of cfg.elements) {
-    const o = OPTIONS.find((x) => x.id === el.optionId);
+    const o = options.find((x) => x.id === el.optionId);
     if (!o) continue;
     const p = prixOption(o, { qte: el.qte, L: el.L, H: el.H });
     if (p <= 0) continue;
@@ -579,20 +622,25 @@ function deduireKit(designation: string, prixHt: number): ConfigSM | null {
   const L = num(m[2]);
   const W = num(m[3]);
   if (!(L > 0 && W > 0)) return null;
-  const autoportee = /autoport/i.test(designation);
+  // Pose lue dans le libellé. ATTENTION : les anciens devis affichaient
+  // « Autoportée » pour 2 poteaux (bug inversé) → pour eux, le nombre de poteaux
+  // retrouvé par le prix fait foi ; « Adossée » n'existe que depuis la correction.
+  const adossee = /adoss/i.test(designation);
+  const autoportee = !adossee && /autoport/i.test(designation);
   const base: ConfigSM = {
     modele: modele.code,
     toitL: L,
     toitW: W,
     toitQte: 1,
-    poteaux: autoportee ? 2 : 4,
+    poteaux: adossee ? 2 : 4,
     eclairage: 0,
     elements: [],
+    pose: adossee ? "adossee" : autoportee ? "autoportee" : null,
   };
-  if (!(prixHt > 0) || !modele.lames) return base;
+  if (!(prixHt > 0) || !modele.lames) return { ...base, pose: poseDe(base) };
   // Cherche la combinaison poteaux × spots la plus proche du prix (±1 €).
   let best = { poteaux: base.poteaux, eclairage: 0, ecart: Infinity };
-  for (const poteaux of autoportee ? [2] : [4, 3, 5, 6, 8, 2]) {
+  for (const poteaux of [4, 2, 3, 5, 6, 8]) {
     for (let ecl = 0; ecl <= 12; ecl++) {
       const p = construireLignes({ ...base, poteaux, eclairage: ecl }).reduce(
         (a, l) => a + l.prixHt,
@@ -602,14 +650,17 @@ function deduireKit(designation: string, prixHt: number): ConfigSM | null {
       if (ecart < best.ecart) best = { poteaux, eclairage: ecl, ecart };
     }
   }
-  return best.ecart <= 1
-    ? { ...base, poteaux: best.poteaux, eclairage: best.eclairage }
-    : base;
+  if (best.ecart > 1) return { ...base, pose: poseDe(base) };
+  const poteaux = best.poteaux;
+  // Libellé explicite « Adossée » → on le garde ; sinon (ancien « Autoportée » ou
+  // rien) la pose suit le nombre de poteaux réellement facturés.
+  const pose: Pose = adossee ? "adossee" : poteaux <= 2 ? "adossee" : "autoportee";
+  return { ...base, poteaux, eclairage: best.eclairage, pose };
 }
 
 // Déduit UNE config par kit rencontré (la 1ʳᵉ = pergola principale, les suivantes
 // = pergolas supplémentaires) ; les options qui suivent un kit lui sont rattachées.
-export function deduireConfigs(lignes: LigneBrute[]): ConfigSM[] {
+export function deduireConfigs(lignes: LigneBrute[], options: OptionSM[] = OPTIONS): ConfigSM[] {
   const configs: ConfigSM[] = [];
   let courante: ConfigSM | null = null;
   for (const l of lignes) {
@@ -642,7 +693,7 @@ export function deduireConfigs(lignes: LigneBrute[]): ConfigSM[] {
 
     const o = OPTION_RE.exec(d);
     if (!o) continue;
-    const opt = OPTIONS.find((x) => x.label.toLowerCase() === o[1].trim().toLowerCase());
+    const opt = options.find((x) => x.label.toLowerCase() === o[1].trim().toLowerCase());
     if (!opt) continue;
     courante.elements.push({
       optionId: opt.id,

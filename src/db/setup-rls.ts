@@ -63,6 +63,11 @@ alter table public.taches             enable row level security;
 alter table public.produits_catalogue enable row level security;
 alter table public.sur_mesure_mapping enable row level security;
 alter table public.paiements          enable row level security;
+alter table public.options_configurateur enable row level security;
+
+drop policy if exists "options_configurateur_all_authenticated" on public.options_configurateur;
+create policy "options_configurateur_all_authenticated"
+  on public.options_configurateur for all to authenticated using (true) with check (true);
 
 drop policy if exists "paiements_all_authenticated" on public.paiements;
 create policy "paiements_all_authenticated"

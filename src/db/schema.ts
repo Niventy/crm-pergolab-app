@@ -301,6 +301,28 @@ export const surMesureMapping = pgTable("sur_mesure_mapping", {
 });
 
 // ---------------------------------------------------------------------------
+// options_configurateur — options de la pergola (stores, persiennes, murs,
+// chauffage…) proposées par le configurateur sur-mesure. Gérées par l'équipe
+// (ajout / retrait / prix) au lieu d'être codées en dur. `id` = slug stable
+// référencé par `devis.config` (elements[].optionId). `type` :
+// surface (€/m²) · surface_forfait (€/m² + forfait par pièce) · unite (€/pièce).
+// ---------------------------------------------------------------------------
+export const optionsConfigurateur = pgTable("options_configurateur", {
+  id: text("id").primaryKey(),
+  label: text("label").notNull(),
+  type: text("type").notNull().default("surface"),
+  prix: numeric("prix", { precision: 12, scale: 2 }).notNull().default("0"),
+  forfait: numeric("forfait", { precision: 12, scale: 2 }),
+  defL: numeric("def_l", { precision: 8, scale: 3 }), // largeur par défaut (m)
+  defH: numeric("def_h", { precision: 8, scale: 3 }), // hauteur par défaut (m)
+  position: integer("position").notNull().default(0),
+  actif: boolean("actif").notNull().default(true), // retirée = plus proposée
+  createdAt: timestamp("created_at", { withTimezone: true })
+    .notNull()
+    .defaultNow(),
+});
+
+// ---------------------------------------------------------------------------
 // produits_catalogue — catalogue de produits/options géré dans Réglages,
 // ajoutables directement en ligne de devis (nom + prix + description).
 // (Remplace l'ancienne présélection Pennylane par un catalogue interne.)

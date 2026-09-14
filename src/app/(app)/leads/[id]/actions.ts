@@ -296,22 +296,28 @@ export async function creerDevis(leadId: string, lines: DevisLine[], config?: un
 // proposer 2 variantes, ex. avec / sans options). La clause est retirée puis
 // ré-ajoutée automatiquement pour éviter tout doublon.
 export async function dupliquerDevis(leadId: string, quoteId: string) {
-  const src = await getQuoteLines(quoteId);
-  if (!src.ok || !src.lines?.length)
-    return {
-      ok: false as const,
-      error: src.error ?? "Lignes du devis introuvables.",
-      devisId: null as string | null,
-    };
-  const lignes = src.lines.filter(
-    (l) => !l.designation.trim().toLowerCase().startsWith("clause suspensive"),
-  );
-  // La config du configurateur suit la copie (pour rouvrir la pergola).
+  // Source = l'instantané CRM (exactement ce qui a été composé et enregistré,
+  // textes compris) ; Pennylane seulement pour un devis ancien sans instantané.
   const [orig] = await db
-    .select({ config: devis.config })
+    .select({ config: devis.config, lignes: devis.lignes })
     .from(devis)
     .where(eq(devis.externalId, quoteId))
     .limit(1);
+  let lignes = ((orig?.lignes as DevisLine[] | null) ?? []).map((l) => ({ ...l, id: null }));
+  if (!lignes.length) {
+    const src = await getQuoteLines(quoteId);
+    if (!src.ok || !src.lines?.length)
+      return {
+        ok: false as const,
+        error: src.error ?? "Lignes du devis introuvables.",
+        devisId: null as string | null,
+      };
+    lignes = src.lines.map((l) => ({ ...l, id: null }));
+  }
+  lignes = lignes.filter(
+    (l) => !l.designation.trim().toLowerCase().startsWith("clause suspensive"),
+  );
+  // La config du configurateur suit la copie (pour rouvrir la pergola).
   return creerDevis(leadId, lignes, orig?.config ?? undefined);
 }
 

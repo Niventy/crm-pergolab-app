@@ -1,7 +1,8 @@
 "use client";
 
 import { useMemo, useRef, useState } from "react";
-import { Calculator, X, Plus, Trash2 } from "lucide-react";
+import Link from "next/link";
+import { Calculator, X, Plus, Trash2, Settings2 } from "lucide-react";
 import { formatEuros } from "@/lib/format";
 import {
   MODELES,
@@ -10,6 +11,9 @@ import {
   COULEURS_RAL,
   COULEUR_AUTRE,
   LED_LAMES_LABEL,
+  POSES,
+  poseDe,
+  libellePose,
   PRIX_LED,
   PRIX_ECLAIRAGE,
   construireLignes,
@@ -21,6 +25,7 @@ import {
   type Element,
   type Ligne,
   type OptionSM,
+  type Pose,
 } from "./sur-mesure";
 import type { ProduitCatalogueDTO } from "@/app/(app)/reglages/actions";
 
@@ -39,6 +44,7 @@ type Elem = Element & { key: number };
 
 export function SurMesureCalc({
   descriptions,
+  options = OPTIONS,
   initial,
   onAjouter,
   onClose,
@@ -49,6 +55,8 @@ export function SurMesureCalc({
   ctaLabel,
 }: {
   descriptions: Record<string, string>;
+  // Options proposées (table options_configurateur) ; défaut = liste codée.
+  options?: OptionSM[];
   initial?: ConfigSM | null;
   onAjouter: (lignes: Ligne[], cfg: ConfigSM) => void;
   onClose?: () => void;
@@ -59,14 +67,20 @@ export function SurMesureCalc({
   titre?: string;
   ctaLabel?: string;
 }) {
-  // Une pergola a TOUJOURS un toit (qté 1). Poteaux : 4 par défaut (autoportée),
-  // mais minimum 2 car les pergolas adossées à l'existant n'en ont que 2.
+  // Une pergola a TOUJOURS un toit (qté 1). La POSE se choisit explicitement :
+  // adossée (2 poteaux par défaut) ou autoportée (4) ; le nombre de poteaux
+  // reste modifiable ensuite.
   const [modele, setModele] = useState(initial?.modele ?? MODELES[0].code);
   const modeleSel = modeleDe(modele);
+  const [pose, setPose] = useState<Pose>(initial ? poseDe(initial) : "adossee");
   const [toitL, setToitL] = useState(initial?.toitL ?? 0);
   const [toitW, setToitW] = useState(initial?.toitW ?? 0);
   const [toitQte, setToitQte] = useState(initial?.toitQte ?? 1);
-  const [poteaux, setPoteaux] = useState(initial?.poteaux ?? 4);
+  const [poteaux, setPoteaux] = useState(initial?.poteaux ?? 2);
+  const choisirPose = (p: Pose) => {
+    setPose(p);
+    setPoteaux(POSES.find((x) => x.id === p)?.poteaux ?? 2);
+  };
   const [eclairage, setEclairage] = useState(initial?.eclairage ?? 0);
 
   // Coloris : teinte de la liste (code RAL), « AUTRE » (saisie libre) ou "" =
@@ -122,22 +136,31 @@ export function SurMesureCalc({
   // Ligne d'ajout d'un élément. Les dimensions se SAISISSENT en MILLIMÈTRES
   // (usage métier : « 3350 L × 2500 H ») mais sont stockées en mètres (÷1000)
   // car le moteur de prix travaille en m² — addLmm / addHmm = mm.
-  const [optId, setOptId] = useState(OPTIONS[0].id);
+  // Options actives + celles (retirées) déjà posées sur cette config, pour
+  // que la liste des éléments reste lisible.
+  const optionsUtiles = useMemo(() => {
+    const actives = options.filter((o) => o.actif !== false);
+    const posees = (initial?.elements ?? []).map((e) => e.optionId);
+    return [...actives, ...options.filter((o) => o.actif === false && posees.includes(o.id))];
+  }, [options, initial]);
+  const [optId, setOptId] = useState(optionsUtiles.find((o) => o.actif !== false)?.id ?? optionsUtiles[0]?.id ?? "");
   const [face, setFace] = useState(FACES[0]);
   const [addLmm, setAddLmm] = useState(0);
   const [addHmm, setAddHmm] = useState(0);
   const [addQte, setAddQte] = useState(1);
 
-  const optSel = OPTIONS.find((o) => o.id === optId)!;
-  const surfacique = optSel.type !== "unite";
-  const apercuPrix = prixOption(optSel, {
-    qte: addQte,
-    L: surfacique ? addLmm / 1000 : 0,
-    H: surfacique ? addHmm / 1000 : 0,
-  });
+  const optSel: OptionSM | undefined = optionsUtiles.find((o) => o.id === optId);
+  const surfacique = !!optSel && optSel.type !== "unite";
+  const apercuPrix = optSel
+    ? prixOption(optSel, {
+        qte: addQte,
+        L: surfacique ? addLmm / 1000 : 0,
+        H: surfacique ? addHmm / 1000 : 0,
+      })
+    : 0;
 
   function ajouterElement() {
-    if (addQte <= 0) return;
+    if (!optSel || addQte <= 0) return;
     if (surfacique && (addLmm <= 0 || addHmm <= 0)) return;
     setElements((e) => [
       ...e,
@@ -171,20 +194,21 @@ export function SurMesureCalc({
       couleurLames,
       ledLames,
       ledLamesPrix: ledLames ? ledLamesPrix : 0,
+      pose,
     }),
     [
       modele, toitL, toitW, toitQte, poteaux, eclairage, elements,
-      couleur, couleurPrix, couleurStandard, couleurLames, ledLames, ledLamesPrix,
+      couleur, couleurPrix, couleurStandard, couleurLames, ledLames, ledLamesPrix, pose,
     ],
   );
   const apercu = useMemo(
-    () => construireLignes(cfg, descriptions),
-    [cfg, descriptions],
+    () => construireLignes(cfg, descriptions, options),
+    [cfg, descriptions, options],
   );
   // Lignes envoyées au devis : le kit pergola + 1 ligne par option (visibles).
   const lignesDevis = useMemo(
-    () => construireLignesDevis(cfg, descriptions),
-    [cfg, descriptions],
+    () => construireLignesDevis(cfg, descriptions, options),
+    [cfg, descriptions, options],
   );
   const total = apercu.reduce((a, l) => a + l.prixHt, 0);
   const perimetre = Math.round((toitL + toitW) * 2 * 100) / 100;
@@ -228,6 +252,32 @@ export function SurMesureCalc({
       {/* Base */}
       <div className="rounded-lg border border-border bg-white p-3">
         <div className="text-eyebrow mb-2 text-muted-foreground">Structure (toit + poteaux)</div>
+
+        {/* Pose : choix explicite, repris tel quel sur la ligne du devis */}
+        <div className="mb-2 flex flex-wrap items-center gap-1.5">
+          <span className="text-[0.65rem] uppercase tracking-wide text-muted-foreground">Pose</span>
+          {POSES.map((p) => (
+            <button
+              key={p.id}
+              type="button"
+              onClick={() => choisirPose(p.id)}
+              className={`rounded-full border px-3 py-1 text-xs font-semibold ${
+                pose === p.id
+                  ? "border-primary bg-primary text-primary-foreground"
+                  : "border-border bg-white text-foreground hover:border-primary/40"
+              }`}
+              title={`${p.poteaux} poteaux par défaut`}
+            >
+              {libellePose(p.id, modeleSel)}
+              <span className={pose === p.id ? " opacity-80" : " text-muted-foreground"}>
+                {" "}· {p.poteaux} poteaux
+              </span>
+            </button>
+          ))}
+          <span className="text-xs text-muted-foreground">
+            → « {modeleSel.libelle} … — {libellePose(pose, modeleSel)} » sur le devis
+          </span>
+        </div>
         <div className="grid grid-cols-2 gap-2 sm:grid-cols-5">
           <Champ
             label="Largeur (mm)"
@@ -252,13 +302,11 @@ export function SurMesureCalc({
           {modeleSel.lames ? (
             <>
               Bandeau LED inclus automatiquement sur le périmètre ({perimetre} m ×{" "}
-              {PRIX_LED} € = {eur(perimetre * PRIX_LED)}) · 2 poteaux = autoportée · spot{" "}
-              {PRIX_ECLAIRAGE} €/u
+              {PRIX_LED} € = {eur(perimetre * PRIX_LED)}) · spot {PRIX_ECLAIRAGE} €/u
             </>
           ) : (
             <>
-              {modeleSel.libelle} : toit {modeleSel.prixToit} € HT/m², poteaux inclus · 2 poteaux =
-              adossé, 4 = autoportant · ni LED ni spots
+              {modeleSel.libelle} : toit {modeleSel.prixToit} € HT/m², poteaux inclus · ni LED ni spots
             </>
           )}
         </p>
@@ -377,19 +425,40 @@ export function SurMesureCalc({
 
       {/* Éléments / options avec face */}
       <div className="rounded-lg border border-border bg-white p-3">
-        <div className="text-eyebrow mb-2 text-muted-foreground">
-          Options de la pergola — clique une option, précise la face et les dimensions
+        <div className="mb-2 flex flex-wrap items-center justify-between gap-2">
+          <span className="text-eyebrow text-muted-foreground">
+            Options de la pergola — clique une option, précise la face et les dimensions
+          </span>
+          <Link
+            href="/reglages/options"
+            target="_blank"
+            className="inline-flex items-center gap-1 text-xs text-muted-foreground hover:text-primary hover:underline"
+            title="Ajouter, retirer ou modifier le prix des options proposées ici (pour toute l'équipe)"
+          >
+            <Settings2 className="size-3.5" /> Gérer les options ↗
+          </Link>
         </div>
 
         {/* Vignettes d'options dimensionnées */}
+        {optionsUtiles.filter((o) => o.actif !== false).length === 0 ? (
+          <p className="rounded-lg border border-dashed border-border px-3 py-3 text-xs text-muted-foreground">
+            Aucune option active. Ajoute-en dans « Gérer les options ».
+          </p>
+        ) : null}
         <div className="grid grid-cols-2 gap-2 sm:grid-cols-3 lg:grid-cols-4">
-          {OPTIONS.map((o) => {
+          {optionsUtiles.filter((o) => o.actif !== false).map((o) => {
             const sel = o.id === optId;
             return (
               <button
                 key={o.id}
                 type="button"
-                onClick={() => setOptId(o.id)}
+                onClick={() => {
+                  setOptId(o.id);
+                  if (o.type !== "unite") {
+                    if (addLmm <= 0 && o.defL) setAddLmm(Math.round(o.defL * 1000));
+                    if (addHmm <= 0 && o.defH) setAddHmm(Math.round(o.defH * 1000));
+                  }
+                }}
                 className={`flex flex-col items-start gap-0.5 rounded-lg border px-2.5 py-2 text-left transition-colors ${
                   sel
                     ? "border-primary bg-primary/10 ring-1 ring-primary"
@@ -473,7 +542,8 @@ export function SurMesureCalc({
           <button
             type="button"
             onClick={ajouterElement}
-            className="flex h-9 items-center justify-center rounded-md bg-primary text-primary-foreground hover:bg-primary/90"
+            disabled={!optSel}
+            className="flex h-9 items-center justify-center rounded-md bg-primary text-primary-foreground hover:bg-primary/90 disabled:opacity-40"
             aria-label="Ajouter l'élément"
           >
             <Plus className="size-4" />
@@ -484,19 +554,22 @@ export function SurMesureCalc({
         {elements.length > 0 ? (
           <ul className="mt-3 divide-y divide-border border-t border-border">
             {elements.map((el) => {
-              const o = OPTIONS.find((x) => x.id === el.optionId)!;
-              const p = prixOption(o, { qte: el.qte, L: el.L, H: el.H });
+              const o = options.find((x) => x.id === el.optionId);
+              const p = o ? prixOption(o, { qte: el.qte, L: el.L, H: el.H }) : 0;
               const dims =
-                o.type === "unite"
+                !o || o.type === "unite"
                   ? `×${el.qte}`
                   : `${Math.round(el.L * 1000)} L × ${Math.round(el.H * 1000)} H mm · ×${el.qte}`;
               return (
                 <li key={el.key} className="flex items-center gap-2 py-1.5 text-sm">
                   <span className="flex-1 text-foreground">
-                    {o.label}
+                    {o?.label ?? `Option retirée (${el.optionId})`}
+                    {o && o.actif === false ? (
+                      <span className="ml-1 rounded bg-amber-100 px-1 text-[10px] font-bold uppercase text-amber-700">retirée</span>
+                    ) : null}
                     <span className="text-muted-foreground"> · {el.face} · {dims}</span>
                   </span>
-                  <span className="tabular-nums text-foreground">{eur(p)}</span>
+                  <span className="tabular-nums text-foreground">{o ? eur(p) : "—"}</span>
                   <button
                     type="button"
                     onClick={() =>

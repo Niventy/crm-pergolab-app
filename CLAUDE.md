@@ -96,7 +96,10 @@ Annulée (`annulee`, perdue — commande annulée après signature).
   d'étapes (Composer → Vérifier → Envoyer → Signé) : **1 · La pergola**
   (configurateur `sur-mesure-calc.tsx`, prix HT vendeur ; gammes `MODELES` = ESSENTIA /
   HORIZON / SIGNATURE (`lames: true`) + **CARPORT** (`lames: false` : toit 519 € HT/m²,
-  poteaux inclus, ligne « Carport LxW », pas de LED / spots / lames) ;
+  poteaux inclus, ligne « Carport LxW », pas de LED / spots / lames) ; **pose** choisie
+  explicitement (`ConfigSM.pose` adossée = 2 poteaux / autoportée = 4, `POSES`), mention
+  TOUJOURS sur la ligne « … — Adossée / Autoportée » (avant : déduite des poteaux et
+  inversée ; `deduireKit` corrige les anciens libellés par le prix) ;
   **couleur RAL** : teinte
   standard RAL 7016 ou option → ligne « Option couleur — RAL … », supplément HT libre,
   0 = offerte, `ConfigSM.couleur` ; **couleur des lames** `couleurLames` si différente
@@ -120,9 +123,17 @@ Annulée (`annulee`, perdue — commande annulée après signature).
   devis, sommeil, chantiers) + tâches + agenda Google.
 - **Dashboard / Commercial / Comptabilité (admin)** : `dashboard/data.ts › getStats`,
   périodes = toutes années/mois présents (`?mois=YYYY`, `YYYY-MM`, défaut année en cours).
+- **Options du configurateur** (`/reglages/options`, OUVERT À TOUS) : table
+  `options_configurateur` (id = slug stable référencé par `devis.config.elements[].optionId`,
+  label, type surface / surface_forfait / unite, prix, forfait, dimensions par défaut,
+  position, actif). `OPTIONS` dans `sur-mesure.ts` = liste par défaut (amorçage 0035 +
+  secours si table vide) ; les fonctions du moteur prennent `options` en paramètre,
+  chargées par `getOptionsConfigurateur()` (éditeur : retirées incluses pour rouvrir
+  une config). « Retirer » = `actif=false` (jamais de DELETE : les devis y font référence).
 - **Commentaires**, **Descriptions du devis** (`/reglages/sur-mesure`, OUVERT À TOUS :
   texte type par gamme / extra / option, injecté sur les lignes des nouveaux devis, lien
-  « Descriptions types ↗ » depuis l'éditeur), **Réglages** (admin : + catalogue produits).
+  « Descriptions types ↗ » depuis l'éditeur), **Catalogue produits** (`/reglages/produits`,
+  OUVERT À TOUS depuis le 14/09/2026 : produits de « 2 · Options & produits »).
 - **Nav** : à plat (Kanban · Liste · Clients · Devis · Planning · Dashboard · Plus),
   menu mobile ; recherche globale flottante en bas (⌘K) → pages avec `pb-24/28`.
 
@@ -165,6 +176,10 @@ sociale) + `siret` + `tva_intracom` → Pennylane `company_customer` (type mémo
   options disparaissaient quand la relecture immédiate ramenait l'ancienne version).
   Après enregistrement : vérification différée (4 s) + `avertissement` serveur si
   Pennylane ne relit pas les mêmes lignes (loggé côté Vercel).
+  **Dupliquer** repart de l'instantané CRM (`devis.lignes`), Pennylane seulement sans
+  instantané. Pennylane place le kit (Pergola OU Carport) en tête (`isPergolaKit`).
+  Les lignes des pergolas supplémentaires sont rattachées à leur configurateur au
+  chargement (`rattacherSupplements`, sinon doublon au « Valider » / « Retirer »).
   **Suppression d'un devis** (`supprimerDevis`) : fiche, éditeur (menu Plus) et liste
   `/devis`, avec confirmation ; refusée si signé (CRM ou Pennylane) ; montant du lead
   recalculé (devis signé sinon plus récent restant) ; journal `devis_supprime`. Pennylane

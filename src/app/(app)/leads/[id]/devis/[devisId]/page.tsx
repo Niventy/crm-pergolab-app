@@ -5,6 +5,7 @@ import { db } from "@/db";
 import { leads as leadsTable, devis as devisTable } from "@/db/schema";
 import {
   getDescriptionsSurMesure,
+  getOptionsConfigurateur,
   getProduitsCatalogue,
 } from "@/app/(app)/reglages/actions";
 import { getQuoteStatus } from "@/lib/pennylane";
@@ -33,9 +34,10 @@ export default async function DevisEditPage({
 
   // Descriptions pré-stockées par composant sur-mesure (injectées sur les lignes)
   // + catalogue de produits, + statut Pennylane du devis (verrou si signé).
-  const [surMesureDescriptions, catalogue, statutPl] = await Promise.all([
+  const [surMesureDescriptions, catalogue, options, statutPl] = await Promise.all([
     getDescriptionsSurMesure(),
     getProduitsCatalogue(),
+    getOptionsConfigurateur(true), // retirées incluses : une config existante peut les référencer
     devisRow?.externalId ? getQuoteStatus(devisRow.externalId) : Promise.resolve(null),
   ]);
 
@@ -79,6 +81,7 @@ export default async function DevisEditPage({
         statut={statutAffiche}
         pennylaneConfigured={!!process.env.PENNYLANE_API_KEY}
         surMesureDescriptions={surMesureDescriptions}
+        options={options}
         catalogue={catalogue}
         config={(devisRow?.config as DevisConfig | null) ?? null}
         lignesSnapshot={
