@@ -84,7 +84,7 @@ export function Chantier({
       </div>
 
       {/* Frise des 4 jalons : prévu / réel */}
-      <div className="grid grid-cols-2 gap-3 md:grid-cols-4">
+      <div className="grid grid-cols-2 gap-3">
         <Jalon
           titre="Métré"
           edit={edit}
@@ -226,16 +226,19 @@ function Jalon({
       >
         {titre}
       </div>
-      <div className="mt-1 space-y-1">
+      <div className={cn("mt-1", edit ? "space-y-1.5" : "space-y-1")}>
         {champs.map((c) => (
-          <div key={c.key} className="flex items-center justify-between gap-2 text-sm">
+          <div
+            key={c.key}
+            className={cn("text-sm", edit ? "flex flex-col gap-0.5" : "flex items-center justify-between gap-2")}
+          >
             <span className="text-xs text-muted-foreground">{c.label}</span>
             {edit ? (
               <input
                 type="date"
                 value={(v[c.key] as string | null) ?? ""}
                 onChange={(e) => set(c.key)(e.target.value)}
-                className="h-8 rounded-md border border-border bg-white px-1.5 text-xs outline-none focus:border-primary"
+                className="h-8 w-full min-w-0 rounded-md border border-border bg-white px-1.5 text-xs outline-none focus:border-primary"
               />
             ) : (
               <span className={cn("tabular-nums", v[c.key] ? "font-medium text-foreground" : "text-muted-foreground")}>
