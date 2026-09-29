@@ -8,7 +8,15 @@ import { cn } from "@/lib/utils";
 import { formatEuros, formatDate, moisLabelFr } from "@/lib/format";
 import { updateLeadStage } from "@/app/(app)/kanban/actions";
 import { FilterSelect, Td } from "@/components/data-table";
-import { PHASE_META, PHASE_ORDER, type CommandeRow, type Phase, type StageOption } from "./phases-meta";
+import { PoseurSelect } from "@/app/(app)/leads/[id]/poseur-select";
+import {
+  PHASE_META,
+  PHASE_ORDER,
+  type CommandeRow,
+  type Phase,
+  type PoseurOption,
+  type StageOption,
+} from "./phases-meta";
 
 const ym = (d: string) => d.slice(0, 7);
 const moisLabel = (key: string) => moisLabelFr(key);
@@ -26,12 +34,14 @@ export function CommandesTable({
   admin,
   currentUserId,
   stages,
+  poseurs,
   initialEnc = "all",
 }: {
   rows: CommandeRow[];
   admin: boolean;
   currentUserId: string | null;
   stages: StageOption[];
+  poseurs: PoseurOption[];
   /** Filtre d'encaissement pré-appliqué (?enc=…). */
   initialEnc?: Phase | "all";
 }) {
@@ -58,7 +68,7 @@ export function CommandesTable({
 
   const equipeSet = [...new Set(rows.map((r) => r.equipePose).filter(Boolean) as string[])].sort();
   const equipeOptions = [
-    { value: "all", label: "Toutes les équipes de pose" },
+    { value: "all", label: "Tous les poseurs" },
     ...equipeSet.map((e) => ({ value: e, label: e })),
   ];
 
@@ -131,7 +141,7 @@ export function CommandesTable({
     setAvecAnnulees(false);
   };
 
-  const NB_COLS = 12;
+  const NB_COLS = 13;
 
   return (
     <div className="flex min-h-0 flex-1 flex-col">
@@ -196,6 +206,7 @@ export function CommandesTable({
                     { l: "Date" },
                     { l: "Client" },
                     { l: "Étape" },
+                    { l: "Poseur" },
                     { l: "Encaissement" },
                     { l: "Localisation" },
                     { l: "Produit" },
@@ -225,6 +236,7 @@ export function CommandesTable({
                     nbCols={NB_COLS}
                     router={router}
                     stages={stages}
+                    poseurs={poseurs}
                   />
                 ))}
               </tbody>
@@ -241,6 +253,7 @@ function MonthGroup({
   nbCols,
   router,
   stages,
+  poseurs,
 }: {
   g: {
     mois: string;
@@ -253,6 +266,7 @@ function MonthGroup({
   nbCols: number;
   router: ReturnType<typeof useRouter>;
   stages: StageOption[];
+  poseurs: PoseurOption[];
 }) {
   return (
     <>
@@ -286,6 +300,15 @@ function MonthGroup({
                 couleur={r.stageCouleur}
                 stages={stages}
                 onDone={() => router.refresh()}
+              />
+            </Td>
+            <Td className="whitespace-nowrap">
+              <PoseurSelect
+                leadId={r.id}
+                poseurs={poseurs}
+                poseurId={r.poseurId}
+                texteLibre={r.poseurId ? null : r.equipePose}
+                variante="tableau"
               />
             </Td>
             <Td className="whitespace-nowrap">
@@ -346,7 +369,7 @@ function MonthGroup({
       })}
       {/* Total du mois (commandes actives) */}
       <tr className="bg-muted/60 font-semibold">
-        <Td className="text-[0.7rem] uppercase tracking-wide text-muted-foreground" colSpan={7}>
+        <Td className="text-[0.7rem] uppercase tracking-wide text-muted-foreground" colSpan={8}>
           Total {moisLabel(g.mois)}
         </Td>
         <Td className="text-right tabular-nums">{formatEuros(g.totHt)}</Td>

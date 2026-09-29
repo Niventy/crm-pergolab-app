@@ -303,7 +303,7 @@ export function EditForm({
       {cycle === 3 ? (
       <Section title="Pose & technique">
         <FieldSelect
-          label="Poseur / métreur (membre de l'équipe)"
+          label="Métreur / suivi (membre de l'équipe)"
           value={form.poseAssignedTo || NONE}
           onChange={(v) => set("poseAssignedTo")(v === NONE ? "" : v)}
           options={[

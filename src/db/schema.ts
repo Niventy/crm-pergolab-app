@@ -82,6 +82,22 @@ export const stages = pgTable("stages", {
 });
 
 // ---------------------------------------------------------------------------
+// poseurs — liste des poseurs / équipes de pose (souvent externes à l'équipe
+// CRM), choisie à un clic sur la fiche client (`leads.poseur_id`). Gérée dans
+// Réglages → Poseurs. « Retirer » = actif=false (jamais de DELETE : les
+// chantiers passés y font référence).
+// ---------------------------------------------------------------------------
+export const poseurs = pgTable("poseurs", {
+  id: uuid("id").primaryKey().defaultRandom(),
+  nom: text("nom").notNull(),
+  telephone: text("telephone"),
+  actif: boolean("actif").notNull().default(true),
+  createdAt: timestamp("created_at", { withTimezone: true })
+    .notNull()
+    .defaultNow(),
+});
+
+// ---------------------------------------------------------------------------
 // leads — prospects
 // ---------------------------------------------------------------------------
 export const leads = pgTable("leads", {
@@ -160,7 +176,9 @@ export const leads = pgTable("leads", {
   acompteEncaisse: numeric("acompte_encaisse", { precision: 12, scale: 2 }),
   paiementEspece: numeric("paiement_espece", { precision: 12, scale: 2 }),
   financeur: text("financeur"), // ex. SOFINCO (complète mode_paiement)
-  equipePose: text("equipe_pose"), // nom libre de l'équipe de pose
+  equipePose: text("equipe_pose"), // texte libre (ancienne saisie / précision de pose)
+  // Poseur choisi dans la liste `poseurs` (prioritaire à l'affichage).
+  poseurId: uuid("poseur_id").references(() => poseurs.id, { onDelete: "set null" }),
   mesure: text("mesure"), // nombre de kilo / métré
   // Dossier administratif : factures de solde + date d'envoi du dossier.
   factureSoldeClient: boolean("facture_solde_client").notNull().default(false),
@@ -455,6 +473,10 @@ export const leadsRelations = relations(leads, ({ one, many }) => ({
   poseur: one(profiles, {
     fields: [leads.poseAssignedTo],
     references: [profiles.id],
+  }),
+  poseurAffecte: one(poseurs, {
+    fields: [leads.poseurId],
+    references: [poseurs.id],
   }),
   notes: many(notes),
   echanges: many(echanges),

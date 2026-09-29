@@ -13,7 +13,7 @@ export default async function ClientsTableauPage({
 }: {
   searchParams: Promise<{ enc?: string }>;
 }) {
-  const [{ rows, stageOptions, admin, userId }, sp] = await Promise.all([
+  const [{ rows, stageOptions, poseurs, admin, userId }, sp] = await Promise.all([
     getClients(),
     searchParams,
   ]);
@@ -34,6 +34,7 @@ export default async function ClientsTableauPage({
         admin={admin}
         currentUserId={userId}
         stages={stageOptions}
+        poseurs={poseurs}
         initialEnc={enc}
       />
     </main>

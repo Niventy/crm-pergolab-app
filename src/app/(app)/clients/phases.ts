@@ -4,6 +4,7 @@ import { leads as leadsTable, stages as stagesTable } from "@/db/schema";
 import { createClient } from "@/lib/supabase/server";
 import { isAdmin } from "@/lib/current-user";
 import { CYCLE_CHANTIER } from "@/lib/pipeline";
+import { getPoseurs } from "@/app/(app)/leads/[id]/poseur-actions";
 import { phaseDe, type CommandeRow, type Phase, type StageOption } from "./phases-meta";
 
 // Requêtes serveur de l'espace Clients. Types, badges et règle d'encaissement
@@ -31,7 +32,7 @@ export async function getClients() {
   ]);
   const chantierIds = chantierStages.map((s) => s.id);
 
-  const [commandes, userRes] = await Promise.all([
+  const [commandes, userRes, poseurs] = await Promise.all([
     db.query.leads.findMany({
       where: and(
         isNull(leadsTable.deletedAt),
@@ -39,10 +40,11 @@ export async function getClients() {
           ? or(eq(leadsTable.statut, "gagnee"), inArray(leadsTable.stageId, chantierIds))
           : eq(leadsTable.statut, "gagnee"),
       ),
-      with: { stage: true, responsable: true, poseur: true },
+      with: { stage: true, responsable: true, poseur: true, poseurAffecte: true },
       orderBy: (l, { desc }) => [desc(l.dateSignature), desc(l.createdAt)],
     }),
     supabase.auth.getUser(),
+    getPoseurs(true),
   ]);
   const user = userRes.data.user;
 
@@ -59,7 +61,9 @@ export async function getClients() {
       commercial: l.responsable?.nom ?? l.responsable?.email ?? null,
       assignedTo: l.assignedTo,
       poseAssignedTo: l.poseAssignedTo,
-      equipePose: l.equipePose ?? l.poseur?.nom ?? l.poseur?.email ?? null,
+      poseurId: l.poseurId,
+      equipePose:
+        l.poseurAffecte?.nom ?? l.equipePose ?? l.poseur?.nom ?? l.poseur?.email ?? null,
       nom: l.nom,
       telephone: l.telephone,
       codePostal: l.codePostal,
@@ -89,5 +93,5 @@ export async function getClients() {
   for (const r of rows) if (r.statut === "gagnee") counts[r.phase]++;
 
   const stageOptions: StageOption[] = chantierStages;
-  return { rows, counts, stageOptions, admin, userId: user?.id ?? null };
+  return { rows, counts, stageOptions, poseurs, admin, userId: user?.id ?? null };
 }

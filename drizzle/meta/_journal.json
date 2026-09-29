@@ -253,6 +253,20 @@
       "when": 1788966255560,
       "tag": "0035_options_configurateur_amorcage",
       "breakpoints": true
+    },
+    {
+      "idx": 36,
+      "version": "7",
+      "when": 1790693746158,
+      "tag": "0036_cute_luckman",
+      "breakpoints": true
+    },
+    {
+      "idx": 37,
+      "version": "7",
+      "when": 1790693771344,
+      "tag": "0037_poseurs_amorcage_rls",
+      "breakpoints": true
     }
   ]
 }

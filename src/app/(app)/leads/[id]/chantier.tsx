@@ -7,6 +7,7 @@ import { toast } from "sonner";
 import { cn } from "@/lib/utils";
 import { formatDate } from "@/lib/format";
 import { saveChantier, type ChantierInput } from "./actions";
+import { PoseurSelect, type PoseurOption } from "./poseur-select";
 
 type Profil = { id: string; nom: string | null; email: string };
 
@@ -14,15 +15,20 @@ export type ChantierValues = ChantierInput;
 
 // Suivi de chantier ÉDITABLE EN PLACE : dates prévues / réelles, poseur, équipe,
 // fournisseur, adresse — sans passer par la page « Modifier » (40 champs).
+// Le POSEUR se choisit directement (liste `poseurs`), hors mode édition.
 export function Chantier({
   leadId,
   values,
   profiles,
+  poseurs,
+  poseurId,
   adresseClient,
 }: {
   leadId: string;
   values: ChantierValues;
   profiles: Profil[];
+  poseurs: PoseurOption[];
+  poseurId: string | null;
   adresseClient: string | null;
 }) {
   const router = useRouter();
@@ -123,7 +129,10 @@ export function Chantier({
 
       {/* Qui / quoi / où */}
       <div className="mt-3 grid grid-cols-1 gap-3 sm:grid-cols-2 lg:grid-cols-3">
-        <Champ label="Poseur / métreur (membre)" edit={edit}>
+        <Champ label="Poseur" edit={edit}>
+          <PoseurSelect leadId={leadId} poseurs={poseurs} poseurId={poseurId} />
+        </Champ>
+        <Champ label="Métreur / suivi (membre)" edit={edit}>
           {edit ? (
             <select
               value={v.poseAssignedTo ?? ""}
@@ -138,10 +147,10 @@ export function Chantier({
               ))}
             </select>
           ) : (
-            poseur?.nom ?? poseur?.email ?? <span className="text-amber-700">Non assigné</span>
+            poseur?.nom ?? poseur?.email ?? "—"
           )}
         </Champ>
-        <Champ label="Équipe de pose (externe)" edit={edit}>
+        <Champ label="Précision de pose (texte libre)" edit={edit}>
           {edit ? (
             <input value={v.equipePose ?? ""} onChange={(e) => set("equipePose")(e.target.value)} className={inputCls} />
           ) : (

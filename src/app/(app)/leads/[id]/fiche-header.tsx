@@ -20,6 +20,7 @@ import { formatDate, formatEurosCents, formatTelephone, humanise, telHref, temps
 import { departementDe } from "@/lib/departements";
 import { PHASE_META, type Phase } from "@/app/(app)/clients/phases-meta";
 import { AssignSelect } from "./assign-select";
+import { PoseurSelect, type PoseurOption } from "./poseur-select";
 import { Reactiver } from "./reactiver";
 
 type Profil = { id: string; nom: string | null; email: string };
@@ -39,7 +40,8 @@ export type HeaderClient = {
   encaisse: number;
   nbPaiements: number;
   echeance: { label: string; date: string; passe: boolean; Icon: "metre" | "livraison" | "pose" } | null;
-  poseur: string | null;
+  poseurId: string | null;
+  poseurTexte: string | null;
   devisNumero: string | null;
   dateSignature: string | null;
 };
@@ -65,6 +67,7 @@ export function FicheHeader({
   prospection,
   client,
   profiles,
+  poseurs,
   currentUserId,
 }: {
   lead: {
@@ -93,6 +96,7 @@ export function FicheHeader({
   prospection: HeaderProspection | null;
   client: HeaderClient | null;
   profiles: Profil[];
+  poseurs: PoseurOption[];
   currentUserId: string | null;
 }) {
   const perdu = lead.statut === "perdue";
@@ -230,7 +234,7 @@ export function FicheHeader({
           </span>
         </div>
       ) : isClient && client ? (
-        <BandeauClient c={client} annulee={annulee} />
+        <BandeauClient c={client} annulee={annulee} leadId={lead.id} poseurs={poseurs} />
       ) : prospection ? (
         <BandeauProspection p={prospection} recuIlYA={recuIlYA} today={today} />
       ) : null}
@@ -321,7 +325,17 @@ function BandeauProspection({
   );
 }
 
-function BandeauClient({ c, annulee }: { c: HeaderClient; annulee: boolean }) {
+function BandeauClient({
+  c,
+  annulee,
+  leadId,
+  poseurs,
+}: {
+  c: HeaderClient;
+  annulee: boolean;
+  leadId: string;
+  poseurs: PoseurOption[];
+}) {
   const reste = c.ttc == null ? null : Math.max(0, c.ttc - c.encaisse);
   const pct = c.ttc && c.ttc > 0 ? Math.min(100, Math.round((c.encaisse / c.ttc) * 100)) : 0;
   const pm = PHASE_META[c.phase];
@@ -391,12 +405,18 @@ function BandeauClient({ c, annulee }: { c: HeaderClient; annulee: boolean }) {
           <div className="mt-0.5 text-sm text-muted-foreground">Rien de planifié</div>
         )}
       </div>
-      <div className={cn("bg-white px-4 py-2.5 sm:px-5", !c.poseur && "bg-amber-50")}>
+      <div className={cn("bg-white px-4 py-2.5 sm:px-5", !c.poseurId && !c.poseurTexte && "bg-amber-50")}>
         <div className="text-eyebrow flex items-center gap-1 text-muted-foreground">
           <Wrench className="size-3.5" /> Pose
         </div>
-        <div className={cn("mt-0.5 text-sm font-semibold", c.poseur ? "text-foreground" : "text-amber-800")}>
-          {c.poseur ?? "Poseur non affecté"}
+        <div className="mt-0.5">
+          <PoseurSelect
+            leadId={leadId}
+            poseurs={poseurs}
+            poseurId={c.poseurId}
+            texteLibre={c.poseurTexte}
+            variante="entete"
+          />
         </div>
       </div>
     </div>

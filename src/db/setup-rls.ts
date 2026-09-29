@@ -64,6 +64,11 @@ alter table public.produits_catalogue enable row level security;
 alter table public.sur_mesure_mapping enable row level security;
 alter table public.paiements          enable row level security;
 alter table public.options_configurateur enable row level security;
+alter table public.poseurs            enable row level security;
+
+drop policy if exists "poseurs_all_authenticated" on public.poseurs;
+create policy "poseurs_all_authenticated"
+  on public.poseurs for all to authenticated using (true) with check (true);
 
 drop policy if exists "options_configurateur_all_authenticated" on public.options_configurateur;
 create policy "options_configurateur_all_authenticated"

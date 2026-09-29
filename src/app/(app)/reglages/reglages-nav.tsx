@@ -4,11 +4,13 @@ import Link from "next/link";
 import { usePathname } from "next/navigation";
 import { cn } from "@/lib/utils";
 
-// Les trois pages de réglages du devis sont ouvertes à toute l'équipe.
+// Pages de réglages ouvertes à toute l'équipe : le devis (descriptions, options,
+// produits) et la liste des poseurs proposée sur les fiches client.
 const SOUS_ONGLETS = [
   { href: "/reglages/sur-mesure", label: "Descriptions du devis" },
   { href: "/reglages/options", label: "Options du configurateur" },
   { href: "/reglages/produits", label: "Produits & forfaits" },
+  { href: "/reglages/poseurs", label: "Poseurs" },
 ];
 
 export function ReglagesNav() {

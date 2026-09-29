@@ -37,6 +37,7 @@ import { Documents } from "./documents";
 import { Facturation } from "./facturation";
 import { CorbeilleBanner } from "./corbeille-banner";
 import { Chantier } from "./chantier";
+import { getPoseurs } from "./poseur-actions";
 import { Paiements } from "./paiements";
 import { DossierAdmin } from "./dossier-admin";
 import { FicheHeader } from "./fiche-header";
@@ -106,7 +107,7 @@ export default async function LeadPage({
 }) {
   const { id } = await params;
 
-  const [lead, profiles, stages] = await Promise.all([
+  const [lead, profiles, stages, poseurs] = await Promise.all([
     db.query.leads.findFirst({
       where: eq(leadsTable.id, id),
       with: {
@@ -114,6 +115,7 @@ export default async function LeadPage({
         responsable: true,
         modifiePar: true,
         poseur: true,
+        poseurAffecte: true,
         notes: { with: { auteur: true }, orderBy: (n, { desc }) => [desc(n.createdAt)] },
         echanges: { with: { auteur: true }, orderBy: (e, { desc }) => [desc(e.date)] },
         devis: { orderBy: (d, { desc }) => [desc(d.createdAt)] },
@@ -127,6 +129,7 @@ export default async function LeadPage({
     }),
     db.query.profiles.findMany({ orderBy: (p, { asc }) => [asc(p.nom)] }),
     db.query.stages.findMany({ orderBy: (s, { asc }) => [asc(s.position)] }),
+    getPoseurs(true),
   ]);
 
   if (!lead) notFound();
@@ -230,7 +233,9 @@ export default async function LeadPage({
         encaisse,
         nbPaiements: paiementsItems.length,
         echeance: echeances[0] ? { ...echeances[0], passe: echeances[0].date < today } : null,
-        poseur: lead.poseur?.nom ?? lead.poseur?.email ?? lead.equipePose ?? null,
+        poseurId: lead.poseurId,
+        // Ancienne saisie (texte libre / membre) rappelée tant qu'aucun poseur n'est choisi.
+        poseurTexte: lead.equipePose ?? lead.poseur?.nom ?? lead.poseur?.email ?? null,
         devisNumero: devisRef?.numero ?? null,
         dateSignature: lead.dateSignature,
       }
@@ -489,6 +494,7 @@ export default async function LeadPage({
           prospection={prospection}
           client={clientHeader}
           profiles={profiles}
+          poseurs={poseurs}
           currentUserId={user?.id ?? null}
         />
 
@@ -617,6 +623,8 @@ export default async function LeadPage({
                   <Chantier
                     leadId={lead.id}
                     profiles={profiles}
+                    poseurs={poseurs}
+                    poseurId={lead.poseurId}
                     adresseClient={adresseClient}
                     values={{
                       dateMetre: lead.dateMetre,

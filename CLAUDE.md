@@ -50,7 +50,8 @@ Google Calendar en OAuth (refresh token par ADV) · Vercel.
   RÉCEPTION ; argent (CA, marge, panier, objectifs) par date de SIGNATURE.
 - **Suppression de fiche** = corbeille (`leads.deleted_at`), admin uniquement ;
   toute requête de listing filtre `isNull(deletedAt)`.
-- **RLS** activée sur les 12 tables (`setup-rls.ts` + migration 0022) ; l'app
+- **RLS** activée sur toutes les tables (`setup-rls.ts` + migrations 0022, 0035
+  options, 0037 poseurs — toute NOUVELLE table doit l'activer) ; l'app
   passe par Drizzle (connexion directe), la RLS ferme l'API REST anon.
 
 ## Pipeline (table `stages`, cycle + code)
@@ -77,7 +78,9 @@ Annulée (`annulee`, perdue — commande annulée après signature).
      par », tél (bouton), email, localisation, origine Meta ; puis bandeau de
      situation — prospect : « reçu il y a X · jamais appelé / N appels », RDV,
      relance (rouge si en retard) ; client : signature, argent (barre TTC→encaissé→
-     reste + badge), prochaine échéance, poseur. Perdu → bandeau + « Réactiver ».
+     reste + badge), prochaine échéance, **poseur choisi à un clic**
+     (`poseur-select.tsx`, liste `poseurs` + « Nouveau poseur… », journalisé).
+     Perdu → bandeau + « Réactiver ».
   2. **Travailler** (colonne gauche 3/5) : actions à un clic (`actions-rapides.tsx` :
      Pas de réponse → étape + relance, Appel passé, RDV fixé → étape Rendez-vous +
      Google Agenda, RDV à reprogrammer, Relance, Devis à envoyer ; client :
@@ -130,6 +133,13 @@ Annulée (`annulee`, perdue — commande annulée après signature).
   secours si table vide) ; les fonctions du moteur prennent `options` en paramètre,
   chargées par `getOptionsConfigurateur()` (éditeur : retirées incluses pour rouvrir
   une config). « Retirer » = `actif=false` (jamais de DELETE : les devis y font référence).
+- **Poseurs** (`/reglages/poseurs`, OUVERT À TOUS) : table `poseurs` (nom, téléphone,
+  actif) → `leads.poseur_id`. Sélecteur direct `PoseurSelect` dans l'en-tête de fiche,
+  le bloc Chantier (hors mode édition) et la colonne « Poseur » de `/clients/tableau`.
+  Nom affiché partout = poseur choisi, sinon ancienne saisie libre `equipe_pose`
+  (conservée, libellée « Précision de pose »), sinon membre `pose_assigned_to`
+  (« Métreur / suivi », sert à « Mes chantiers » du Planning). « Retirer » = `actif=false`
+  (jamais de DELETE). Actions : `leads/[id]/poseur-actions.ts`.
 - **Commentaires**, **Descriptions du devis** (`/reglages/sur-mesure`, OUVERT À TOUS :
   texte type par gamme / extra / option, injecté sur les lignes des nouveaux devis, lien
   « Descriptions types ↗ » depuis l'éditeur), **Catalogue produits** (`/reglages/produits`,
@@ -142,7 +152,8 @@ profiles (id=auth.users, email, nom, role admin|membre, objectif_mensuel) ·
 stages (nom, **code**, position, couleur, cycle, is_gagnee, is_perdue) ·
 leads (identité, source/campagne, stage_id, assigned_to, statut, montant HT,
 **montant_ttc**, RDV, relance, métriques commerciales, acompte_encaisse,
-paiement_espece, produit, pose (pose_assigned_to = membre, equipe_pose = externe),
+paiement_espece, produit, pose (**poseur_id** → `poseurs`, pose_assigned_to = membre
+métreur / suivi, equipe_pose = précision en texte libre),
 adresse (client) / adresse_pose (si différente), **deleted_at**, raw_payload) ·
 notes (conversation, mentions) · echanges (journal : appel, relance, email, etape,
 devis_cree, devis_envoye, devis_accepte, attribution, suppression…) ·
@@ -152,7 +163,8 @@ montant_ht, **montant_ttc**, **lignes** par taux, statut draft|finalized|supprim
 **paiements** (lead_id, date, montant, mode virement|cheque|cb|especes|financement|autre,
 reference ; `leads.acompte_encaisse` / `paiement_espece` = SOMMES recalculées à
 chaque écriture, `paiements-actions.ts`) · taches · documents · notifications ·
-produits_catalogue · sur_mesure_mapping. **Client pro** : `leads.entreprise` (raison
+produits_catalogue · sur_mesure_mapping · options_configurateur · **poseurs**.
+**Client pro** : `leads.entreprise` (raison
 sociale) + `siret` + `tva_intracom` → Pennylane `company_customer` (type mémorisé dans
 `pennylane_customer_type`) ; sinon `individual_customer`.
 

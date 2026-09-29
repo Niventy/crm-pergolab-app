@@ -31,6 +31,8 @@ export function phaseDe(r: {
   return "sav";
 }
 
+export type { PoseurOption } from "@/app/(app)/leads/[id]/poseur-select";
+
 export type StageOption = {
   id: string;
   nom: string;
@@ -46,7 +48,8 @@ export type CommandeRow = {
   commercial: string | null;
   assignedTo: string | null;
   poseAssignedTo: string | null;
-  equipePose: string | null;
+  poseurId: string | null; // poseur choisi dans la liste (Réglages → Poseurs)
+  equipePose: string | null; // nom affiché : poseur choisi, sinon ancienne saisie libre
   nom: string;
   telephone: string | null;
   codePostal: string | null;
