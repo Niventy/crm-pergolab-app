@@ -14,27 +14,88 @@ export type LigneCalc = {
 // Pennylane n'a pas de 0 % « FR_… » : le 0 % est envoyé en `exempt`.
 export const TVA_OPTIONS = [20, 10, 5.5, 0] as const;
 
-export const r2 = (n: number) => Math.round(n * 100) / 100;
+// Arrondi au centime, demi-centime ÉLOIGNÉ de zéro (règle comptable, celle de
+// Pennylane) : Math.round seul arrondit −490,975 en −490,97 et 1,005 en 1,00
+// (flottants) ; ici −490,98 et 1,01.
+export const r2 = (n: number) => {
+  const s = n < 0 ? -1 : 1;
+  return (s * Math.round(Math.abs(n) * 100 + 1e-7)) / 100;
+};
 
-// HT d'une ligne, remise (%) déduite.
+// HT d'une ligne, remise (%) déduite, ARRONDI AU CENTIME : c'est le montant
+// que Pennylane inscrit sur la ligne du PDF.
 export function ligneHt(l: LigneCalc): number {
   const brut = (l.quantite || 0) * (l.prixHt || 0);
   const r = Number(l.remisePct ?? 0);
-  return r > 0 ? brut * (1 - r / 100) : brut;
+  return r2(r > 0 ? brut * (1 - r / 100) : brut);
+}
+
+// TVA d'une ligne, arrondie au centime SUR LA LIGNE (comme Pennylane). Une
+// remise de −4 909,75 € à 10 % donne −490,98 € de TVA, pas −490,975 : c'est
+// ce qui faisait 9 950,00 € dans le CRM et 9 949,99 € sur le PDF.
+export function ligneTva(l: LigneCalc): number {
+  return r2(ligneHt(l) * ((l.tva || 0) / 100));
 }
 
 export function totalHt(lines: LigneCalc[]): number {
   return r2(lines.reduce((a, l) => a + ligneHt(l), 0));
 }
 
-// TTC = Σ HT_ligne × (1 + taux_ligne). Les lignes négatives (remise) réduisent
-// la TVA à LEUR taux, ce qui garde le total juste quand les taux diffèrent.
-export function totalTtc(lines: LigneCalc[]): number {
-  return r2(lines.reduce((a, l) => a + ligneHt(l) * (1 + (l.tva || 0) / 100), 0));
+export function totalTva(lines: LigneCalc[]): number {
+  return r2(lines.reduce((a, l) => a + ligneTva(l), 0));
 }
 
-export function totalTva(lines: LigneCalc[]): number {
-  return r2(totalTtc(lines) - totalHt(lines));
+// TTC = Σ (HT_ligne + TVA_ligne), chaque ligne arrondie. Les lignes négatives
+// (remise) réduisent la TVA à LEUR taux, ce qui garde le total juste quand les
+// taux diffèrent.
+export function totalTtc(lines: LigneCalc[]): number {
+  return r2(lines.reduce((a, l) => a + ligneHt(l) + ligneTva(l), 0));
+}
+
+// Remise commerciale pour VISER un TTC (ex. 9 950 € négociés) : montant HT de
+// remise par taux (positif), réparti au prorata des bases, puis ajusté au
+// centime sur le plus gros taux pour tomber au plus près du TTC visé, avec les
+// arrondis ligne par ligne de Pennylane. Renvoie aussi le TTC réellement
+// obtenu : à 10 % de TVA, 1 centime sur 10 n'est pas atteignable (9 949,99 ou
+// 9 950,01), l'éditeur le signale.
+export function remisePourTtcCible(
+  lines: LigneCalc[],
+  ttcCible: number,
+): { remises: Map<number, number>; ttc: number } {
+  const ttcBase = totalTtc(lines);
+  const remises = new Map<number, number>();
+  if (!(ttcCible > 0) || ttcCible >= ttcBase) return { remises, ttc: ttcBase };
+  const base = netParTaux(lines);
+  const ratio = 1 - ttcCible / ttcBase;
+  for (const [t, ht] of base) remises.set(t, r2(ht * ratio));
+  const ttcAvec = (m: Map<number, number>) =>
+    r2(
+      ttcBase -
+        [...m.entries()].reduce((a, [t, r]) => a + r + r2(r * (t / 100)), 0),
+    );
+  // Ajustement au centime sur le taux le plus gros (le seul qui bouge).
+  let dominant = 0;
+  let max = -1;
+  for (const [t, ht] of base)
+    if (ht > max) {
+      max = ht;
+      dominant = t;
+    }
+  const r0 = remises.get(dominant) ?? 0;
+  let best = r0;
+  let ecart = Math.abs(ttcAvec(remises) - ttcCible);
+  for (let k = -5; k <= 5 && ecart > 0.004; k++) {
+    const essai = new Map(remises);
+    essai.set(dominant, r2(r0 + k / 100));
+    const e = Math.abs(ttcAvec(essai) - ttcCible);
+    if (e < ecart - 1e-9) {
+      ecart = e;
+      best = r2(r0 + k / 100);
+    }
+  }
+  remises.set(dominant, best);
+  for (const [t, r] of remises) if (r <= 0) remises.delete(t);
+  return { remises, ttc: ttcAvec(remises) };
 }
 
 // Net HT réparti PAR TAUX de TVA (remises comprises, car elles portent un taux).

@@ -26,9 +26,14 @@ Google Calendar en OAuth (refresh token par ADV) · Vercel.
    SQL de données / RLS), puis `npm run db:migrate`. Ne jamais éditer une migration déjà appliquée.
 
 ## Invariants métier (ne pas casser)
-- **Argent** : la TVA se calcule LIGNE PAR LIGNE au taux de chaque ligne
-  (`src/lib/devis-calc.ts`). Tout TTC (devis, acompte, solde, reste à encaisser)
-  en découle. Taux valides : `TVA_OPTIONS` = 20 / 10 / 5,5 / 0 (0 → `exempt` Pennylane).
+- **Argent** : la TVA se calcule LIGNE PAR LIGNE au taux de chaque ligne, HT et
+  TVA **arrondis au centime SUR CHAQUE LIGNE** (demi-centime éloigné de zéro,
+  `r2`), comme Pennylane (`src/lib/devis-calc.ts`) — avant, l'arrondi n'était
+  fait qu'en fin de calcul : 9 950,00 € dans le CRM, 9 949,99 € sur le PDF.
+  Tout TTC (devis, acompte, solde, reste à encaisser) en découle. Les montants
+  enregistrés (`devis.montant*`) sont ceux RELUS de Pennylane après création /
+  modification (`totauxDevis`), avertissement à l'ADV s'ils diffèrent du calcul.
+  Taux valides : `TVA_OPTIONS` = 20 / 10 / 5,5 / 0 (0 → `exempt` Pennylane).
 - **Devis accepté** (`devis.accepte_at`, un seul par fiche) = source du montant
   du lead (`leads.montant` HT, `leads.montant_ttc`), de la facturation et du CA.
   Auto-accepté à la signature s'il est unique ; sinon bouton « Marquer signé ».
@@ -97,7 +102,10 @@ Annulée (`annulee`, perdue — commande annulée après signature).
   manuel, mode de paiement. `/modifier` = « Tout modifier », sans l'étape pour un client.
 - **Devis** (`/devis`, `/leads/[id]/devis/[devisId]`) — éditeur en 3 temps + fil
   d'étapes (Composer → Vérifier → Envoyer → Signé) : **1 · La pergola**
-  (configurateur `sur-mesure-calc.tsx`, prix HT vendeur ; gammes `MODELES` = ESSENTIA /
+  (FACULTATIVE : « Devis sans pergola » / « Retirer la pergola » (`retirerPergola`,
+  annulable) → devis de produits / lignes libres seuls, `config.pergola = null` ; une
+  pergola supplémentaire configurée est alors promue principale ;
+  configurateur `sur-mesure-calc.tsx`, prix HT vendeur ; gammes `MODELES` = ESSENTIA /
   HORIZON / SIGNATURE (`lames: true`) + **CARPORT** (`lames: false` : toit 519 € HT/m²,
   poteaux inclus, ligne « Carport LxW », pas de LED / spots / lames) ; **pose** choisie
   explicitement (`ConfigSM.pose` adossée = 2 poteaux / autoportée = 4, `POSES`), mention
@@ -114,7 +122,9 @@ Annulée (`annulee`, perdue — commande annulée après signature).
   bouton « Texte du devis / Ajouter un texte » → textarea TOUJOURS éditable, même
   pour une ligne relue de Pennylane avec `product_id` ; remise ligne au même
   endroit ; ligne libre), remise commerciale globale répartie par
-  taux, clause suspensive auto, TVA du devis (10 % rénovation / 20 % neuf).
+  taux — en % OU par **TTC visé** (`config.remiseTtcCible`, ex. 9 950 € négociés :
+  remise calculée au centime avec les arrondis Pennylane ; si inatteignable, ex.
+  1 centime sur 10 à 10 % de TVA, l'éditeur affiche le TTC réel obtenu), clause suspensive auto, TVA du devis (10 % rénovation / 20 % neuf).
   Bandeau totaux collant (HT / TVA / **TTC**) + actions : Créer / Enregistrer,
   **Envoyer au client** (Gmail + PDF → « Devis envoyé »), **Faire signer** (Yousign,
   contact signataire créé automatiquement), menu Plus (PDF, Dupliquer, Pennylane).

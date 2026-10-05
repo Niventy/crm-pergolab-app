@@ -14,8 +14,12 @@ import {
   ligneHt as netLigne,
   netParTaux as calcNetParTaux,
   r2,
+  remisePourTtcCible,
   tauxDominant,
   tauxLabel,
+  totalHt,
+  totalTtc,
+  totalTva,
 } from "@/lib/devis-calc";
 import { cn } from "@/lib/utils";
 import { ouvrirDans } from "@/lib/ouvrir-dans";
@@ -76,6 +80,9 @@ export type DevisConfig = {
   supplements: { key: number; cfg: ConfigSM | null }[];
   tauxDefaut: number;
   remisePct: number;
+  // TTC négocié (ex. 9 950 €) : la remise est calculée pour l'atteindre au
+  // centime près (arrondis Pennylane compris) ; prime sur remisePct.
+  remiseTtcCible?: number | null;
 };
 
 const estClause = (l: LineIn) =>
@@ -124,7 +131,8 @@ function decomposer(raw: LineIn[]) {
   const htAutres = autres.reduce((a, l) => a + netLigne(l), 0);
   const remAbs = rems.reduce((a, r) => a + Math.abs(r.prixHt || 0), 0);
   return {
-    remisePct: remAbs > 0 && htAutres > 0 ? Math.round((remAbs / htAutres) * 1000) / 10 : 0,
+    remisePct: remAbs > 0 && htAutres > 0 ? Math.round((remAbs / htAutres) * 10000) / 100 : 0,
+    remiseMontant: remAbs,
     tauxDefaut: tauxDominant(autres),
     lines: ordonner(taguerConfig(autres)),
   };
@@ -329,7 +337,16 @@ export function DevisForm({
   const [dupPending, startDup] = useTransition();
   const [plusOpen, setPlusOpen] = useState(false);
   const [lines, setLines] = useState<Line[]>(initial?.lines ?? []);
-  const [remisePct, setRemisePct] = useState(initial?.remisePct ?? config?.remisePct ?? 0);
+  // Le % mémorisé dans la config est repris tel quel s'il reproduit bien la
+  // remise des lignes (au centime près) ; sinon le % est redéduit des lignes.
+  const [remisePct, setRemisePct] = useState(() => {
+    const cfg = Number(config?.remisePct ?? 0);
+    if (!initial) return cfg;
+    const htAutres = initial.lines.reduce((a, l) => a + netLigne(l), 0);
+    const reproduit = Math.abs(htAutres * (cfg / 100) - initial.remiseMontant) < 0.05;
+    return cfg > 0 && reproduit ? cfg : initial.remisePct;
+  });
+  const [ttcCible, setTtcCible] = useState<number | null>(config?.remiseTtcCible ?? null);
   const [tauxDefaut, setTauxDefaut] = useState<number>(
     initial?.tauxDefaut ?? config?.tauxDefaut ?? 20,
   );
@@ -430,6 +447,36 @@ export function DevisForm({
     setLines((cur) => ordonner([...auTauxDefaut(ls), ...cur.filter((l) => !l.config)]));
     setSmOpen(false); // la pergola validée se replie en résumé
   };
+  // Devis SANS pergola principale (options, produits ou lignes libres seuls) :
+  // retire ses lignes et replie le configurateur. S'il reste une pergola
+  // supplémentaire configurée, elle DEVIENT la principale — sinon, au
+  // rechargement, son kit serait pris pour la principale ET gardé en supplément.
+  const retirerPergola = () => {
+    const avant = { lines, smConfig, supplements, smOpen };
+    const promu = supplements.find((s) => s.cfg);
+    setLines((cur) =>
+      cur
+        .filter((l) => !l.config)
+        .map((l) =>
+          promu && l.suppKey === promu.key ? { ...l, config: true, suppKey: undefined } : l,
+        ),
+    );
+    setSmConfig(promu?.cfg ?? null);
+    setSupplements((s) => s.filter((x) => x.cfg && x.key !== promu?.key));
+    setSmOpen(false);
+    if (avant.smConfig)
+      toast.success("Pergola retirée du devis", {
+        action: {
+          label: "Annuler",
+          onClick: () => {
+            setLines(avant.lines);
+            setSmConfig(avant.smConfig);
+            setSupplements(avant.supplements);
+            setSmOpen(avant.smOpen);
+          },
+        },
+      });
+  };
   const ajouterConfigurateurSupplement = () => {
     setSupplements((s) => [...s, { key: suppKeyRef.current++, cfg: null }]);
     setSmOpen(true);
@@ -464,35 +511,57 @@ export function DevisForm({
   };
 
   // ----- Totaux -----
+  // Tous les montants passent par les mêmes fonctions que le serveur (HT et
+  // TVA arrondis LIGNE PAR LIGNE, comme Pennylane) : ce que l'éditeur affiche
+  // est ce que le PDF imprime.
   const remplies = () => lines.filter((l) => l.designation.trim());
-  const brut = lines.reduce((a, l) => a + (l.quantite || 0) * (l.prixHt || 0), 0);
-  const htLignes = lines.reduce((a, l) => a + netLigne(l), 0);
-  const remiseMontant = remisePct > 0 ? htLignes * (remisePct / 100) : 0;
-  const ht = htLignes - remiseMontant;
-  const remiseTotale = brut - ht;
+  const brut = r2(lines.reduce((a, l) => a + (l.quantite || 0) * (l.prixHt || 0), 0));
+  const htLignes = totalHt(lines);
   const netParTaux = (base: Line[]): Map<number, number> => calcNetParTaux(base);
+  // Lignes « Remise commerciale » (une par taux) : depuis le TTC visé si l'ADV
+  // en a saisi un, sinon depuis le %.
   const construireRemises = (base: Line[]): Line[] => {
-    if (remisePct <= 0) return [];
     const m = netParTaux(base);
-    const taux = [...m.keys()].filter((t) => (m.get(t) ?? 0) > 0);
+    const montants = new Map<number, number>();
+    if (ttcCible && ttcCible > 0) {
+      for (const [t, r] of remisePourTtcCible(base, ttcCible).remises) montants.set(t, r);
+    } else if (remisePct > 0) {
+      for (const [t, net] of m) if (net > 0) montants.set(t, r2(net * (remisePct / 100)));
+    }
+    const taux = [...montants.keys()].filter((t) => (montants.get(t) ?? 0) > 0);
     const multi = taux.length > 1;
     return taux.map((t) =>
       withUid({
         designation: multi ? `${REMISE_LABEL} (TVA ${tauxLabel(t)})` : REMISE_LABEL,
         quantite: 1,
-        prixHt: -r2(Math.abs((m.get(t) ?? 0) * (remisePct / 100))),
+        prixHt: -(montants.get(t) ?? 0),
         tva: t,
       }),
     );
   };
-  const remiseTvaAmt =
-    remisePct > 0
-      ? [...netParTaux(lines).entries()].reduce((a, [t, net]) => a + net * (remisePct / 100) * (t / 100), 0)
-      : 0;
-  const tvaAmt = lines.reduce((a, l) => a + netLigne(l) * ((l.tva || 0) / 100), 0) - remiseTvaAmt;
-  const ttc = ht + tvaAmt;
+  const remises = construireRemises(lines);
+  const utiles = [...lines, ...remises];
+  const remiseMontant = r2(remises.reduce((a, l) => a - l.prixHt, 0));
+  const ht = totalHt(utiles);
+  const remiseTotale = r2(brut - ht);
+  const tvaAmt = totalTva(utiles);
+  const ttc = totalTtc(utiles);
+  // % affiché quand la remise vient du TTC visé.
+  const remisePctAffiche =
+    ttcCible && ttcCible > 0
+      ? htLignes > 0
+        ? Math.round((remiseMontant / htLignes) * 10000) / 100
+        : 0
+      : remisePct;
+  const cibleManquee = !!ttcCible && ttcCible > 0 && Math.abs(ttc - ttcCible) >= 0.005;
 
-  const configActuelle = (): DevisConfig => ({ pergola: smConfig, supplements, tauxDefaut, remisePct });
+  const configActuelle = (): DevisConfig => ({
+    pergola: smConfig,
+    supplements,
+    tauxDefaut,
+    remisePct: remisePctAffiche,
+    remiseTtcCible: ttcCible && ttcCible > 0 ? ttcCible : null,
+  });
   const versServeur = (ls: Line[]) =>
     ls.map((l) => ({
       id: l.id ?? null,
@@ -512,11 +581,11 @@ export function DevisForm({
       toast.error("Ajoute au moins une ligne (pergola, produit ou ligne libre).");
       return;
     }
-    const utiles: Line[] = remiseMontant > 0 ? [...base, ...construireRemises(base)] : base;
+    const envoyees: Line[] = remiseMontant > 0 ? [...base, ...construireRemises(base)] : base;
     const cfg = configActuelle();
     start(async () => {
       if (quoteId && devisId) {
-        const r = await modifierDevis(leadId, devisId, quoteId, versServeur(utiles), cfg);
+        const r = await modifierDevis(leadId, devisId, quoteId, versServeur(envoyees), cfg);
         if (r.ok) {
           toast.success("Devis mis à jour — le PDF se régénère");
           if ("avertissement" in r && r.avertissement)
@@ -531,14 +600,16 @@ export function DevisForm({
             getDevisLines(quoteId).then((v) => {
               if (!v.ok || !v.lines?.length) return;
               const pl = (v.lines as LineIn[]).filter((l) => !estClause(l));
-              if (!memeLignes(utiles, pl)) setEcart(pl);
+              if (!memeLignes(envoyees, pl)) setEcart(pl);
             });
           }, 4000);
         } else toast.error(r.error ?? "Échec de la mise à jour");
       } else {
-        const r = await creerDevis(leadId, versServeur(utiles), cfg);
+        const r = await creerDevis(leadId, versServeur(envoyees), cfg);
         if (r.ok && r.devisId) {
           toast.success(`Devis ${r.numero ?? ""} créé — vérifie le PDF puis envoie-le`);
+          if ("avertissement" in r && r.avertissement)
+            toast.warning(r.avertissement, { duration: 10000 });
           router.replace(`/leads/${leadId}/devis/${r.devisId}`);
         } else toast.error(r.error ?? "Échec de la création");
       }
@@ -707,17 +778,51 @@ export function DevisForm({
                 <h2 className="text-eyebrow flex items-center gap-1.5 text-primary">
                   <Calculator className="size-4" /> 1 · La pergola
                 </h2>
-                {smConfig && !smOpen ? (
+                {smConfig ? (
+                  <div className="flex items-center gap-3">
+                    {!smOpen ? (
+                      <button
+                        type="button"
+                        onClick={() => setSmOpen(true)}
+                        className="inline-flex items-center gap-1 text-xs font-medium text-primary hover:underline"
+                      >
+                        <Pencil className="size-3.5" /> Modifier
+                      </button>
+                    ) : null}
+                    <button
+                      type="button"
+                      onClick={retirerPergola}
+                      className="inline-flex items-center gap-1 text-xs font-medium text-muted-foreground hover:text-destructive hover:underline"
+                      title="Retire la pergola et ses options du devis (produits et lignes libres conservés)"
+                    >
+                      <Trash2 className="size-3.5" /> Retirer la pergola
+                    </button>
+                  </div>
+                ) : smOpen ? (
                   <button
                     type="button"
-                    onClick={() => setSmOpen(true)}
-                    className="inline-flex items-center gap-1 text-xs font-medium text-primary hover:underline"
+                    onClick={retirerPergola}
+                    className="inline-flex items-center gap-1 text-xs font-medium text-muted-foreground hover:text-foreground hover:underline"
+                    title="Devis d'options, de produits ou de lignes libres uniquement"
                   >
-                    <Pencil className="size-3.5" /> Modifier
+                    <X className="size-3.5" /> Devis sans pergola
                   </button>
                 ) : null}
               </div>
-              {smOpen || !smConfig ? (
+              {!smOpen && !smConfig ? (
+                <div className="flex flex-wrap items-center gap-3 rounded-lg border border-dashed border-border px-3 py-2.5">
+                  <p className="min-w-0 flex-1 text-sm text-muted-foreground">
+                    Devis sans pergola : ajoute des produits (2) ou des lignes libres (3).
+                  </p>
+                  <button
+                    type="button"
+                    onClick={() => setSmOpen(true)}
+                    className="inline-flex items-center gap-1.5 rounded-md border border-primary px-3 py-1.5 text-sm font-semibold text-primary hover:bg-primary/10"
+                  >
+                    <Plus className="size-4" /> Ajouter une pergola
+                  </button>
+                </div>
+              ) : smOpen ? (
                 <>
                   <SurMesureCalc
                     descriptions={surMesureDescriptions}
@@ -848,7 +953,7 @@ export function DevisForm({
               <p className="rounded-lg border border-dashed border-border px-3 py-5 text-center text-sm text-muted-foreground">
                 {quoteId
                   ? "Chargement des lignes…"
-                  : "Aucune ligne : valide la pergola (1) ou ajoute un produit (2). Tu peux aussi saisir une ligne libre."}
+                  : "Aucune ligne : valide la pergola (1) ou ajoute un produit (2). Tu peux aussi saisir une ligne libre, sans pergola."}
               </p>
             ) : (
               <div className="overflow-x-auto">
@@ -898,25 +1003,47 @@ export function DevisForm({
               <div className="flex flex-wrap items-center gap-2 text-sm">
                 <span className="text-foreground">Remise commerciale</span>
                 <span className="text-xs text-muted-foreground">(geste global, en bas du devis)</span>
-                <div className="ml-auto flex items-center gap-1">
+                <div className="ml-auto flex flex-wrap items-center gap-1">
                   <span className="text-muted-foreground">−</span>
                   <NumInput
-                    value={remisePct || null}
+                    value={remisePctAffiche || null}
                     min={0}
                     max={100}
                     allowEmpty
                     disabled={readOnly}
-                    onChange={(v) => setRemisePct(Math.min(100, Math.max(0, v ?? 0)))}
+                    onChange={(v) => {
+                      setTtcCible(null);
+                      setRemisePct(Math.min(100, Math.max(0, v ?? 0)));
+                    }}
                     placeholder="0"
                     className={cn(inputCls, "w-16 text-right")}
                     ariaLabel="Remise commerciale en pourcent"
                   />
                   <span className="text-muted-foreground">%</span>
+                  <span className="ml-2 text-xs text-muted-foreground">ou TTC visé</span>
+                  <NumInput
+                    value={ttcCible}
+                    min={0}
+                    allowEmpty
+                    disabled={readOnly}
+                    onChange={(v) => setTtcCible(v && v > 0 ? v : null)}
+                    placeholder="ex. 9950"
+                    title="Le CRM calcule la remise pour que le devis fasse exactement ce TTC"
+                    className={cn(inputCls, "w-24 text-right")}
+                    ariaLabel="TTC visé après remise"
+                  />
+                  <span className="text-muted-foreground">€</span>
                   {remiseMontant > 0 ? (
                     <span className="text-xs text-orange-700">(−{eur(remiseMontant)})</span>
                   ) : null}
                 </div>
               </div>
+              {cibleManquee ? (
+                <p className="text-xs text-amber-700">
+                  {eur(ttcCible ?? 0)} n&apos;est pas atteignable au centime avec les arrondis de TVA
+                  par ligne : le devis fera <strong>{eur(ttc)}</strong> (au plus près).
+                </p>
+              ) : null}
               <div className="flex items-center gap-2 text-xs text-muted-foreground">
                 <span className="rounded bg-primary/10 px-1.5 py-0.5 font-bold uppercase tracking-wide text-primary">
                   Incluse

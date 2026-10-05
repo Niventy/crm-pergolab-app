@@ -492,6 +492,8 @@ export async function creerDevisPennylane(
   error?: string;
   quoteId?: string;
   devisId?: string;
+  // Pennylane a répondu OK mais calcule un autre total que le CRM (à signaler).
+  avertissement?: string;
 }> {
   if (!process.env.PENNYLANE_API_KEY)
     return { ok: false, error: "Pennylane non configuré (clé API manquante)." };
@@ -538,8 +540,7 @@ export async function creerDevisPennylane(
   if (!q.id) return { ok: false, error: q.error };
 
   const metier = sansClause(useLines);
-  const ht = calcTotalHt(metier);
-  const ttc = totalTtc(metier);
+  const { ht, ttc, avertissement } = await totauxDevis(q.id, metier);
 
   await db
     .update(leads)
@@ -570,7 +571,54 @@ export async function creerDevisPennylane(
     lien: q.link,
     quoteId: String(q.id),
     devisId: row?.id,
+    avertissement,
   };
+}
+
+// GET /quotes/{id} → totaux HT / TTC calculés par PENNYLANE (ceux du PDF).
+// Le CRM reproduit les arrondis ligne par ligne (`devis-calc.ts`), mais c'est
+// le montant Pennylane qui fait foi en base : s'il diffère du calcul CRM, on
+// le loggue et on le remonte à l'ADV (`avertissement`).
+async function getQuoteTotaux(
+  quoteId: string | number,
+): Promise<{ ht: number; ttc: number } | null> {
+  try {
+    const res = await fetch(`${BASE}/quotes/${quoteId}`, { headers: plHeaders() });
+    if (!res.ok) return null;
+    const j = (await res.json()) as Record<string, unknown>;
+    const num = (...keys: string[]) => {
+      for (const k of keys) {
+        const v = Number(j[k]);
+        if (j[k] != null && Number.isFinite(v)) return v;
+      }
+      return null;
+    };
+    const ttc = num("currency_amount", "amount");
+    const ht = num("currency_amount_before_tax", "amount_before_tax");
+    if (ttc == null || ht == null) return null;
+    return { ht: r2(ht), ttc: r2(ttc) };
+  } catch {
+    return null;
+  }
+}
+
+// Totaux à enregistrer : ceux de Pennylane si on a pu les relire, sinon le
+// calcul CRM. Signale un écart (ne devrait plus arriver : mêmes arrondis).
+async function totauxDevis(
+  quoteId: string | number,
+  metier: DevisLine[],
+): Promise<{ ht: number; ttc: number; avertissement?: string }> {
+  const calc = { ht: calcTotalHt(metier), ttc: totalTtc(metier) };
+  const pl = await getQuoteTotaux(quoteId);
+  if (!pl) return calc;
+  if (Math.abs(pl.ttc - calc.ttc) >= 0.005 || Math.abs(pl.ht - calc.ht) >= 0.005) {
+    console.error("[pennylane] totaux Pennylane ≠ calcul CRM", { quoteId, pl, calc });
+    return {
+      ...pl,
+      avertissement: `Pennylane calcule ${eurFr(pl.ttc)} TTC (CRM : ${eurFr(calc.ttc)}) : le PDF fait foi, montant enregistré ${eurFr(pl.ttc)}.`,
+    };
+  }
+  return pl;
 }
 
 // GET /quotes/{id}/invoice_lines → lignes existantes, pour rééditer dans le CRM.
@@ -691,12 +739,13 @@ export async function updateQuotePennylane(
   }
 
   const metier = sansClause(lignes);
+  const totaux = await totauxDevis(quoteId, metier);
   return {
     ok: true,
-    totalHt: calcTotalHt(metier),
-    totalTtc: totalTtc(metier),
+    totalHt: totaux.ht,
+    totalTtc: totaux.ttc,
     lignes: snapshotLignes(lignes),
-    avertissement,
+    avertissement: avertissement ?? totaux.avertissement,
   };
 }
 
