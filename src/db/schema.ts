@@ -425,6 +425,30 @@ export const paiements = pgTable("paiements", {
 });
 
 // ---------------------------------------------------------------------------
+// acces_client — lien magique de l'ESPACE CLIENT (`/espace/<jeton>`). Pas de
+// compte : le jeton (aléatoire, 256 bits) EST l'accès. Un seul lien actif par
+// fiche : en générer un nouveau révoque le précédent. Lecture seule, données de
+// CETTE fiche uniquement. RLS activée SANS politique (REST fermée à tous).
+// ---------------------------------------------------------------------------
+export const accesClient = pgTable("acces_client", {
+  id: uuid("id").primaryKey().defaultRandom(),
+  leadId: uuid("lead_id")
+    .notNull()
+    .references(() => leads.id, { onDelete: "cascade" }),
+  jeton: text("jeton").notNull().unique(),
+  createdAt: timestamp("created_at", { withTimezone: true })
+    .notNull()
+    .defaultNow(),
+  createdBy: uuid("created_by").references(() => profiles.id, {
+    onDelete: "set null",
+  }),
+  expiresAt: timestamp("expires_at", { withTimezone: true }),
+  revokedAt: timestamp("revoked_at", { withTimezone: true }),
+  derniereVisite: timestamp("derniere_visite", { withTimezone: true }),
+  nbVisites: integer("nb_visites").notNull().default(0),
+});
+
+// ---------------------------------------------------------------------------
 // notifications — centre de notifications par destinataire (@mention, attribution)
 // ---------------------------------------------------------------------------
 export const notifications = pgTable("notifications", {

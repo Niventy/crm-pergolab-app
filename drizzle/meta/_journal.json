@@ -267,6 +267,20 @@
       "when": 1790693771344,
       "tag": "0037_poseurs_amorcage_rls",
       "breakpoints": true
+    },
+    {
+      "idx": 38,
+      "version": "7",
+      "when": 1795164099112,
+      "tag": "0038_rich_sunset_bain",
+      "breakpoints": true
+    },
+    {
+      "idx": 39,
+      "version": "7",
+      "when": 1795164105936,
+      "tag": "0039_acces_client_rls",
+      "breakpoints": true
     }
   ]
 }

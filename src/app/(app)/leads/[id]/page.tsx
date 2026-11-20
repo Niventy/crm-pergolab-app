@@ -45,6 +45,8 @@ import { NoteComposer } from "./note-composer";
 import { handleOf } from "./mentions";
 import { FilActivite, type FilItem } from "./fil-activite";
 import { MetaReponses, extraireReponsesMeta } from "./meta-reponses";
+import { EspaceClient } from "./espace-client";
+import { lienActif } from "@/lib/espace-client";
 
 export const dynamic = "force-dynamic";
 
@@ -157,7 +159,7 @@ export default async function LeadPage({
       ? [sql`regexp_replace(regexp_replace(coalesce(${leadsTable.telephone}, ''), '\\D', '', 'g'), '^33', '0') = ${telDigits}`]
       : []),
   ];
-  const [facturation, autresFiches] = await Promise.all([
+  const [facturation, autresFiches, accesEspace] = await Promise.all([
     isClient ? etatFacturation(lead.id) : Promise.resolve(null),
     identites.length
       ? db.query.leads.findMany({
@@ -167,6 +169,7 @@ export default async function LeadPage({
           limit: 5,
         })
       : Promise.resolve([]),
+    isClient ? lienActif(lead.id) : Promise.resolve(null),
   ]);
   const devisAccepte = lead.devis.some((d) => d.accepteAt);
   const choixDevisRequis = isClient && lead.devis.length > 1 && !devisAccepte;
@@ -639,6 +642,22 @@ export default async function LeadPage({
                       refCommande: lead.refCommande,
                       adressePose: lead.adressePose,
                     }}
+                  />
+                </Bloc>
+                <Bloc titre="Espace client" id="espace-client">
+                  <EspaceClient
+                    leadId={lead.id}
+                    acces={
+                      accesEspace
+                        ? {
+                            jeton: accesEspace.jeton,
+                            createdAt: accesEspace.createdAt.toISOString(),
+                            expiresAt: accesEspace.expiresAt?.toISOString() ?? null,
+                            derniereVisite: accesEspace.derniereVisite?.toISOString() ?? null,
+                            nbVisites: accesEspace.nbVisites,
+                          }
+                        : null
+                    }
                   />
                 </Bloc>
                 <div id="argent" className="space-y-4">

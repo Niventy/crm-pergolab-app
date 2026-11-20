@@ -4,7 +4,15 @@ import { NextResponse, type NextRequest } from "next/server";
 // Routes accessibles sans authentification. Les routes API publiques sont listées
 // UNE PAR UNE (chacune gère sa propre auth, ex. Bearer secret du webhook) : une
 // nouvelle route /api/* est protégée par défaut tant qu'elle n'est pas ajoutée ici.
-const PUBLIC_PATHS = ["/login", "/auth", "/api/leads/inbound"];
+// `/espace/<jeton>` = espace client (lien magique) : chaque page / route y
+// vérifie elle-même le jeton (`lib/espace-client.ts › resoudreJeton`).
+const PUBLIC_PATHS = ["/login", "/auth", "/api/leads/inbound", "/espace"];
+
+// Server actions qu'un visiteur NON connecté peut appeler. Une server action
+// s'appelle par un POST (en-tête `next-action`) sur N'IMPORTE QUELLE route : sans
+// ce filtre, une route publique (/espace…) servirait de porte d'entrée aux
+// actions du CRM, qui supposent un utilisateur authentifié.
+const ACTIONS_PUBLIQUES = ["/login"];
 
 function isPublic(pathname: string) {
   return PUBLIC_PATHS.some(
@@ -43,6 +51,14 @@ export async function updateSession(request: NextRequest) {
   } = await supabase.auth.getUser();
 
   const { pathname } = request.nextUrl;
+
+  if (
+    !user &&
+    request.headers.has("next-action") &&
+    !ACTIONS_PUBLIQUES.includes(pathname)
+  ) {
+    return new NextResponse("Non autorisé", { status: 401 });
+  }
 
   // Non authentifié sur une route privée -> redirection vers /login.
   if (!user && !isPublic(pathname)) {
