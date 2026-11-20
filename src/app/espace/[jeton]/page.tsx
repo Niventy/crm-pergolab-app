@@ -1,6 +1,6 @@
 import type { Metadata } from "next";
 import Link from "next/link";
-import { and, asc, eq } from "drizzle-orm";
+import { eq } from "drizzle-orm";
 import {
   Building2,
   Check,
@@ -14,7 +14,8 @@ import {
   ShieldCheck,
 } from "lucide-react";
 import { db } from "@/db";
-import { leads as leadsTable, stages as stagesTable } from "@/db/schema";
+import { leads as leadsTable } from "@/db/schema";
+import { feuilleDeRoute } from "@/lib/feuille-de-route";
 import { devisVisibleClient, factureVisibleClient, resoudreJeton } from "@/lib/espace-client";
 import { adresseChantier, type PointValidation } from "@/lib/chantier-validation";
 import { validationCourante } from "@/lib/chantier-validation-server";
@@ -32,6 +33,7 @@ import {
   formatHorodatage,
   formatTelephone,
   telHref,
+  todayParis,
   ymdParis,
 } from "@/lib/format";
 
@@ -44,17 +46,6 @@ export const metadata: Metadata = {
   robots: { index: false, follow: false },
   // Le jeton est dans l'URL : ne jamais le transmettre en Referer (PDF Pennylane…).
   referrer: "no-referrer",
-};
-
-// Libellés côté client (les noms d'étapes du CRM sont du jargon interne).
-const LIBELLE_CLIENT: Record<string, string> = {
-  [STAGE.A_METRER]: "Prise de mesures",
-  [STAGE.METRE_REALISE]: "Mesures réalisées",
-  [STAGE.COMMANDE_FOURNISSEUR]: "Fabrication",
-  [STAGE.EN_LIVRAISON]: "Livraison",
-  [STAGE.POSE_PLANIFIEE]: "Pose planifiée",
-  [STAGE.POSEE]: "Pergola posée",
-  [STAGE.SAV]: "Service après-vente",
 };
 
 function Carte({ titre, children }: { titre: string; children: React.ReactNode }) {
@@ -122,7 +113,7 @@ export default async function EspaceClientPage({
     );
   }
 
-  const [lead, etapesChantier, validation, infos] = await Promise.all([
+  const [lead, validation, infos] = await Promise.all([
     db.query.leads.findFirst({
       where: eq(leadsTable.id, leadId),
       with: {
@@ -138,50 +129,18 @@ export default async function EspaceClientPage({
         paiements: { orderBy: (p, { asc }) => [asc(p.date), asc(p.createdAt)] },
       },
     }),
-    db
-      .select()
-      .from(stagesTable)
-      .where(and(eq(stagesTable.cycle, 3), eq(stagesTable.isPerdue, false)))
-      .orderBy(asc(stagesTable.position)),
     validationCourante(leadId),
     getInfosEntreprise(),
   ]);
   if (!lead) return null;
 
   const annulee = lead.stage?.code === STAGE.ANNULEE;
-  // SAV n'apparaît dans la frise que si le chantier y est.
   const enSav = lead.stage?.code === STAGE.SAV;
-  const frise = etapesChantier.filter((s) => s.code !== STAGE.SAV || enSav);
-  // Fiche encore en « Signée » (passage) ou avant : 1ʳᵉ étape du chantier.
-  const idxCourant = Math.max(
-    0,
-    frise.findIndex((s) => s.id === lead.stageId),
-  );
 
   const devisVisibles = lead.devis.filter(devisVisibleClient);
   const devisSigne = devisVisibles.find((d) => d.accepteAt);
   const autresDevis = devisSigne ? [] : devisVisibles;
 
-  // Une date absente n'affiche « à planifier » que si l'étape correspondante
-  // n'est pas encore ATTEINTE (sinon : « métré à planifier » sur un chantier
-  // déjà métré) ; atteinte sans date → ligne masquée.
-  const passee = (code: string) => {
-    const i = frise.findIndex((s) => s.code === code);
-    return i >= 0 && i <= idxCourant;
-  };
-  const dates = [
-    { label: "Prise de mesures", valeur: lead.dateMetre, etape: STAGE.METRE_REALISE },
-    {
-      label: lead.dateLivraisonReelle ? "Livraison" : "Livraison prévue",
-      valeur: lead.dateLivraisonReelle ?? lead.dateLivraisonPrevue,
-      etape: STAGE.POSE_PLANIFIEE,
-    },
-    {
-      label: lead.datePoseReelle ? "Pose" : "Pose prévue",
-      valeur: lead.datePoseReelle ?? lead.datePosePrevue,
-      etape: STAGE.POSEE,
-    },
-  ].filter((d) => d.valeur || !passee(d.etape));
   const adressePose = adresseChantier(lead);
 
   // Règlement : base = TTC du lead UNIQUEMENT (jamais le HT) ; TTC inconnu ⇒
@@ -190,6 +149,30 @@ export default async function EspaceClientPage({
   const regle = lead.paiements.reduce((t, p) => t + Number(p.montant), 0);
   const reste = ttc != null ? Math.round((ttc - regle) * 100) / 100 : null;
   const facturesVisibles = lead.factures.filter(factureVisibleClient);
+
+  // Feuille de route client (7 étapes déduites des données de la fiche).
+  const premier = lead.paiements.find((p) => Number(p.montant) > 0);
+  const route = feuilleDeRoute({
+    stageCode: lead.stage?.code ?? null,
+    devisAccepteLe: (() => {
+      const a = lead.devis.find((d) => d.accepteAt)?.accepteAt; // date seule : même sans PDF visible
+      return a ? ymdParis(a) : null;
+    })(),
+    validation: validation
+      ? { statut: validation.statut, reponduLe: validation.reponduAt ? ymdParis(validation.reponduAt) : null }
+      : null,
+    premierPaiement: premier ? { date: premier.date, montant: Number(premier.montant) } : null,
+    dateLivraisonPrevue: lead.dateLivraisonPrevue,
+    dateLivraisonReelle: lead.dateLivraisonReelle,
+    datePosePrevue: lead.datePosePrevue,
+    datePoseReelle: lead.datePoseReelle,
+    solde: reste != null && reste <= 0,
+    resteTtc: reste,
+    today: todayParis(),
+    fmtDate: formatDate,
+    fmtEuros: formatEurosCents,
+  });
+  const idxRoute = route.findIndex((e) => !e.fait);
   // Contacts joignables seulement (un nom sans téléphone ni email ne sert à rien).
   const contacts = infos.contacts.filter((c) => c.telephone || c.email);
   const modeLabel = (m: string) => MODES_PAIEMENT.find((x) => x.value === m)?.label ?? m;
@@ -256,56 +239,50 @@ export default async function EspaceClientPage({
         </Carte>
       ) : (
         <Carte titre="Avancement">
-          <ol className="space-y-0">
-            {frise.map((s, i) => {
-              const fait = i < idxCourant || (i === idxCourant && s.code === STAGE.POSEE);
-              const courant = i === idxCourant && !fait;
+          <ol>
+            {route.map((e, i) => {
+              const courant = i === idxRoute;
               return (
-                <li key={s.id} className="flex gap-3">
+                <li key={e.cle} className="flex gap-3">
                   <div className="flex flex-col items-center">
                     <span
                       className={
                         "flex size-6 shrink-0 items-center justify-center rounded-full border-2 text-[11px] font-bold " +
-                        (fait
+                        (e.fait
                           ? "border-primary bg-primary text-primary-foreground"
                           : courant
                             ? "border-primary bg-white text-primary"
                             : "border-slate-300 bg-white text-slate-400")
                       }
                     >
-                      {fait ? <Check className="size-3.5" /> : i + 1}
+                      {e.fait ? <Check className="size-3.5" /> : i + 1}
                     </span>
-                    {i < frise.length - 1 ? (
-                      <span className={"w-0.5 flex-1 min-h-4 " + (fait ? "bg-primary" : "bg-slate-200")} />
+                    {i < route.length - 1 ? (
+                      <span className={"w-0.5 flex-1 min-h-4 " + (e.fait ? "bg-primary" : "bg-slate-200")} />
                     ) : null}
                   </div>
                   <div className="pb-4">
                     <p
                       className={
                         "text-sm " +
-                        (courant ? "font-bold text-foreground" : fait ? "text-foreground" : "text-muted-foreground")
+                        (courant ? "font-bold text-foreground" : e.fait ? "text-foreground" : "text-muted-foreground")
                       }
                     >
-                      {(s.code && LIBELLE_CLIENT[s.code]) || s.nom}
+                      {e.label}
                     </p>
                     {courant ? <p className="text-xs text-primary">Étape en cours</p> : null}
+                    {e.detail ? (
+                      <p className={"text-xs " + (courant ? "text-foreground" : "text-muted-foreground")}>{e.detail}</p>
+                    ) : null}
                   </div>
                 </li>
               );
             })}
           </ol>
-
-          {dates.length ? (
-          <dl className="mt-2 grid gap-2 border-t border-border pt-3 sm:grid-cols-3">
-            {dates.map((d) => (
-              <div key={d.label}>
-                <dt className="text-xs text-muted-foreground">{d.label}</dt>
-                <dd className="text-sm font-semibold">
-                  {d.valeur ? formatDate(d.valeur) : <span className="font-normal text-muted-foreground">à planifier</span>}
-                </dd>
-              </div>
-            ))}
-          </dl>
+          {enSav ? (
+            <p className="rounded-lg bg-amber-50 px-3 py-2 text-sm text-amber-900">
+              Une intervention de service après-vente est en cours sur votre installation.
+            </p>
           ) : null}
           {lead.poseurAffecte ? (
             <p className="mt-3 text-sm text-muted-foreground">

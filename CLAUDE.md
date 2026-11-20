@@ -134,7 +134,10 @@ Annulée (`annulee`, perdue — commande annulée après signature).
 - **Espace client** (`/espace/<jeton>`, PUBLIC, hors du groupe `(app)`) : lien magique
   par fiche client (`acces_client` : jeton 256 bits, un actif par fiche, 18 mois,
   révocable ; `lib/espace-client.ts › resoudreJeton` vérifie TOUT accès). Montre :
-  validation demandée (chat), avancement (libellés client des étapes cycle 3), dates,
+  validation demandée (formulaire schéma), **feuille de route** en 7 étapes déduites des
+  données (`lib/feuille-de-route.ts` : Devis accepté → Validation du schéma technique →
+  Acompte accepté → Délai de livraison → Date de livraison → Installation réalisée →
+  Dossier finalisé = posée + soldé), dates,
   poseur, devis signé/envoyés (`devisVisibleClient`), règlement (base `montant_ttc`,
   paiements, factures non brouillon `factureVisibleClient`), documents `partage` =
   client | a_valider (jamais `interne`), conseiller. Fichiers servis par routes GET
