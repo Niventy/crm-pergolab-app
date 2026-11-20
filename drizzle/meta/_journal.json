@@ -316,6 +316,20 @@
       "when": 1795169643797,
       "tag": "0044_known_anthem",
       "breakpoints": true
+    },
+    {
+      "idx": 45,
+      "version": "7",
+      "when": 1795174540549,
+      "tag": "0045_elite_the_hood",
+      "breakpoints": true
+    },
+    {
+      "idx": 46,
+      "version": "7",
+      "when": 1795174543073,
+      "tag": "0046_ko_projet_a_venir",
+      "breakpoints": true
     }
   ]
 }

@@ -305,8 +305,10 @@ export default async function LeadPage({
           createdAt: d.createdAt,
           auteur: d.auteur?.nom ?? d.auteur?.email ?? null,
           partage: d.partage,
+          categorie: d.categorie,
         }))}
         partageClient={isClient && stockageClientDisponible()}
+        photosVisite={isClient}
       />
     </Bloc>
   );
@@ -666,6 +668,7 @@ export default async function LeadPage({
                       dateMetre: lead.dateMetre,
                       dateCommande: lead.dateCommande,
                       dateLivraisonPrevue: lead.dateLivraisonPrevue,
+                      dateLivraisonPrevueFin: lead.dateLivraisonPrevueFin,
                       dateLivraisonReelle: lead.dateLivraisonReelle,
                       datePosePrevue: lead.datePosePrevue,
                       datePoseReelle: lead.datePoseReelle,

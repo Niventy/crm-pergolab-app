@@ -8,7 +8,7 @@ import { normaliserCodePostal } from "@/lib/departements";
 import { currentUserId } from "@/lib/current-user";
 import { notifier } from "@/lib/notifications";
 import { accepterDevis, autoAccepterDevisSiUnique } from "@/lib/devis-accepte";
-import { statutPourStage, STAGE, type StageCode } from "@/lib/pipeline";
+import { commentaireRequisPour, raisonAutoPour, statutPourStage, STAGE, type StageCode } from "@/lib/pipeline";
 import { etapeEffective, libelleDeplacement, stageParCode } from "@/lib/pipeline-server";
 
 type RaisonPerte =
@@ -191,10 +191,11 @@ export async function changerEtape(
   // Commentaire obligatoire en prospection / closing (sauf « Pas de réponse ») ;
   // facultatif sur les étapes de CHANTIER (avancer « Métré réalisé » ne mérite
   // pas une justification écrite).
-  if (!c && demandee.code !== STAGE.PAS_DE_REPONSE && demandee.cycle !== 3) {
+  if (!c && commentaireRequisPour(demandee)) {
     return { ok: false as const, error: "Commentaire obligatoire." };
   }
-  const r = RAISONS.includes(raison as RaisonPerte) ? (raison as RaisonPerte) : null;
+  const rv = raison || raisonAutoPour(demandee.code);
+  const r = RAISONS.includes(rv as RaisonPerte) ? (rv as RaisonPerte) : null;
   if (demandee.isPerdue && !r) {
     return { ok: false as const, error: "Indique la raison de la perte." };
   }
@@ -600,6 +601,7 @@ export type ChantierInput = {
   dateMetre: string | null;
   dateCommande: string | null;
   dateLivraisonPrevue: string | null;
+  dateLivraisonPrevueFin: string | null;
   dateLivraisonReelle: string | null;
   datePosePrevue: string | null;
   datePoseReelle: string | null;
@@ -612,7 +614,8 @@ export type ChantierInput = {
 const CHANTIER_LABELS: Record<keyof ChantierInput, string> = {
   dateMetre: "Date du métré",
   dateCommande: "Date commande",
-  dateLivraisonPrevue: "Livraison prévue",
+  dateLivraisonPrevue: "Livraison prévue (à partir du)",
+  dateLivraisonPrevueFin: "Livraison prévue (au plus tard)",
   dateLivraisonReelle: "Livraison réelle",
   datePosePrevue: "Pose prévue",
   datePoseReelle: "Pose réalisée",
@@ -638,6 +641,12 @@ export async function saveChantier(leadId: string, data: ChantierInput) {
     if (((current as Record<string, unknown>)[k] ?? null) !== val) changed.push(CHANTIER_LABELS[k]);
   }
   if (changed.length === 0) return { ok: true as const, error: null, changed };
+  // Fourchette de livraison : « au plus tard » ≥ « à partir du » (ISO = ordre lexical).
+  const deb = set.dateLivraisonPrevue as string | null;
+  const fin = set.dateLivraisonPrevueFin as string | null;
+  if (fin && !deb) return { ok: false as const, error: "Livraison : indique aussi la date de début de la fourchette." };
+  if (deb && fin && fin < deb) return { ok: false as const, error: "Livraison : la fin de la fourchette est avant le début." };
+  if (deb && fin === deb) set.dateLivraisonPrevueFin = null;
 
   await db.update(leads).set(set as Partial<typeof leads.$inferInsert>).where(eq(leads.id, leadId));
   await db.insert(echanges).values({

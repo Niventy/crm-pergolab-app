@@ -61,13 +61,18 @@ Google Calendar en OAuth (refresh token par ADV) · Vercel.
 
 ## Pipeline (table `stages`, cycle + code)
 CYCLE 1 Prospection : À traiter (`a_traiter`) · Pas de réponse · Rappeler · RDV
-Téléphonique · Devis à envoyer · Hors Zone KO (perdue) · Non qualifié KO (perdue).
+Téléphonique · Devis à envoyer · Projet à venir (`projet_a_venir`, projet plus tard : hors
+file « sommeil » du Planning, remonte via sa relance) · Hors Zone KO (perdue) · Non qualifié KO (perdue).
 CYCLE 2 Devis & closing : Rendez-vous · Devis envoyé (`devis_envoye`) · Signée
 (`signee`, gagnée, passage) · KO (perdue).
 CYCLE 3 Chantier (fiche = CLIENT, statut gagnée) : À métrer (`a_metrer`) · Métré
 réalisé · Commande fournisseur · En livraison · Pose planifiée · Posée · SAV ·
 Annulée (`annulee`, perdue — commande annulée après signature).
-Étape perdue ⇒ raison de perte obligatoire (`leads.raison_perte`).
+Étape perdue ⇒ raison de perte obligatoire (`leads.raison_perte`), SAUF : Hors Zone KO = aucune
+saisie (dépôt direct, raison `non_qualifie` d'office) ; Non qualifié KO = raison pré-remplie,
+commentaire facultatif (`KO_SANS_SAISIE`, `raisonAutoPour`, `commentaireRequisPour`, pipeline.ts).
+`leads.perdu_at` tenu par TRIGGER (0046) ; K.O de plus de `DELAI_KO_JOURS` (90) masqués de la
+recherche ⌘K et de la Liste (bouton « afficher »).
 
 ## Écrans
 - **Kanban** (`/kanban`, accueil) : cycles 1 & 2, drag-drop, focus une étape, filtre
@@ -140,7 +145,9 @@ Annulée (`annulee`, perdue — commande annulée après signature).
   Dossier finalisé = posée + soldé), dates,
   poseur, devis signé/envoyés (`devisVisibleClient`), règlement (base `montant_ttc`,
   paiements, factures non brouillon `factureVisibleClient`), documents `partage` =
-  client | a_valider (jamais `interne`), conseiller. Fichiers servis par routes GET
+  client | a_valider (jamais `interne`), galerie « Photos de la visite technique »
+  (`documents.categorie = visite_technique`, bouton dédié du bloc Documents, partagées d'office),
+  livraison en fourchette (`date_livraison_prevue` → `date_livraison_prevue_fin`), conseiller. Fichiers servis par routes GET
   (`/espace/[jeton]/devis|facture|document/[id]` → redirection URL fraîche ; documents
   via `lib/supabase/admin.ts`, clé `SUPABASE_SERVICE_ROLE_KEY` serveur uniquement).
   **Pas de server action côté espace** : le middleware refuse (401) toute server action

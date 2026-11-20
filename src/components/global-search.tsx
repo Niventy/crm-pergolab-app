@@ -6,6 +6,7 @@ import { Search, X } from "lucide-react";
 import { cn } from "@/lib/utils";
 import { formatTelephone } from "@/lib/format";
 import { searchLeads, type SearchResult } from "@/app/(app)/search-actions";
+import { DELAI_KO_JOURS } from "@/lib/pipeline";
 
 const STATUT: Record<string, { label: string; cls: string }> = {
   en_cours: { label: "Prospect", cls: "bg-slate-200 text-slate-700" },
@@ -17,6 +18,8 @@ export function GlobalSearch() {
   const router = useRouter();
   const [query, setQuery] = useState("");
   const [results, setResults] = useState<SearchResult[]>([]);
+  const [koMasques, setKoMasques] = useState(0);
+  const [avecKo, setAvecKo] = useState(false);
   const [open, setOpen] = useState(false);
   const [pending, startTransition] = useTransition();
   const inputRef = useRef<HTMLInputElement>(null);
@@ -28,14 +31,17 @@ export function GlobalSearch() {
     const t = setTimeout(() => {
       if (q.length < 2) {
         setResults([]);
+        setKoMasques(0);
         return;
       }
       startTransition(async () => {
-        setResults(await searchLeads(q));
+        const r = await searchLeads(q, avecKo);
+        setResults(r.resultats);
+        setKoMasques(r.anciensKoMasques);
       });
     }, 200);
     return () => clearTimeout(t);
-  }, [query]);
+  }, [query, avecKo]);
 
   // Raccourci ⌘K / Ctrl+K pour focus, Échap pour fermer.
   useEffect(() => {
@@ -136,6 +142,17 @@ export function GlobalSearch() {
               {pending ? "Recherche…" : "Aucun résultat"}
             </div>
           )}
+          {koMasques > 0 || avecKo ? (
+            <button
+              type="button"
+              onClick={() => setAvecKo((v) => !v)}
+              className="block w-full border-t border-border px-4 py-2 text-left text-xs text-muted-foreground hover:bg-accent hover:text-foreground"
+            >
+              {avecKo
+                ? `Masquer les K.O de plus de ${DELAI_KO_JOURS} jours`
+                : `${koMasques} K.O de plus de ${DELAI_KO_JOURS} jours masqué${koMasques > 1 ? "s" : ""} · afficher`}
+            </button>
+          ) : null}
         </div>
       ) : null}
 

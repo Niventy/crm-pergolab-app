@@ -1,6 +1,7 @@
 "use server";
 
-import { and, or, ilike, isNull, sql, type SQL } from "drizzle-orm";
+import { and, count, or, ilike, isNull, sql, type SQL } from "drizzle-orm";
+import { DELAI_KO_JOURS } from "@/lib/pipeline";
 import { db } from "@/db";
 import { leads } from "@/db/schema";
 
@@ -29,9 +30,14 @@ const telChiffresSql = sql`regexp_replace(regexp_replace(regexp_replace(coalesce
 // Le téléphone se cherche sur ses CHIFFRES : « 06 58 24 », « 0658243361 »,
 // « +33 6 58 24 33 61 » ou « 06.58.24 » trouvent la même fiche, quel que soit
 // le format enregistré.
-export async function searchLeads(term: string): Promise<SearchResult[]> {
+// Les leads K.O depuis plus de DELAI_KO_JOURS sont masqués, sauf
+// `inclureAnciensKo` ; leur nombre est renvoyé pour proposer de les afficher.
+export async function searchLeads(
+  term: string,
+  inclureAnciensKo = false,
+): Promise<{ resultats: SearchResult[]; anciensKoMasques: number }> {
   const q = term.trim();
-  if (q.length < 2) return [];
+  if (q.length < 2) return { resultats: [], anciensKoMasques: 0 };
   const like = `%${q}%`;
 
   const criteres: SQL[] = [
@@ -50,14 +56,21 @@ export async function searchLeads(term: string): Promise<SearchResult[]> {
     criteres.push(sql`${telChiffresSql} like ${`%${digits}%`}`);
   }
 
-  const rows = await db.query.leads.findMany({
-    where: and(isNull(leads.deletedAt), or(...criteres)),
+  const koAncien = sql`(${leads.statut} = 'perdue' and ${leads.perduAt} < now() - make_interval(days => ${DELAI_KO_JOURS}))`;
+  const base = and(isNull(leads.deletedAt), or(...criteres));
+  const [rows, [{ n }]] = await Promise.all([
+    db.query.leads.findMany({
+    where: inclureAnciensKo ? base : and(base, sql`not ${koAncien}`),
     with: { stage: true },
     orderBy: (l, { desc }) => [desc(l.createdAt)],
     limit: 8,
-  });
+    }),
+    inclureAnciensKo
+      ? Promise.resolve([{ n: 0 }])
+      : db.select({ n: count() }).from(leads).where(and(base, koAncien)),
+  ]);
 
-  return rows.map((r) => ({
+  const resultats = rows.map((r) => ({
     id: r.id,
     nom: r.nom,
     statut: r.statut,
@@ -67,4 +80,5 @@ export async function searchLeads(term: string): Promise<SearchResult[]> {
     stageNom: r.stage?.nom ?? null,
     stageCouleur: r.stage?.couleur ?? null,
   }));
+  return { resultats, anciensKoMasques: n };
 }

@@ -19,6 +19,12 @@ export async function uploadDocument(leadId: string, formData: FormData) {
   if (file.size > MAX)
     return { ok: false as const, error: "Fichier trop volumineux (max 25 Mo)." };
 
+  // Photo de la visite technique : image uniquement, partagée d'office avec
+  // l'espace client (galerie « Photos de la visite technique »).
+  const visite = formData.get("categorie") === "visite_technique";
+  if (visite && !file.type.startsWith("image/"))
+    return { ok: false as const, error: "Photos de visite : images uniquement." };
+
   const sb = await createClient();
   const safe = file.name.normalize("NFKD").replace(/[^\w.\-]+/g, "_");
   const chemin = `${leadId}/${crypto.randomUUID()}-${safe}`;
@@ -36,6 +42,7 @@ export async function uploadDocument(leadId: string, formData: FormData) {
     mime: file.type || null,
     taille: file.size,
     userId: await currentUserId(),
+    ...(visite ? { categorie: "visite_technique", partage: "client" } : {}),
   });
   revalidatePath(`/leads/${leadId}`);
   return { ok: true as const, error: null };

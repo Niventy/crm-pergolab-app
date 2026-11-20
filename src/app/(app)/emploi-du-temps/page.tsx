@@ -117,6 +117,8 @@ export default async function EmploiDuTempsPage() {
         nom: l.nom,
         sousTitre: `Sans réponse depuis ${Math.floor(ageH / 24)} j`,
       });
+    } else if (code === STAGE.PROJET_A_VENIR) {
+      // Projet plus tard : remonte uniquement via sa date de relance (pas « en sommeil »).
     } else if (
       ageH > 48 &&
       !(l.rdvDate && l.rdvDate >= today) &&

@@ -8,6 +8,7 @@ import { cn } from "@/lib/utils";
 import { normaliserCodePostal } from "@/lib/departements";
 import { ConfirmDialog } from "@/components/confirm-dialog";
 import { FilterSelect, Td } from "@/components/data-table";
+import { DELAI_KO_JOURS, estKoAncien } from "@/lib/pipeline";
 import { deleteLeads, restoreLeads, purgeLeads } from "./actions";
 import {
   formatEuros,
@@ -96,6 +97,9 @@ export function ListeTable({
   const [resp, setResp] = useState(sp.get("resp") ?? "all");
   const [mois, setMois] = useState(sp.get("mois") ?? "all");
   const [dept, setDept] = useState(sp.get("dept") ?? "all");
+  // K.O anciens (> DELAI_KO_JOURS) masqués par défaut ; « ?ko=tous » les montre.
+  const [anciensKo, setAnciensKo] = useState(sp.get("ko") === "tous");
+  const [maintenant] = useState(() => Date.now());
   useEffect(() => {
     const p = new URLSearchParams();
     if (filter !== 0) p.set("cycle", String(filter));
@@ -103,11 +107,12 @@ export function ListeTable({
     if (resp !== "all") p.set("resp", resp);
     if (mois !== "all") p.set("mois", mois);
     if (dept !== "all") p.set("dept", dept);
+    if (anciensKo) p.set("ko", "tous");
     const qs = p.toString();
     const cible = qs ? `${pathname}?${qs}` : pathname;
     if (cible !== `${pathname}${sp.toString() ? `?${sp.toString()}` : ""}`)
       router.replace(cible, { scroll: false });
-  }, [filter, etape, resp, mois, dept, pathname, router, sp]);
+  }, [filter, etape, resp, mois, dept, anciensKo, pathname, router, sp]);
   const [selectMode, setSelectMode] = useState(false);
   const [selected, setSelected] = useState<Set<string>>(new Set());
   const [vueCorbeille, setVueCorbeille] = useState(false);
@@ -261,7 +266,9 @@ export function ListeTable({
   const matchEtape = (l: Row) => etape === "all" || l.stageId === etape;
 
   // Base hors cycle (pour les compteurs de cycle), puis cycle + étape.
-  const preCycle = source.filter((l) => matchResp(l) && matchMois(l) && matchDept(l));
+  const nbKoAnciens = vueCorbeille ? 0 : source.filter((l) => estKoAncien(l, maintenant)).length;
+  const matchKo = (l: Row) => vueCorbeille || anciensKo || !estKoAncien(l, maintenant);
+  const preCycle = source.filter((l) => matchKo(l) && matchResp(l) && matchMois(l) && matchDept(l));
   const rows = preCycle
     .filter((l) => filter === 0 || l.stage?.cycle === filter)
     .filter(matchEtape);
@@ -388,6 +395,18 @@ export function ListeTable({
             onChange={setDept}
             width="w-48"
           />
+          {nbKoAnciens ? (
+            <button
+              type="button"
+              onClick={() => setAnciensKo((v) => !v)}
+              title={`Leads K.O depuis plus de ${DELAI_KO_JOURS} jours`}
+              className="rounded-full border border-border px-2.5 py-1 text-xs font-medium text-muted-foreground hover:bg-muted hover:text-foreground"
+            >
+              {anciensKo
+                ? `Masquer les ${nbKoAnciens} K.O de plus de ${DELAI_KO_JOURS} j`
+                : `${nbKoAnciens} K.O de plus de ${DELAI_KO_JOURS} j masqués · afficher`}
+            </button>
+          ) : null}
           {filtresActifs ? (
             <button
               type="button"

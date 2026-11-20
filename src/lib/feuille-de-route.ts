@@ -29,6 +29,7 @@ export function feuilleDeRoute(f: {
   validation: { statut: string; reponduLe: string | null } | null;
   premierPaiement: { date: string; montant: number } | null;
   dateLivraisonPrevue: string | null;
+  dateLivraisonPrevueFin: string | null; // fourchette « entre le … et le … »
   dateLivraisonReelle: string | null;
   datePosePrevue: string | null;
   datePoseReelle: string | null;
@@ -41,6 +42,12 @@ export function feuilleDeRoute(f: {
   const rang = f.stageCode ? ORDRE.indexOf(f.stageCode) : -1;
   const atteint = (code: string) => rang >= 0 && rang >= ORDRE.indexOf(code);
   const d = (x: string | null) => (x ? f.fmtDate(x) : null);
+  const prevue =
+    f.dateLivraisonPrevue && f.dateLivraisonPrevueFin && f.dateLivraisonPrevueFin !== f.dateLivraisonPrevue
+      ? `entre le ${d(f.dateLivraisonPrevue)} et le ${d(f.dateLivraisonPrevueFin)}`
+      : f.dateLivraisonPrevue
+        ? `le ${d(f.dateLivraisonPrevue)}`
+        : null;
 
   const validee = f.validation?.statut === "validee" || atteint(STAGE.COMMANDE_FOURNISSEUR);
   const livre = !!f.dateLivraisonReelle && f.dateLivraisonReelle <= f.today;
@@ -79,7 +86,7 @@ export function feuilleDeRoute(f: {
       fait: !!(f.dateLivraisonPrevue || f.dateLivraisonReelle) || livree,
       detail:
         f.dateLivraisonPrevue && !livree
-          ? `Livraison prévue le ${d(f.dateLivraisonPrevue)}`
+          ? `Livraison prévue ${prevue}`
           : atteint(STAGE.COMMANDE_FOURNISSEUR) && !livree
             ? "Votre pergola est en fabrication"
             : null,
@@ -92,7 +99,7 @@ export function feuilleDeRoute(f: {
         f.dateLivraisonReelle && livre
           ? `Livrée le ${d(f.dateLivraisonReelle)}`
           : !livree && f.dateLivraisonPrevue
-            ? `Prévue le ${d(f.dateLivraisonPrevue)}`
+            ? `Prévue ${prevue}`
             : null,
     },
     {

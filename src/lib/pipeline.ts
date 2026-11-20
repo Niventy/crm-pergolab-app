@@ -29,6 +29,8 @@ export const STAGE = {
   RAPPELER: "rappeler",
   RDV_TEL: "rdv_telephonique",
   DEVIS_A_ENVOYER: "devis_a_envoyer",
+  // Prospect intéressé, projet plus tard (à relancer) — pas une perte.
+  PROJET_A_VENIR: "projet_a_venir",
   HORS_ZONE_KO: "hors_zone_ko",
   NON_QUALIFIE_KO: "non_qualifie_ko",
   RENDEZ_VOUS: "rendez_vous",
@@ -54,6 +56,7 @@ export const STAGE_CODE_PAR_NOM: Record<string, StageCode> = {
   Rappeler: STAGE.RAPPELER,
   "RDV Téléphonique": STAGE.RDV_TEL,
   "Devis à envoyer": STAGE.DEVIS_A_ENVOYER,
+  "Projet à venir": STAGE.PROJET_A_VENIR,
   "Hors Zone KO": STAGE.HORS_ZONE_KO,
   "Non qualifié KO": STAGE.NON_QUALIFIE_KO,
   "Rendez-vous": STAGE.RENDEZ_VOUS,
@@ -71,6 +74,26 @@ export const STAGE_CODE_PAR_NOM: Record<string, StageCode> = {
 };
 
 // Raisons de perte (enum raison_perte) — libellés partagés fiche / Kanban.
+// Les leads K.O depuis plus de DELAI_KO_JOURS (leads.perdu_at, tenu par trigger)
+// sont masqués de la recherche ⌘K et de la Liste (bouton pour les réafficher).
+export const DELAI_KO_JOURS = 90;
+export const estKoAncien = (l: { statut: string; perduAt: Date | string | null }, maintenant: number): boolean =>
+  l.statut === "perdue" &&
+  !!l.perduAt &&
+  maintenant - new Date(l.perduAt).getTime() > DELAI_KO_JOURS * 86_400_000;
+
+// K.O de prospection sans justification : « Hors Zone KO » (aucune saisie, raison
+// posée d'office) · « Non qualifié KO » (commentaire facultatif, raison pré-remplie).
+export const KO_SANS_SAISIE: string[] = [STAGE.HORS_ZONE_KO];
+export const raisonAutoPour = (code: string | null | undefined): string | null =>
+  code === STAGE.HORS_ZONE_KO || code === STAGE.NON_QUALIFIE_KO ? "non_qualifie" : null;
+// Commentaire obligatoire en prospection / closing, SAUF ces étapes (et le cycle 3).
+export const commentaireRequisPour = (s: { code: string | null; cycle: number }): boolean =>
+  s.cycle !== 3 &&
+  s.code !== STAGE.PAS_DE_REPONSE &&
+  s.code !== STAGE.HORS_ZONE_KO &&
+  s.code !== STAGE.NON_QUALIFIE_KO;
+
 export const RAISONS_PERTE: { value: string; label: string }[] = [
   { value: "prix", label: "Prix" },
   { value: "delai", label: "Délai" },

@@ -5,7 +5,7 @@ import { Check, X } from "lucide-react";
 import { toast } from "sonner";
 import { cn } from "@/lib/utils";
 import { Button } from "@/components/ui/button";
-import { RAISONS_PERTE, STAGE } from "@/lib/pipeline";
+import { commentaireRequisPour, KO_SANS_SAISIE, RAISONS_PERTE, raisonAutoPour } from "@/lib/pipeline";
 import { changerEtape } from "./actions";
 
 type StageLite = {
@@ -43,17 +43,17 @@ export function StageMover({
 
   // Commentaire requis en prospection / closing, sauf « Pas de réponse » ;
   // facultatif sur les étapes de chantier (cycle 3).
-  const commentaireRequis = target
-    ? target.code !== STAGE.PAS_DE_REPONSE && target.cycle !== 3
-    : false;
+  const commentaireRequis = target ? commentaireRequisPour(target) : false;
+  // « Hors Zone KO » : ni raison ni commentaire (raison posée d'office).
+  const sansSaisie = !!target?.code && KO_SANS_SAISIE.includes(target.code);
   // Étape perdue (KO, Annulée…) : la raison alimente les statistiques de perte.
-  const raisonRequise = !!target?.isPerdue;
+  const raisonRequise = !!target?.isPerdue && !sansSaisie;
 
   function choisir(s: StageLite) {
     if (s.id === currentStageId) return;
     setTarget(s);
     setCommentaire("");
-    setRaison("");
+    setRaison(raisonAutoPour(s.code) ?? "");
   }
 
   // Base prospect = cycles 1 & 2 · Base client = cycle 3 uniquement. Un lead
@@ -152,7 +152,7 @@ export function StageMover({
           <div className="text-sm">
             Déplacer vers{" "}
             <span className="font-semibold text-foreground">{target.nom}</span>
-            {commentaireRequis ? (
+            {sansSaisie ? null : commentaireRequis ? (
               <span className="text-red-600"> · commentaire obligatoire</span>
             ) : (
               <span className="text-muted-foreground"> · commentaire optionnel</span>
@@ -175,6 +175,7 @@ export function StageMover({
               </select>
             </label>
           ) : null}
+          {sansSaisie ? null : (
           <textarea
             value={commentaire}
             onChange={(e) => setCommentaire(e.target.value)}
@@ -187,6 +188,7 @@ export function StageMover({
             }
             className="w-full resize-none rounded-md border border-border bg-white px-3 py-2 text-sm outline-none focus:border-primary"
           />
+          )}
           <div className="flex items-center gap-2">
             <Button
               type="button"

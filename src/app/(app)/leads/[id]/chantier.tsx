@@ -109,7 +109,8 @@ export function Chantier({
           titre="Livraison"
           edit={edit}
           champs={[
-            { label: "Prévue", key: "dateLivraisonPrevue" },
+            { label: "Prévue entre le", key: "dateLivraisonPrevue" },
+            { label: "et le", key: "dateLivraisonPrevueFin" },
             { label: "Réelle", key: "dateLivraisonReelle" },
           ]}
           v={v}
@@ -217,8 +218,9 @@ function Jalon({
   v: ChantierValues;
   set: (k: keyof ChantierValues) => (val: string) => void;
 }) {
-  const reel = champs.length === 2 ? v[champs[1].key] : v[champs[0].key];
-  const prevu = champs.length === 2 ? v[champs[0].key] : null;
+  // Plusieurs champs : le 1er = prévu, le DERNIER = réel.
+  const reel = v[champs[champs.length - 1].key];
+  const prevu = champs.length > 1 ? v[champs[0].key] : null;
   const fait = !!reel;
   return (
     <div

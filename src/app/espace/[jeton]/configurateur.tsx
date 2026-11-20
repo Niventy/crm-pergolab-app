@@ -2,6 +2,7 @@
 
 import { useMemo, useState } from "react";
 import { useRouter } from "next/navigation";
+import { reduireImage } from "@/lib/reduire-image";
 import { Camera, Check, CircleOff, FileText, Home, Loader2, Minus, Plus } from "lucide-react";
 import {
   COULEURS_RAL,
@@ -715,15 +716,4 @@ function ChampMm({
       </div>
     </label>
   );
-}
-
-async function reduireImage(f: File): Promise<Blob> {
-  const bmp = await createImageBitmap(f);
-  const k = Math.min(1, 2000 / Math.max(bmp.width, bmp.height));
-  const cv = document.createElement("canvas");
-  cv.width = Math.round(bmp.width * k);
-  cv.height = Math.round(bmp.height * k);
-  cv.getContext("2d")!.drawImage(bmp, 0, 0, cv.width, cv.height);
-  bmp.close();
-  return new Promise((ok, ko) => cv.toBlob((b) => (b ? ok(b) : ko(new Error("toBlob"))), "image/jpeg", 0.85));
 }

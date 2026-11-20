@@ -148,6 +148,9 @@ export default async function EspaceClientPage({
   const regle = lead.paiements.reduce((t, p) => t + Number(p.montant), 0);
   const reste = ttc != null ? Math.round((ttc - regle) * 100) / 100 : null;
   const facturesVisibles = lead.factures.filter(factureVisibleClient);
+  // Photos de la visite technique (galerie) / autres documents partagés.
+  const photosVisite = lead.documents.filter((d) => d.categorie === "visite_technique");
+  const autresDocuments = lead.documents.filter((d) => d.categorie !== "visite_technique");
   // Configurateur ouvert tant que le schéma n'est pas validé (chantier non annulé).
   const configurateur =
     !annulee && validation?.statut !== "validee" ? await donneesConfigurateur(leadId) : null;
@@ -166,6 +169,7 @@ export default async function EspaceClientPage({
       : null,
     premierPaiement: premier ? { date: premier.date, montant: Number(premier.montant) } : null,
     dateLivraisonPrevue: lead.dateLivraisonPrevue,
+    dateLivraisonPrevueFin: lead.dateLivraisonPrevueFin,
     dateLivraisonReelle: lead.dateLivraisonReelle,
     datePosePrevue: lead.datePosePrevue,
     datePoseReelle: lead.datePoseReelle,
@@ -450,10 +454,34 @@ export default async function EspaceClientPage({
         </Carte>
       ) : null}
 
-      {lead.documents.length && stockageClientDisponible() ? (
+      {photosVisite.length && stockageClientDisponible() ? (
+        <Carte titre="Photos de la visite technique">
+          <div className="grid grid-cols-3 gap-2 sm:grid-cols-4">
+            {photosVisite.map((d) => (
+              <a
+                key={d.id}
+                href={`/espace/${jeton}/document/${d.id}`}
+                target="_blank"
+                rel="noopener noreferrer"
+                className="block aspect-square overflow-hidden rounded-lg border border-border bg-slate-100"
+              >
+                {/* eslint-disable-next-line @next/next/no-img-element -- lien signé (redirection), pas d'optimisation */}
+                <img
+                  src={`/espace/${jeton}/document/${d.id}`}
+                  alt={d.nom}
+                  loading="lazy"
+                  className="size-full object-cover transition-transform hover:scale-105"
+                />
+              </a>
+            ))}
+          </div>
+        </Carte>
+      ) : null}
+
+      {autresDocuments.length && stockageClientDisponible() ? (
         <Carte titre="Vos documents">
           <ul className="divide-y divide-border">
-            {lead.documents.map((d) => (
+            {autresDocuments.map((d) => (
               <li key={d.id} className="flex items-center gap-3 py-2 first:pt-0 last:pb-0">
                 <FileText className="size-5 shrink-0 text-muted-foreground" />
                 <p className="min-w-0 flex-1 truncate text-sm font-medium">{d.nom}</p>

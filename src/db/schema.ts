@@ -205,6 +205,8 @@ export const leads = pgTable("leads", {
   refCommande: text("ref_commande"),
   dateCommande: date("date_commande"),
   dateLivraisonPrevue: date("date_livraison_prevue"),
+  // Fin de la fourchette de livraison (« entre le … et le … ») ; null = date seule.
+  dateLivraisonPrevueFin: date("date_livraison_prevue_fin"),
   dateLivraisonReelle: date("date_livraison_reelle"),
   datePosePrevue: date("date_pose_prevue"),
   datePoseReelle: date("date_pose_reelle"),
@@ -222,6 +224,10 @@ export const leads = pgTable("leads", {
   // Corbeille : une fiche « supprimée » est masquée partout mais conservée
   // (restaurable par un admin). La suppression définitive purge la ligne.
   deletedAt: timestamp("deleted_at", { withTimezone: true }),
+  // Passage en statut « perdue » : posé / effacé par un TRIGGER Postgres
+  // (migration 0046) quel que soit le chemin d'écriture. Sert à masquer les
+  // K.O anciens de la recherche.
+  perduAt: timestamp("perdu_at", { withTimezone: true }),
 
   rawPayload: jsonb("raw_payload"),
 });
@@ -380,6 +386,9 @@ export const documents = pgTable("documents", {
   // Partage avec l'espace client : « interne » (défaut, jamais montré) ·
   // « client » (consultable) · « a_valider » (présenté dans le chat de validation).
   partage: text("partage").notNull().default("interne"),
+  // Catégorie : « visite_technique » = photo de la visite technique (galerie de
+  // l'espace client) ; null = document ordinaire.
+  categorie: text("categorie"),
   userId: uuid("user_id").references(() => profiles.id, {
     onDelete: "set null",
   }),

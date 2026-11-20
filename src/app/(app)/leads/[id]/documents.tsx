@@ -8,6 +8,7 @@ import {
   FileImage,
   File as FileIcon,
   ExternalLink,
+  Camera,
   Trash2,
   Loader2,
 } from "lucide-react";
@@ -17,6 +18,7 @@ import { ouvrirDans } from "@/lib/ouvrir-dans";
 import { ConfirmDialog } from "@/components/confirm-dialog";
 import { PARTAGES } from "@/lib/chantier-validation";
 import { cn } from "@/lib/utils";
+import { reduireImage } from "@/lib/reduire-image";
 import {
   uploadDocument,
   getDocumentUrl,
@@ -32,6 +34,7 @@ export type DocItem = {
   createdAt: Date | string;
   auteur: string | null;
   partage: string;
+  categorie: string | null;
 };
 
 const PARTAGE_CLS: Record<string, string> = {
@@ -59,14 +62,18 @@ export function Documents({
   leadId,
   docs,
   partageClient = false,
+  photosVisite = false,
 }: {
   leadId: string;
   docs: DocItem[];
   /** Fiche client : choix du partage avec l'espace client. */
   partageClient?: boolean;
+  /** Fiche client : bouton « Photos de la visite technique » (galerie de l'espace client). */
+  photosVisite?: boolean;
 }) {
   const router = useRouter();
   const inputRef = useRef<HTMLInputElement>(null);
+  const photosRef = useRef<HTMLInputElement>(null);
   const [pending, start] = useTransition();
   const [busyId, setBusyId] = useState<string | null>(null);
   const [aSupprimer, setASupprimer] = useState<DocItem | null>(null);
@@ -82,6 +89,30 @@ export function Documents({
         else toast.error(r.error ?? "Échec de l'envoi");
       }
       if (inputRef.current) inputRef.current.value = "";
+      router.refresh();
+    });
+  }
+
+  // Photos de la visite technique : réduites dans le navigateur, partagées client.
+  function onPhotos(files: FileList | null) {
+    if (!files || files.length === 0) return;
+    start(async () => {
+      let ok = 0;
+      for (const file of Array.from(files)) {
+        try {
+          const blob = await reduireImage(file);
+          const fd = new FormData();
+          fd.append("file", new File([blob], file.name.replace(/\.\w+$/, "") + ".jpg", { type: blob.type || "image/jpeg" }));
+          fd.append("categorie", "visite_technique");
+          const r = await uploadDocument(leadId, fd);
+          if (r.ok) ok++;
+          else toast.error(r.error ?? `Échec : ${file.name}`);
+        } catch {
+          toast.error(`« ${file.name} » illisible (essaie en JPG)`);
+        }
+      }
+      if (ok) toast.success(`${ok} photo${ok > 1 ? "s" : ""} de visite ajoutée${ok > 1 ? "s" : ""} (visible${ok > 1 ? "s" : ""} par le client)`);
+      if (photosRef.current) photosRef.current.value = "";
       router.refresh();
     });
   }
@@ -129,6 +160,20 @@ export function Documents({
           {pending ? <Loader2 className="size-4 animate-spin" /> : <Upload className="size-4" />}
           Ajouter un document
         </button>
+        {photosVisite ? (
+          <>
+            <button
+              type="button"
+              onClick={() => photosRef.current?.click()}
+              disabled={pending}
+              title="Photos prises lors de la visite technique : affichées dans l'espace client"
+              className="inline-flex items-center gap-1.5 rounded-md border border-primary px-3 py-1.5 text-sm font-semibold text-primary hover:bg-primary/5 disabled:opacity-50"
+            >
+              <Camera className="size-4" /> Photos visite technique
+            </button>
+            <input ref={photosRef} type="file" accept="image/*" multiple hidden onChange={(e) => onPhotos(e.target.files)} />
+          </>
+        ) : null}
         <input
           ref={inputRef}
           type="file"
@@ -150,6 +195,11 @@ export function Documents({
               <div className="min-w-0 flex-1">
                 <div className="truncate text-sm font-medium text-foreground">
                   {d.nom}
+                  {d.categorie === "visite_technique" ? (
+                    <span className="ml-1.5 rounded bg-violet-100 px-1.5 py-0.5 text-[10px] font-semibold text-violet-800">
+                      Visite technique
+                    </span>
+                  ) : null}
                 </div>
                 <div className="text-xs text-muted-foreground">
                   {[

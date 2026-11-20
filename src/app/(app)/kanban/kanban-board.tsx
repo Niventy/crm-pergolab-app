@@ -34,7 +34,7 @@ import {
   humanise,
 } from "@/lib/format";
 import type { Stage, Lead, Profile } from "@/db/schema";
-import { statutPourStage, RAISONS_PERTE } from "@/lib/pipeline";
+import { KO_SANS_SAISIE, raisonAutoPour, statutPourStage, RAISONS_PERTE } from "@/lib/pipeline";
 import { useAutoRefresh } from "@/lib/use-auto-refresh";
 import { ConfirmDialog } from "@/components/confirm-dialog";
 import { ajouterCommentaireEtape } from "@/app/(app)/leads/[id]/actions";
@@ -364,9 +364,26 @@ export function KanbanBoard({
     const targetStageId = targetStage.id;
     if (lead.stageId === targetStageId) return;
 
-    // Étape PERDUE (KO, hors zone…) : on demande la raison avant d'agir.
+    // « Hors Zone KO » : déplacement direct, sans dialogue (raison posée d'office).
+    if (targetStage.code && KO_SANS_SAISIE.includes(targetStage.code)) {
+      const avant = leads;
+      const cible = targetStage;
+      setLeads((curr) => curr.map((l) => (l.id === leadId ? { ...l, stageId: cible.id, statut: "perdue" } : l)));
+      const r = await perdreLead(leadId, cible.id, raisonAutoPour(cible.code) ?? "non_qualifie", "");
+      if (r.ok) {
+        toast.success(`« ${lead.nom} » → ${cible.nom}`);
+        router.refresh();
+      } else {
+        setLeads(avant);
+        toast.error("Déplacement impossible", { description: r.error ?? undefined });
+      }
+      return;
+    }
+
+    // Étape PERDUE (KO, non qualifié…) : on demande la raison avant d'agir
+    // (pré-remplie pour « Non qualifié KO » ; commentaire toujours facultatif).
     if (targetStage.isPerdue) {
-      setRaison("");
+      setRaison(raisonAutoPour(targetStage.code) ?? "");
       setCommentaire("");
       setDialogue({ kind: "perte", lead, stage: targetStage });
       return;
