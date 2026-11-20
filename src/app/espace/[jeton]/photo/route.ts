@@ -1,14 +1,14 @@
 import { NextResponse } from "next/server";
 import { and, count, eq, isNull, like } from "drizzle-orm";
 import { db } from "@/db";
-import { documents, validationsChantier } from "@/db/schema";
+import { documents } from "@/db/schema";
+import { validationCourante } from "@/lib/chantier-validation-server";
 import { resoudreJeton } from "@/lib/espace-client";
 import { supabaseAdmin } from "@/lib/supabase/admin";
 
 // Photo de l'emplacement déposée par le client pendant la validation de son
-// schéma de production (réduite dans le navigateur avant l'envoi : Vercel
-// limite le corps d'une requête à 4,5 Mo). Image ≤ 4 Mo, 20 photos max par fiche, uniquement
-// tant qu'une demande est en cours. Enregistrée en document INTERNE de la fiche
+// schéma de production, tant qu'il n'est pas validé (réduite dans le navigateur avant l'envoi : Vercel
+// limite le corps d'une requête à 4,5 Mo). Image ≤ 4 Mo, 20 photos max par fiche,  Enregistrée en document INTERNE de la fiche
 // (« Photo client — … »), visible par l'équipe. Nécessite la clé service_role.
 const MAX = 4 * 1024 * 1024;
 const MAX_PHOTOS = 20;
@@ -27,12 +27,8 @@ export async function POST(req: Request, { params }: { params: Promise<{ jeton: 
   const sb = supabaseAdmin();
   if (!sb) return erreur("L'envoi de photos n'est pas encore disponible.", 503);
 
-  const [enCours] = await db
-    .select({ id: validationsChantier.id })
-    .from(validationsChantier)
-    .where(and(eq(validationsChantier.leadId, leadId), eq(validationsChantier.statut, "demandee")))
-    .limit(1);
-  if (!enCours) return erreur("Aucune validation en cours : rechargez la page.", 409);
+  if ((await validationCourante(leadId))?.statut === "validee")
+    return erreur("Votre schéma est déjà validé.", 409);
 
   const [{ n }] = await db
     .select({ n: count() })

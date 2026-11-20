@@ -9,7 +9,6 @@ import {
   Download,
   FileText,
   Mail,
-  MessageSquareText,
   Phone,
   ShieldCheck,
 } from "lucide-react";
@@ -17,11 +16,11 @@ import { db } from "@/db";
 import { leads as leadsTable } from "@/db/schema";
 import { feuilleDeRoute } from "@/lib/feuille-de-route";
 import { devisVisibleClient, factureVisibleClient, resoudreJeton } from "@/lib/espace-client";
-import { adresseChantier, type PointValidation } from "@/lib/chantier-validation";
-import { validationCourante } from "@/lib/chantier-validation-server";
+import { adresseChantier } from "@/lib/chantier-validation";
+import { donneesConfigurateur, validationCourante } from "@/lib/chantier-validation-server";
 import { MODES_PAIEMENT } from "@/app/(app)/leads/[id]/paiements-meta";
-import { SchemaForm } from "./schema-form";
-import { lireSchema } from "@/lib/schema-production";
+import { Configurateur } from "./configurateur";
+import { lireSchemaEnregistre } from "@/lib/schema-production";
 import { MessageForm } from "./message-form";
 import { getInfosEntreprise } from "@/lib/parametres";
 import { stockageClientDisponible } from "@/lib/espace-client-config";
@@ -149,6 +148,10 @@ export default async function EspaceClientPage({
   const regle = lead.paiements.reduce((t, p) => t + Number(p.montant), 0);
   const reste = ttc != null ? Math.round((ttc - regle) * 100) / 100 : null;
   const facturesVisibles = lead.factures.filter(factureVisibleClient);
+  // Configurateur ouvert tant que le schéma n'est pas validé (chantier non annulé).
+  const configurateur =
+    !annulee && validation?.statut !== "validee" ? await donneesConfigurateur(leadId) : null;
+  const schemaValide = validation?.statut === "validee" ? lireSchemaEnregistre(validation.schema) : null;
 
   // Feuille de route client (7 étapes déduites des données de la fiche).
   const premier = lead.paiements.find((p) => Number(p.montant) > 0);
@@ -194,39 +197,40 @@ export default async function EspaceClientPage({
         </p>
       </div>
 
-      {!annulee && validation?.statut === "demandee" ? (
+      {configurateur ? (
         <section className="rounded-xl border-2 border-primary bg-white p-5 shadow-sm">
           <h2 className="mb-1 flex items-center gap-2 text-sm font-bold text-primary">
-            <ClipboardCheck className="size-4" /> Action requise : validez votre schéma de production
+            <ClipboardCheck className="size-4" /> Action requise : configurez votre pergola
           </h2>
           <p className="mb-4 text-xs text-muted-foreground">
-            Vérifiez votre pergola telle qu&apos;elle sera fabriquée et précisez quelques détails de
-            pose. Quelques minutes suffisent : votre validation lance la fabrication.
+            Reconfigurez votre pergola telle qu&apos;elle doit être fabriquée : c&apos;est votre schéma de
+            production. Quelques minutes suffisent.
           </p>
-          <SchemaForm
+          <Configurateur
             jeton={jeton}
-            validationId={validation.id}
-            points={validation.points as PointValidation[]}
-            schema={lireSchema(validation.schema)}
+            initiale={configurateur.initiale}
+            options={configurateur.options.map((o) => ({ id: o.id, label: o.label, type: o.type }))}
+            documents={lead.documents.filter((d) => d.partage === "a_valider" && stockageClientDisponible())}
             conseiller={lead.responsable?.nom ?? null}
             photosActives={stockageClientDisponible()}
           />
         </section>
       ) : validation?.statut === "validee" ? (
-        <section className="flex items-center gap-3 rounded-xl border border-emerald-200 bg-emerald-50 p-4 text-sm text-emerald-900">
-          <CheckCircle2 className="size-5 shrink-0" />
-          <span>
-            Vous avez validé votre schéma de production le <b>{formatHorodatage(validation.reponduAt)}</b>.
-            Merci !
-          </span>
-        </section>
-      ) : validation?.statut === "a_corriger" ? (
-        <section className="flex items-center gap-3 rounded-xl border border-amber-200 bg-amber-50 p-4 text-sm text-amber-900">
-          <MessageSquareText className="size-5 shrink-0" />
-          <span>
-            Vos corrections ont été transmises le <b>{formatHorodatage(validation.reponduAt)}</b>.
-            Votre conseiller revient vers vous rapidement.
-          </span>
+        <section className="rounded-xl border border-emerald-200 bg-emerald-50 p-4 text-sm text-emerald-900">
+          <p className="flex items-center gap-2">
+            <CheckCircle2 className="size-5 shrink-0" />
+            <span>
+              Vous avez validé votre schéma de production le <b>{formatHorodatage(validation.reponduAt)}</b>.
+              Merci !
+            </span>
+          </p>
+          {schemaValide ? (
+            <ul className="mt-2 space-y-0.5 pl-7 text-xs">
+              {schemaValide.resume.map((l) => (
+                <li key={l}>{l}</li>
+              ))}
+            </ul>
+          ) : null}
         </section>
       ) : null}
 

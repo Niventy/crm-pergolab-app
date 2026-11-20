@@ -47,7 +47,7 @@ import { FilActivite, type FilItem } from "./fil-activite";
 import { MetaReponses, extraireReponsesMeta } from "./meta-reponses";
 import { EspaceClient } from "./espace-client";
 import { lienActif } from "@/lib/espace-client";
-import type { DetailsClient } from "@/lib/schema-production";
+import { lireSchemaEnregistre, type DetailsClient } from "@/lib/schema-production";
 import { emailDisponible, stockageClientDisponible } from "@/lib/espace-client-config";
 import { MetreForm } from "./metre-form";
 import { ValidationChantier } from "./validation-chantier";
@@ -58,8 +58,6 @@ import {
   metreComplet,
   metreDepuisDevis,
   pergolaDuDevis,
-  type PointValidation,
-  type Reponses,
   type StatutValidation,
 } from "@/lib/chantier-validation";
 
@@ -708,16 +706,13 @@ export default async function LeadPage({
                   <div className="mt-3">
                     <ValidationChantier
                       leadId={lead.id}
-                      metreSaisi={metreComplet(metre)}
                       validation={
                         validation
                           ? {
                               statut: validation.statut as StatutValidation,
-                              demandeeAt: validation.demandeeAt.toISOString(),
                               reponduAt: validation.reponduAt?.toISOString() ?? null,
                               ip: validation.ip,
-                              points: validation.points as PointValidation[],
-                              reponses: (validation.reponses as Reponses | null) ?? null,
+                              schema: lireSchemaEnregistre(validation.schema),
                               details: (validation.details as DetailsClient | null) ?? null,
                             }
                           : null

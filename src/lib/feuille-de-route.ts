@@ -63,11 +63,7 @@ export function feuilleDeRoute(f: {
           ? `Validé le ${f.fmtDate(f.validation.reponduLe)}`
           : validee
             ? null
-            : f.validation?.statut === "demandee"
-              ? "À faire : votre validation est attendue (ci-dessus)"
-              : f.validation?.statut === "a_corriger"
-                ? "Vos corrections sont en cours de prise en compte"
-                : "Après la prise de mesures, nous vous envoyons votre schéma",
+            : "À faire : configurez votre pergola ci-dessus pour valider votre schéma",
     },
     {
       cle: "acompte",

@@ -1,108 +1,95 @@
 import { NextResponse } from "next/server";
-import { and, eq, inArray } from "drizzle-orm";
+import { and, eq, inArray, ne } from "drizzle-orm";
 import { db } from "@/db";
 import { documents, echanges, leads, validationsChantier } from "@/db/schema";
 import { resoudreJeton } from "@/lib/espace-client";
 import { notifier } from "@/lib/notifications";
-import type { PointValidation, Reponses } from "@/lib/chantier-validation";
-import { lireDetails, lireSchema, resumeDetails, type DetailsClient } from "@/lib/schema-production";
+import { donneesConfigurateur, validationCourante } from "@/lib/chantier-validation-server";
+import {
+  ecartsConfig,
+  lireConfig,
+  lireDetails,
+  resumeConfig,
+  resumeDetails,
+  type SchemaEnregistre,
+} from "@/lib/schema-production";
 
-// Réponse du client au chat de validation (route et non server action : les
-// server actions sont refusées sans session, cf. middleware).
-// Corps : { validationId, reponses: { [cle]: { ok, commentaire } }, details, accord }.
-// `details` (précisions de pose : côté maison, lames, sol, photos) est exigé
-// quand la demande porte un schéma de production.
-// Tout OK + accord coché → « validee » ; au moins un point à corriger → « a_corriger ».
-export async function POST(
-  req: Request,
-  { params }: { params: Promise<{ jeton: string }> },
-) {
+// Le client envoie SA configuration (configurateur de l'espace client) : elle
+// devient le schéma de production validé (statut « validee »), avec les écarts
+// par rapport au devis signé + métré, signalés à l'équipe. Route et non server
+// action : les server actions sont refusées sans session (middleware).
+// Corps : { config, details, accord: true }.
+export async function POST(req: Request, { params }: { params: Promise<{ jeton: string }> }) {
   const { jeton } = await params;
-  const erreur = (message: string, status = 400) =>
-    NextResponse.json({ ok: false, error: message }, { status });
+  const erreur = (message: string, status = 400) => NextResponse.json({ ok: false, error: message }, { status });
 
-  // Même origine uniquement (le jeton suffit déjà, ceinture + bretelles).
   const origin = req.headers.get("origin");
-  if (origin && new URL(origin).host !== req.headers.get("host"))
-    return erreur("Origine refusée.", 403);
-
+  if (origin && new URL(origin).host !== req.headers.get("host")) return erreur("Origine refusée.", 403);
   const leadId = await resoudreJeton(jeton);
   if (!leadId) return erreur("Lien invalide ou expiré.", 404);
 
-  let body: { validationId?: unknown; reponses?: unknown; details?: unknown; accord?: unknown };
+  let body: { config?: unknown; details?: unknown; accord?: unknown };
   try {
     body = await req.json();
   } catch {
     return erreur("Requête invalide.");
   }
-  if (typeof body.validationId !== "string") return erreur("Requête invalide.");
 
-  const [v] = await db
-    .select()
-    .from(validationsChantier)
-    .where(and(eq(validationsChantier.id, body.validationId), eq(validationsChantier.leadId, leadId)))
-    .limit(1);
-  if (!v || v.statut !== "demandee")
-    return erreur("Cette demande n'est plus d'actualité : rechargez la page.", 409);
+  const courante = await validationCourante(leadId);
+  if (courante?.statut === "validee") return erreur("Votre schéma est déjà validé : rechargez la page.", 409);
+  const donnees = await donneesConfigurateur(leadId);
+  if (!donnees) return erreur("Projet introuvable.", 404);
 
-  // Une réponse par point présenté ; commentaire obligatoire si « à corriger ».
-  const points = v.points as PointValidation[];
-  const brut = (body.reponses ?? {}) as Record<string, { ok?: unknown; commentaire?: unknown }>;
-  const reponses: Reponses = {};
-  for (const p of points) {
-    const r = brut[p.cle];
-    if (!r || typeof r.ok !== "boolean") return erreur("Répondez à chaque point avant d'envoyer.");
-    const commentaire =
-      typeof r.commentaire === "string" && r.commentaire.trim() ? r.commentaire.trim().slice(0, 2000) : null;
-    if (!r.ok && !commentaire) return erreur(`Précisez la correction pour « ${p.titre} ».`);
-    reponses[p.cle] = { ok: r.ok, commentaire };
-  }
-  // Précisions de pose (schéma de production) ; photos = documents de CETTE fiche.
-  let details: DetailsClient | null = null;
-  if (v.schema) {
-    const d = lireDetails(body.details, lireSchema(v.schema));
-    if (!d.ok) return erreur(d.error);
-    details = d.details;
-    if (details.photos.length) {
-      const miennes = await db
+  const c = lireConfig(body.config, donnees.options);
+  if (!c.ok) return erreur(c.error);
+  const d = lireDetails(body.details, c.config);
+  if (!d.ok) return erreur(d.error);
+  if (body.accord !== true) return erreur("Cochez la case de confirmation pour valider.");
+  const details = d.details;
+  if (details.photos.length)
+    details.photos = (
+      await db
         .select({ id: documents.id })
         .from(documents)
-        .where(and(eq(documents.leadId, leadId), inArray(documents.id, details.photos)));
-      details.photos = miennes.map((m) => m.id);
-    }
+        .where(and(eq(documents.leadId, leadId), inArray(documents.id, details.photos)))
+    ).map((x) => x.id);
+
+  const schema: SchemaEnregistre = {
+    config: c.config,
+    reference: donnees.reference,
+    ecarts: ecartsConfig(c.config, donnees.reference, donnees.options),
+    resume: resumeConfig(c.config, donnees.options),
+  };
+  const ip = req.headers.get("x-forwarded-for")?.split(",")[0]?.trim() || req.headers.get("x-real-ip");
+  const reponse = {
+    statut: "validee",
+    schema,
+    details,
+    reponduAt: new Date(),
+    ip: ip ?? null,
+    userAgent: req.headers.get("user-agent")?.slice(0, 300) ?? null,
+  };
+  if (courante) {
+    const maj = await db
+      .update(validationsChantier)
+      .set(reponse)
+      .where(and(eq(validationsChantier.id, courante.id), ne(validationsChantier.statut, "validee")))
+      .returning({ id: validationsChantier.id });
+    if (!maj.length) return erreur("Votre schéma est déjà validé : rechargez la page.", 409);
+  } else {
+    await db.insert(validationsChantier).values({ leadId, points: [], ...reponse });
   }
 
-  const toutOk = points.every((p) => reponses[p.cle].ok);
-  if (toutOk && body.accord !== true) return erreur("Cochez la case de confirmation pour valider.");
-
-  const statut = toutOk ? "validee" : "a_corriger";
-  const ip = req.headers.get("x-forwarded-for")?.split(",")[0]?.trim() || req.headers.get("x-real-ip");
-  const maj = await db
-    .update(validationsChantier)
-    .set({
-      statut,
-      reponses,
-      details,
-      reponduAt: new Date(),
-      ip: ip ?? null,
-      userAgent: req.headers.get("user-agent")?.slice(0, 300) ?? null,
-    })
-    .where(and(eq(validationsChantier.id, v.id), eq(validationsChantier.statut, "demandee")))
-    .returning({ id: validationsChantier.id });
-  if (!maj.length) return erreur("Cette demande n'est plus d'actualité : rechargez la page.", 409);
-
-  const aCorriger = points.filter((p) => !reponses[p.cle].ok).map((p) => p.documentNom ?? p.titre);
-  const precisions = details ? resumeDetails(details) : [];
   await db.insert(echanges).values({
     leadId,
     userId: null,
     type: "espace_client",
-    contenu:
-      (toutOk
-        ? "Le client a VALIDÉ son schéma de production"
-        : `Le client demande des corrections : ${aCorriger.join(", ")}`) +
-      (precisions.length ? `
-${precisions.join(" · ")}` : ""),
+    contenu: [
+      "Le client a configuré et validé son schéma de production",
+      ...schema.resume,
+      ...resumeDetails(details),
+      schema.ecarts.length ? `⚠ ÉCARTS avec le devis / métré : ${schema.ecarts.join(" · ")}` : "Conforme au devis signé",
+    ].join("\n"),
   });
   const [lead] = await db
     .select({ nom: leads.nom, assignedTo: leads.assignedTo, poseAssignedTo: leads.poseAssignedTo })
@@ -114,10 +101,10 @@ ${precisions.join(" · ")}` : ""),
       userIds: [lead.assignedTo, lead.poseAssignedTo],
       type: "validation_client",
       leadId,
-      message: toutOk
-        ? `${lead.nom} a validé son schéma de production`
-        : `${lead.nom} demande des corrections sur son schéma de production`,
+      message: schema.ecarts.length
+        ? `${lead.nom} a validé son schéma — ${schema.ecarts.length} écart${schema.ecarts.length > 1 ? "s" : ""} avec le devis`
+        : `${lead.nom} a validé son schéma de production (conforme au devis)`,
     });
 
-  return NextResponse.json({ ok: true, statut });
+  return NextResponse.json({ ok: true });
 }

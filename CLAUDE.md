@@ -161,19 +161,20 @@ Annulée (`annulee`, perdue — commande annulée après signature).
   documents ni partageables ni affichés ni à valider ; sans Gmail (`GOOGLE_*`), pas d'email
   (page `/espace` = « utilisez le lien de votre conseiller », bouton fiche désactivé) —
   tout s'active seul quand la variable est ajoutée sur Vercel (puis redéploiement).
-- **Métré & validation du chantier** : `leads.metre` (jsonb structuré, mm, pré-rempli du
-  devis signé, écarts signalés à l'ADV — `lib/chantier-validation.ts`). « Demander la
-  validation » fige les points (`validations_chantier.points` : adresse, dimensions, pose,
-  modèle/coloris, équipements, remarques, documents « à valider ») ; le client répond
-  dans le formulaire « Validez votre schéma de production » (`schema-form.tsx`, look du
-  configurateur de pergolab.fr : vue 3D + fermetures par côté, catalogue CRM ;
-  `lib/schema-production.ts`, figé dans `validations_chantier.schema`) : chaque point
-  Conforme / À corriger + précisions (`details` : côté maison si adossée, ouverture des
-  lames, sol, hauteur dispo, photos via POST `/espace/[jeton]/photo` → document interne
-  « Photo client — », clé service_role requise) → POST `/espace/[jeton]/validation`
-  → `validee` (tout OK + case d'accord) ou `a_corriger` (commentaire obligatoire),
-  IP + user-agent, journal `espace_client`, notification `validation_client` au
-  responsable + métreur. Aucune avance d'étape automatique.
+- **Métré & schéma de production** : `leads.metre` (jsonb structuré, mm, pré-rempli du
+  devis signé, écarts signalés à l'ADV — `lib/chantier-validation.ts`). Le CLIENT
+  RECONFIGURE sa pergola dans son espace (`configurateur.tsx`, look du configurateur de
+  pergolab.fr : vue 3D, modèle, pose + côté maison, dimensions mm, coloris RAL / lames / LED,
+  UNE fermeture par côté, équipements à l'unité, catalogue `options_configurateur`, AUCUN
+  prix) — ouvert d'office tant que le schéma n'est pas validé, pré-rempli depuis devis signé
+  + métré (`lib/schema-production.ts › configDepuisDevis`, `donneesConfigurateur`) ;
+  précisions (ouverture des lames, sol, hauteur dispo, photos via POST `/espace/[jeton]/photo`
+  → document interne « Photo client — », clé service_role requise) + case d'accord →
+  POST `/espace/[jeton]/validation` → `validations_chantier` statut `validee`, `schema` =
+  { config, reference, ecarts, resume }, `details`, IP + user-agent, journal + notification
+  `validation_client` (nb d'écarts). Fiche : résumé, écarts en orange, « Rouvrir la
+  configuration » (archive en `annulee`, le client repart de SA dernière config).
+  Aucune avance d'étape automatique.
 - Téléphones : affichés via `formatTelephone` (« 06 58 24 33 61 »), liens via `telHref` (+33…).
 - **Planning** (`/emploi-du-temps`) : files personnelles (RDV, relances, rappels,
   devis, sommeil, chantiers) + tâches + agenda Google.

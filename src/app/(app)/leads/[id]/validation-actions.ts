@@ -1,13 +1,10 @@
 "use server";
 
-import { and, eq } from "drizzle-orm";
+import { and, eq, ne } from "drizzle-orm";
 import { revalidatePath } from "next/cache";
 import { db } from "@/db";
 import { echanges, leads, profiles, validationsChantier } from "@/db/schema";
 import { currentUserId } from "@/lib/current-user";
-import { lienActif } from "@/lib/espace-client";
-import { creerLienEspaceClient } from "./espace-client-actions";
-import { pointsPourLead } from "@/lib/chantier-validation-server";
 import type { Metre } from "@/lib/chantier-validation";
 
 const entierMm = (v: unknown) => {
@@ -50,52 +47,23 @@ export async function enregistrerMetre(leadId: string, data: Metre) {
   return { ok: true as const, error: null };
 }
 
-// Demande au client de valider son chantier (chat de l'espace client). Fige les
-// points présentés ; une demande en cours est remplacée. Crée le lien de
-// l'espace client s'il n'existe pas (renvoyé pour être copié).
-export async function demanderValidation(leadId: string) {
+// Rouvre le configurateur du client (ex. écart à corriger, nouveau métré) : le
+// schéma validé est archivé (« annulee ») ; le client retrouve sa dernière
+// configuration, à revoir puis revalider.
+export async function rouvrirConfiguration(leadId: string) {
   const userId = await currentUserId();
   if (!userId) return { ok: false as const, error: "Non connecté." };
-  const r = await pointsPourLead(leadId);
-  if (!r.ok) return { ok: false as const, error: r.error };
-
-  await db
+  const rouvertes = await db
     .update(validationsChantier)
     .set({ statut: "annulee" })
-    .where(and(eq(validationsChantier.leadId, leadId), eq(validationsChantier.statut, "demandee")));
-  await db.insert(validationsChantier).values({ leadId, points: r.points, schema: r.schema, demandeePar: userId });
-
-  let jeton = (await lienActif(leadId))?.jeton ?? null;
-  if (!jeton) {
-    const c = await creerLienEspaceClient(leadId);
-    if (!c.ok) return { ok: false as const, error: c.error };
-    jeton = c.acces.jeton;
-  }
-  await db.insert(echanges).values({
-    leadId,
-    userId,
-    type: "espace_client",
-    contenu: `Validation du schéma de production demandée au client (${r.points.length} points)`,
-  });
-  revalidatePath(`/leads/${leadId}`);
-  return { ok: true as const, error: null, jeton };
-}
-
-// Retire la demande en cours (ex. métré à refaire) : le chat disparaît de l'espace.
-export async function annulerValidation(leadId: string) {
-  const userId = await currentUserId();
-  if (!userId) return { ok: false as const, error: "Non connecté." };
-  const annulees = await db
-    .update(validationsChantier)
-    .set({ statut: "annulee" })
-    .where(and(eq(validationsChantier.leadId, leadId), eq(validationsChantier.statut, "demandee")))
+    .where(and(eq(validationsChantier.leadId, leadId), ne(validationsChantier.statut, "annulee")))
     .returning({ id: validationsChantier.id });
-  if (annulees.length)
+  if (rouvertes.length)
     await db.insert(echanges).values({
       leadId,
       userId,
       type: "espace_client",
-      contenu: "Demande de validation du chantier retirée",
+      contenu: "Configuration du client rouverte : schéma de production à revalider",
     });
   revalidatePath(`/leads/${leadId}`);
   return { ok: true as const, error: null };

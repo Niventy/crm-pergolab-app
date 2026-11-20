@@ -1,16 +1,15 @@
-import { and, desc, eq, inArray, isNull, ne } from "drizzle-orm";
+import { and, desc, eq, isNull, ne } from "drizzle-orm";
 import { db } from "@/db";
-import { stockageClientDisponible } from "@/lib/espace-client-config";
-import { devis, documents, leads, validationsChantier } from "@/db/schema";
+import { devis, leads, validationsChantier } from "@/db/schema";
+import { lireMetre } from "@/lib/chantier-validation";
 import {
-  adresseChantier,
-  construirePoints,
-  lireMetre,
-  metreComplet,
-  type PointValidation,
-} from "@/lib/chantier-validation";
-import { construireSchema, lignesFermetures, type SchemaProduction } from "@/lib/schema-production";
+  configDepuisDevis,
+  lireConfig,
+  lireSchemaEnregistre,
+  type ConfigClient,
+} from "@/lib/schema-production";
 import { getOptionsConfigurateur } from "@/app/(app)/reglages/actions";
+import type { OptionSM } from "@/app/(app)/leads/[id]/devis/[devisId]/sur-mesure";
 
 // Devis de référence du chantier : le devis signé, sinon le plus récent retenu.
 export async function devisReference(leadId: string) {
@@ -22,7 +21,7 @@ export async function devisReference(leadId: string) {
   return rows.find((d) => d.accepteAt) ?? rows.find((d) => d.statut !== "Non retenu") ?? null;
 }
 
-// Dernière validation non annulée de la fiche (demandée, validée ou à corriger).
+// Dernière validation non annulée de la fiche.
 export async function validationCourante(leadId: string) {
   const [v] = await db
     .select()
@@ -33,44 +32,39 @@ export async function validationCourante(leadId: string) {
   return v ?? null;
 }
 
-// Points à faire valider, construits à partir de l'état ACTUEL de la fiche.
-export async function pointsPourLead(
-  leadId: string,
-): Promise<
-  { ok: true; points: PointValidation[]; schema: SchemaProduction | null } | { ok: false; error: string }
-> {
+// Données du configurateur client : options proposées (actives + celles déjà
+// utilisées), référence (devis signé + métré) et configuration de départ (la
+// dernière envoyée par le client si l'équipe a rouvert, sinon la référence).
+export async function donneesConfigurateur(leadId: string): Promise<{
+  options: OptionSM[];
+  reference: ConfigClient;
+  initiale: ConfigClient;
+} | null> {
   const [lead] = await db
-    .select()
+    .select({ metre: leads.metre })
     .from(leads)
     .where(and(eq(leads.id, leadId), isNull(leads.deletedAt)))
     .limit(1);
-  if (!lead) return { ok: false, error: "Fiche introuvable." };
-  const metre = lireMetre(lead.metre);
-  if (!metreComplet(metre))
-    return { ok: false, error: "Saisis d'abord le métré (largeur, avancée, pose)." };
-  // Documents « à valider » seulement si le client peut les ouvrir (clé Supabase).
-  const [ref, options, docs] = await Promise.all([
+  if (!lead) return null;
+  const [ref, toutes, [derniere]] = await Promise.all([
     devisReference(leadId),
-    getOptionsConfigurateur(true), // retirées incluses : le devis peut y faire référence
-    !stockageClientDisponible()
-      ? Promise.resolve([])
-      : db
-      .select({ id: documents.id, nom: documents.nom })
-      .from(documents)
-      .where(and(eq(documents.leadId, leadId), inArray(documents.partage, ["a_valider"])))
-      .orderBy(documents.createdAt),
+    getOptionsConfigurateur(true),
+    db
+      .select({ schema: validationsChantier.schema })
+      .from(validationsChantier)
+      .where(eq(validationsChantier.leadId, leadId))
+      .orderBy(desc(validationsChantier.demandeeAt))
+      .limit(1),
   ]);
-  const schema = construireSchema({ metre, config: ref?.config ?? null, options });
-  return {
-    ok: true,
-    schema,
-    points: construirePoints({
-      fermetures: schema ? lignesFermetures(schema) : [],
-      adressePose: adresseChantier(lead),
-      metre,
-      config: ref?.config ?? null,
-      lignesDevis: ref?.lignes ?? null,
-      documents: docs,
-    }),
-  };
+  const reference = configDepuisDevis({ config: ref?.config ?? null, metre: lireMetre(lead.metre), options: toutes });
+  const precedente = lireSchemaEnregistre(derniere?.schema)?.config ?? null;
+  const utilisees = new Set(
+    [reference, precedente]
+      .filter((c): c is ConfigClient => !!c)
+      .flatMap((c) => [...Object.values(c.fermetures), ...c.equipements.map((e) => e.optionId)])
+      .filter((x): x is string => !!x),
+  );
+  const options = toutes.filter((o) => o.actif !== false || utilisees.has(o.id));
+  const relue = precedente ? lireConfig(precedente, options) : null;
+  return { options, reference, initiale: relue?.ok ? relue.config : reference };
 }
