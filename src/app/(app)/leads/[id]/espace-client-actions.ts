@@ -2,9 +2,11 @@
 
 import { and, eq, isNull } from "drizzle-orm";
 import { revalidatePath } from "next/cache";
+import { headers } from "next/headers";
 import { db } from "@/db";
 import { accesClient, echanges, leads } from "@/db/schema";
-import { currentUserId } from "@/lib/current-user";
+import { currentProfile, currentUserId } from "@/lib/current-user";
+import { envoyerLienAcces } from "@/lib/espace-client-email";
 import { DUREE_LIEN_JOURS, lienActif, nouveauJeton } from "@/lib/espace-client";
 
 export type AccesClientDTO = {
@@ -90,6 +92,25 @@ export async function revoquerLienEspaceClient(leadId: string) {
       contenu: "Espace client : accès coupé",
     });
   }
+  revalidatePath(`/leads/${leadId}`);
+  return { ok: true as const, error: null };
+}
+
+// Envoie au client l'email « Accéder à mon projet » depuis la boîte de l'ADV
+// connecté (Reply-To = l'ADV). Crée le lien d'accès s'il n'existe pas.
+export async function envoyerAccesParEmail(leadId: string) {
+  const moi = await currentProfile();
+  if (!moi) return { ok: false as const, error: "Non connecté." };
+  const h = await headers();
+  const host = h.get("x-forwarded-host") ?? h.get("host");
+  if (!host) return { ok: false as const, error: "Adresse du CRM inconnue." };
+  const proto = h.get("x-forwarded-proto") ?? (host.startsWith("localhost") ? "http" : "https");
+  const r = await envoyerLienAcces({
+    leadId,
+    origin: `${proto}://${host}`,
+    depuisFiche: { userId: moi.id, userEmail: moi.email },
+  });
+  if (!r.ok) return { ok: false as const, error: r.error };
   revalidatePath(`/leads/${leadId}`);
   return { ok: true as const, error: null };
 }

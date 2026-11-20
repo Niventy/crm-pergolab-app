@@ -7,41 +7,11 @@ import { echanges } from "@/db/schema";
 import { createClient } from "@/lib/supabase/server";
 import { currentUserId } from "@/lib/current-user";
 import { resolveSender, allSenders } from "@/lib/email-sender";
+import { buildRawMessage, encodeHeader, escapeHtml } from "@/lib/gmail";
 import { getQuotePdfUrl } from "@/lib/pennylane";
 import { marquerDevisEnvoye } from "@/lib/pipeline-server";
 
 export type EmailState = { ok: boolean; error: string | null };
-
-function escapeHtml(s: string): string {
-  return s.replace(/&/g, "&amp;").replace(/</g, "&lt;").replace(/>/g, "&gt;");
-}
-
-// Encodage MIME « encoded-word » pour un en-tête (objet) avec accents.
-function encodeHeader(s: string): string {
-  return `=?UTF-8?B?${Buffer.from(s, "utf-8").toString("base64")}?=`;
-}
-
-// Message RFC 5322 encodé en base64url pour l'API Gmail.
-function buildRawMessage(
-  from: string,
-  to: string,
-  subject: string,
-  html: string,
-  replyTo?: string,
-) {
-  const lines = [
-    `From: ${from}`,
-    `To: ${to}`,
-    ...(replyTo ? [`Reply-To: ${replyTo}`] : []),
-    `Subject: ${encodeHeader(subject)}`,
-    "MIME-Version: 1.0",
-    'Content-Type: text/html; charset="UTF-8"',
-    "Content-Transfer-Encoding: base64",
-    "",
-    Buffer.from(html, "utf-8").toString("base64"),
-  ];
-  return Buffer.from(lines.join("\r\n"), "utf-8").toString("base64url");
-}
 
 // Envoie un email via l'API Gmail en OAuth. From = expéditeur résolu selon
 // l'ADV connecté ; Reply-To = l'ADV connecté. Journalise un `echange` type=email.

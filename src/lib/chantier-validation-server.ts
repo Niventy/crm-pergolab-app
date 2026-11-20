@@ -1,5 +1,6 @@
 import { and, desc, eq, inArray, isNull, ne } from "drizzle-orm";
 import { db } from "@/db";
+import { stockageClientDisponible } from "@/lib/espace-client-config";
 import { devis, documents, leads, validationsChantier } from "@/db/schema";
 import {
   adresseChantier,
@@ -8,6 +9,8 @@ import {
   metreComplet,
   type PointValidation,
 } from "@/lib/chantier-validation";
+import { construireSchema, lignesFermetures, type SchemaProduction } from "@/lib/schema-production";
+import { getOptionsConfigurateur } from "@/app/(app)/reglages/actions";
 
 // Devis de référence du chantier : le devis signé, sinon le plus récent retenu.
 export async function devisReference(leadId: string) {
@@ -33,7 +36,9 @@ export async function validationCourante(leadId: string) {
 // Points à faire valider, construits à partir de l'état ACTUEL de la fiche.
 export async function pointsPourLead(
   leadId: string,
-): Promise<{ ok: true; points: PointValidation[] } | { ok: false; error: string }> {
+): Promise<
+  { ok: true; points: PointValidation[]; schema: SchemaProduction | null } | { ok: false; error: string }
+> {
   const [lead] = await db
     .select()
     .from(leads)
@@ -43,17 +48,24 @@ export async function pointsPourLead(
   const metre = lireMetre(lead.metre);
   if (!metreComplet(metre))
     return { ok: false, error: "Saisis d'abord le métré (largeur, avancée, pose)." };
-  const [ref, docs] = await Promise.all([
+  // Documents « à valider » seulement si le client peut les ouvrir (clé Supabase).
+  const [ref, options, docs] = await Promise.all([
     devisReference(leadId),
-    db
+    getOptionsConfigurateur(true), // retirées incluses : le devis peut y faire référence
+    !stockageClientDisponible()
+      ? Promise.resolve([])
+      : db
       .select({ id: documents.id, nom: documents.nom })
       .from(documents)
       .where(and(eq(documents.leadId, leadId), inArray(documents.partage, ["a_valider"])))
       .orderBy(documents.createdAt),
   ]);
+  const schema = construireSchema({ metre, config: ref?.config ?? null, options });
   return {
     ok: true,
+    schema,
     points: construirePoints({
+      fermetures: schema ? lignesFermetures(schema) : [],
       adressePose: adresseChantier(lead),
       metre,
       config: ref?.config ?? null,

@@ -102,6 +102,8 @@ export function construirePoints(opts: {
   config: unknown;
   lignesDevis: unknown;
   documents: { id: string; nom: string }[];
+  // Fermetures par côté (schéma de production), une ligne par fermeture.
+  fermetures?: string[];
 }): PointValidation[] {
   const { metre } = opts;
   const cfg = pergolaDuDevis(opts.config);
@@ -147,6 +149,9 @@ export function construirePoints(opts: {
       ],
     });
   }
+
+  if (opts.fermetures?.length)
+    pts.push({ cle: "fermetures", titre: "Fermetures par côté", lignes: opts.fermetures });
 
   const equipements = (Array.isArray(opts.lignesDevis) ? (opts.lignesDevis as LigneDevis[]) : [])
     .filter((l) => typeof l?.designation === "string" && !estLigneTechnique(l.designation))

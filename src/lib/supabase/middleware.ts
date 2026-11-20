@@ -14,6 +14,12 @@ const PUBLIC_PATHS = ["/login", "/auth", "/api/leads/inbound", "/espace"];
 // actions du CRM, qui supposent un utilisateur authentifié.
 const ACTIONS_PUBLIQUES = ["/login"];
 
+// Espace client : ouvrir son lien `/espace/<jeton>` mémorise le jeton dans un
+// cookie (httpOnly) → la page de connexion `/espace` renvoie ensuite directement
+// sur le projet. Le jeton est revérifié à chaque usage (resoudreJeton).
+export const COOKIE_ESPACE = "pl_espace";
+const LIEN_ESPACE = /^\/espace\/([A-Za-z0-9_-]{43})$/;
+
 function isPublic(pathname: string) {
   return PUBLIC_PATHS.some(
     (p) => pathname === p || pathname.startsWith(`${p}/`),
@@ -72,6 +78,17 @@ export async function updateSession(request: NextRequest) {
     const url = request.nextUrl.clone();
     url.pathname = "/";
     return NextResponse.redirect(url);
+  }
+
+  const lien = request.method === "GET" ? LIEN_ESPACE.exec(pathname) : null;
+  if (lien) {
+    supabaseResponse.cookies.set(COOKIE_ESPACE, lien[1], {
+      httpOnly: true,
+      secure: process.env.NODE_ENV === "production",
+      sameSite: "lax",
+      path: "/espace",
+      maxAge: 60 * 60 * 24 * 365,
+    });
   }
 
   return supabaseResponse;

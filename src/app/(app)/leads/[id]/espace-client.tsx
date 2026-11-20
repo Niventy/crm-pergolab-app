@@ -2,12 +2,13 @@
 
 import { useState, useSyncExternalStore, useTransition } from "react";
 import { useRouter } from "next/navigation";
-import { Copy, ExternalLink, Link2, RefreshCw, Unlink } from "lucide-react";
+import { Copy, ExternalLink, Link2, Mail, RefreshCw, Unlink } from "lucide-react";
 import { toast } from "sonner";
 import { ConfirmDialog } from "@/components/confirm-dialog";
 import { formatHorodatage, tempsRelatif } from "@/lib/format";
 import {
   creerLienEspaceClient,
+  envoyerAccesParEmail,
   revoquerLienEspaceClient,
   type AccesClientDTO,
 } from "./espace-client-actions";
@@ -20,9 +21,14 @@ const BTN =
 export function EspaceClient({
   leadId,
   acces,
+  emailClient,
+  emailActif,
 }: {
   leadId: string;
   acces: AccesClientDTO | null;
+  emailClient: string | null;
+  /** Envoi Gmail configuré (sinon bouton désactivé, expliqué). */
+  emailActif: boolean;
 }) {
   const router = useRouter();
   const [pending, start] = useTransition();
@@ -55,6 +61,33 @@ export function EspaceClient({
     });
   }
 
+  function envoyerEmail() {
+    start(async () => {
+      const r = await envoyerAccesParEmail(leadId);
+      if (!r.ok) return void toast.error(r.error ?? "Échec de l'envoi");
+      toast.success(`Email « Accéder à mon projet » envoyé à ${emailClient}`);
+      router.refresh();
+    });
+  }
+
+  const boutonEmail = (
+    <button
+      type="button"
+      className={BTN + " border-primary/40 text-primary"}
+      onClick={envoyerEmail}
+      disabled={pending || !emailClient || !emailActif}
+      title={
+        !emailActif
+          ? "Envoi d'emails pas encore configuré (Google) : copie le lien et envoie-le toi-même"
+          : emailClient
+            ? `Envoyer à ${emailClient}`
+            : "Ajoute l'email du client sur la fiche"
+      }
+    >
+      <Mail className="size-3.5" /> Envoyer l&apos;accès par email
+    </button>
+  );
+
   function couper() {
     start(async () => {
       const r = await revoquerLienEspaceClient(leadId);
@@ -69,12 +102,15 @@ export function EspaceClient({
     return (
       <div className="space-y-2">
         <p className="text-sm text-muted-foreground">
-          Une page privée où le client suit son chantier et retrouve ses devis, sans
-          compte ni mot de passe.
+          Une page privée où le client suit son chantier, retrouve devis, factures et
+          documents, et nous écrit. Il se connecte avec son email, sans mot de passe.
         </p>
-        <button type="button" className={BTN} onClick={creer} disabled={pending}>
-          <Link2 className="size-3.5" /> Créer le lien et le copier
-        </button>
+        <div className="flex flex-wrap gap-1.5">
+          {boutonEmail}
+          <button type="button" className={BTN} onClick={creer} disabled={pending}>
+            <Link2 className="size-3.5" /> Créer le lien et le copier
+          </button>
+        </div>
       </div>
     );
   }
@@ -89,6 +125,7 @@ export function EspaceClient({
         aria-label="Lien de l'espace client"
       />
       <div className="flex flex-wrap gap-1.5">
+        {boutonEmail}
         <button type="button" className={BTN} onClick={() => url && copier(url)} disabled={!url}>
           <Copy className="size-3.5" /> Copier
         </button>
@@ -107,6 +144,11 @@ export function EspaceClient({
           <Unlink className="size-3.5" /> Couper l&apos;accès
         </button>
       </div>
+      {!emailActif ? (
+        <p className="text-xs text-amber-700">
+          Envoi par email pas encore activé : copie le lien et envoie-le par SMS ou depuis ta boîte.
+        </p>
+      ) : null}
       <p className="text-xs text-muted-foreground">
         {acces.derniereVisite
           ? `Ouvert ${acces.nbVisites} fois · dernière visite ${tempsRelatif(acces.derniereVisite)}`

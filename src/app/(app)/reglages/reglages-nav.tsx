@@ -5,12 +5,13 @@ import { usePathname } from "next/navigation";
 import { cn } from "@/lib/utils";
 
 // Pages de réglages ouvertes à toute l'équipe : le devis (descriptions, options,
-// produits) et la liste des poseurs proposée sur les fiches client.
+// produits), la liste des poseurs et les infos affichées dans l'espace client.
 const SOUS_ONGLETS = [
   { href: "/reglages/sur-mesure", label: "Descriptions du devis" },
   { href: "/reglages/options", label: "Options du configurateur" },
   { href: "/reglages/produits", label: "Produits & forfaits" },
   { href: "/reglages/poseurs", label: "Poseurs" },
+  { href: "/reglages/espace-client", label: "Espace client" },
 ];
 
 export function ReglagesNav() {

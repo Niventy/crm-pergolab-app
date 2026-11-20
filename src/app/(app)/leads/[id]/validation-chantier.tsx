@@ -7,6 +7,7 @@ import { toast } from "sonner";
 import { ConfirmDialog } from "@/components/confirm-dialog";
 import { formatHorodatage, tempsRelatif } from "@/lib/format";
 import type { PointValidation, Reponses, StatutValidation } from "@/lib/chantier-validation";
+import { resumeDetails, type DetailsClient } from "@/lib/schema-production";
 import { annulerValidation, demanderValidation } from "./validation-actions";
 
 export type ValidationDTO = {
@@ -16,6 +17,7 @@ export type ValidationDTO = {
   ip: string | null;
   points: PointValidation[];
   reponses: Reponses | null;
+  details: DetailsClient | null;
 };
 
 const BTN =
@@ -69,14 +71,16 @@ export function ValidationChantier({
   return (
     <div className="space-y-2 border-t border-border pt-3">
       <div className="text-eyebrow flex items-center gap-1.5 text-muted-foreground">
-        <ClipboardCheck className="size-3.5" /> Validation du chantier par le client
+        <ClipboardCheck className="size-3.5" /> Schéma de production à faire valider
       </div>
 
       {!validation ? (
         <>
           <p className="text-xs text-muted-foreground">
-            Le client confirme, dans un chat guidé, l&apos;adresse, le métré, la pose, le
-            modèle, les équipements et les documents marqués « À faire valider ».
+            Le client reçoit dans son espace le schéma de sa pergola (vue 3D, fermetures par
+            côté) avec l&apos;adresse, le métré, la pose, le modèle, les équipements et les
+            documents « À faire valider » ; il précise le côté maison, les lames, le sol et
+            peut joindre des photos, puis donne son accord.
           </p>
           {boutonDemander("Demander la validation")}
           {!metreSaisi ? (
@@ -132,6 +136,19 @@ export function ValidationChantier({
               );
             })}
           </ul>
+          {validation.details && resumeDetails(validation.details).length ? (
+            <div className="rounded bg-slate-50 px-2 py-1.5 text-xs">
+              <p className="font-semibold">Précisions du client</p>
+              <ul className="mt-0.5 space-y-0.5">
+                {resumeDetails(validation.details).map((l) => (
+                  <li key={l}>· {l}</li>
+                ))}
+              </ul>
+              {validation.details.photos.length ? (
+                <p className="mt-1 text-muted-foreground">Photos : bloc Documents (« Photo client — … »).</p>
+              ) : null}
+            </div>
+          ) : null}
           {validation.ip ? (
             <p className="text-[11px] text-muted-foreground">Réponse enregistrée depuis l&apos;adresse IP {validation.ip}</p>
           ) : null}
@@ -142,7 +159,7 @@ export function ValidationChantier({
       <ConfirmDialog
         open={confirmRetrait}
         titre="Retirer la demande de validation ?"
-        description="Le chat disparaît de l'espace client. Tu pourras refaire une demande à tout moment."
+        description="Le formulaire disparaît de l'espace client. Tu pourras refaire une demande à tout moment."
         confirmLabel="Retirer"
         pending={pending}
         onConfirm={retirer}

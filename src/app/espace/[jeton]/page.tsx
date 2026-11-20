@@ -1,15 +1,39 @@
 import type { Metadata } from "next";
+import Link from "next/link";
 import { and, asc, eq } from "drizzle-orm";
-import { Check, CheckCircle2, ClipboardCheck, Download, FileText, Mail, MessageSquareText } from "lucide-react";
+import {
+  Building2,
+  Check,
+  CheckCircle2,
+  ClipboardCheck,
+  Download,
+  FileText,
+  Mail,
+  MessageSquareText,
+  Phone,
+  ShieldCheck,
+} from "lucide-react";
 import { db } from "@/db";
 import { leads as leadsTable, stages as stagesTable } from "@/db/schema";
 import { devisVisibleClient, factureVisibleClient, resoudreJeton } from "@/lib/espace-client";
 import { adresseChantier, type PointValidation } from "@/lib/chantier-validation";
 import { validationCourante } from "@/lib/chantier-validation-server";
 import { MODES_PAIEMENT } from "@/app/(app)/leads/[id]/paiements-meta";
-import { ChatValidation } from "./chat-validation";
+import { SchemaForm } from "./schema-form";
+import { lireSchema } from "@/lib/schema-production";
+import { MessageForm } from "./message-form";
+import { getInfosEntreprise } from "@/lib/parametres";
+import { stockageClientDisponible } from "@/lib/espace-client-config";
+import { formatSiret } from "@/lib/infos-entreprise";
 import { STAGE } from "@/lib/pipeline";
-import { formatDate, formatEurosCents, formatHorodatage, ymdParis } from "@/lib/format";
+import {
+  formatDate,
+  formatEurosCents,
+  formatHorodatage,
+  formatTelephone,
+  telHref,
+  ymdParis,
+} from "@/lib/format";
 
 // ESPACE CLIENT — page PUBLIQUE (hors du groupe (app) : pas de nav CRM, pas de
 // session). L'accès = le jeton de l'URL, vérifié à chaque requête. On n'affiche
@@ -44,7 +68,7 @@ function Carte({ titre, children }: { titre: string; children: React.ReactNode }
   );
 }
 
-function Coquille({ children }: { children: React.ReactNode }) {
+function Coquille({ children, connecte = false }: { children: React.ReactNode; connecte?: boolean }) {
   return (
     <div className="min-h-full flex-1 bg-slate-50">
       <header className="border-b border-border bg-white">
@@ -54,6 +78,16 @@ function Coquille({ children }: { children: React.ReactNode }) {
           <span className="ml-auto text-xs font-semibold uppercase tracking-wider text-muted-foreground">
             Espace client
           </span>
+          {connecte ? (
+            // Route serveur (efface le cookie) : vraie navigation, pas <Link>.
+            // eslint-disable-next-line @next/next/no-html-link-for-pages
+            <a
+              href="/espace/deconnexion"
+              className="text-xs text-muted-foreground underline-offset-2 hover:text-foreground hover:underline"
+            >
+              Se déconnecter
+            </a>
+          ) : null}
         </div>
       </header>
       <main className="mx-auto max-w-2xl space-y-4 px-4 py-6">{children}</main>
@@ -74,15 +108,21 @@ export default async function EspaceClientPage({
       <Coquille>
         <Carte titre="Lien indisponible">
           <p className="text-sm text-foreground">
-            Ce lien n&apos;est plus valable (il a expiré ou a été remplacé). Contactez
-            votre conseiller Pergolab pour en recevoir un nouveau.
+            Ce lien n&apos;est plus valable (il a expiré ou a été remplacé).
+            Demandez-en un nouveau à votre conseiller.
           </p>
+          <Link
+            href="/espace"
+            className="mt-3 inline-flex rounded-lg bg-primary px-4 py-2 text-sm font-semibold text-primary-foreground hover:bg-primary/90"
+          >
+            Obtenir un nouveau lien
+          </Link>
         </Carte>
       </Coquille>
     );
   }
 
-  const [lead, etapesChantier, validation] = await Promise.all([
+  const [lead, etapesChantier, validation, infos] = await Promise.all([
     db.query.leads.findFirst({
       where: eq(leadsTable.id, leadId),
       with: {
@@ -104,6 +144,7 @@ export default async function EspaceClientPage({
       .where(and(eq(stagesTable.cycle, 3), eq(stagesTable.isPerdue, false)))
       .orderBy(asc(stagesTable.position)),
     validationCourante(leadId),
+    getInfosEntreprise(),
   ]);
   if (!lead) return null;
 
@@ -149,6 +190,8 @@ export default async function EspaceClientPage({
   const regle = lead.paiements.reduce((t, p) => t + Number(p.montant), 0);
   const reste = ttc != null ? Math.round((ttc - regle) * 100) / 100 : null;
   const facturesVisibles = lead.factures.filter(factureVisibleClient);
+  // Contacts joignables seulement (un nom sans téléphone ni email ne sert à rien).
+  const contacts = infos.contacts.filter((c) => c.telephone || c.email);
   const modeLabel = (m: string) => MODES_PAIEMENT.find((x) => x.value === m)?.label ?? m;
   // Nom tel que saisi (souvent « dupont jean », en minuscules) → « Dupont Jean ».
   const nomAffiche = lead.nom
@@ -157,7 +200,7 @@ export default async function EspaceClientPage({
     .replace(/(^|[\s'-])(\p{L})/gu, (_, sep: string, l: string) => sep + l.toUpperCase());
 
   return (
-    <Coquille>
+    <Coquille connecte>
       <div className="px-1">
         <h1 className="font-[family-name:var(--font-barlow)] text-2xl font-bold text-foreground">
           Bonjour {nomAffiche},
@@ -171,24 +214,26 @@ export default async function EspaceClientPage({
       {!annulee && validation?.statut === "demandee" ? (
         <section className="rounded-xl border-2 border-primary bg-white p-5 shadow-sm">
           <h2 className="mb-1 flex items-center gap-2 text-sm font-bold text-primary">
-            <ClipboardCheck className="size-4" /> Action requise : validez votre chantier
+            <ClipboardCheck className="size-4" /> Action requise : validez votre schéma de production
           </h2>
           <p className="mb-4 text-xs text-muted-foreground">
-            Quelques minutes suffisent. Votre validation déclenche la fabrication.
+            Vérifiez votre pergola telle qu&apos;elle sera fabriquée et précisez quelques détails de
+            pose. Quelques minutes suffisent : votre validation lance la fabrication.
           </p>
-          <ChatValidation
+          <SchemaForm
             jeton={jeton}
             validationId={validation.id}
             points={validation.points as PointValidation[]}
-            prenom={nomAffiche}
+            schema={lireSchema(validation.schema)}
             conseiller={lead.responsable?.nom ?? null}
+            photosActives={stockageClientDisponible()}
           />
         </section>
       ) : validation?.statut === "validee" ? (
         <section className="flex items-center gap-3 rounded-xl border border-emerald-200 bg-emerald-50 p-4 text-sm text-emerald-900">
           <CheckCircle2 className="size-5 shrink-0" />
           <span>
-            Vous avez validé votre chantier le <b>{formatHorodatage(validation.reponduAt)}</b>.
+            Vous avez validé votre schéma de production le <b>{formatHorodatage(validation.reponduAt)}</b>.
             Merci !
           </span>
         </section>
@@ -269,6 +314,49 @@ export default async function EspaceClientPage({
           ) : null}
         </Carte>
       )}
+
+      {contacts.length ? (
+        <Carte titre="Vos contacts">
+          <ul className="space-y-3">
+            {contacts.map((c) => (
+              <li key={c.nom} className="flex flex-wrap items-center gap-x-3 gap-y-1.5">
+                <div className="min-w-0 flex-1">
+                  <p className="text-sm font-semibold">{c.nom}</p>
+                  {c.role ? <p className="text-xs text-muted-foreground">{c.role}</p> : null}
+                </div>
+                {c.telephone ? (
+                  <a
+                    href={telHref(c.telephone)}
+                    className="inline-flex items-center gap-1.5 rounded-full bg-primary px-3 py-1.5 text-xs font-semibold text-primary-foreground hover:bg-primary/90"
+                  >
+                    <Phone className="size-3.5" /> {formatTelephone(c.telephone)}
+                  </a>
+                ) : null}
+                {c.email ? (
+                  <a
+                    href={`mailto:${c.email}`}
+                    className="inline-flex items-center gap-1.5 rounded-full border border-border px-3 py-1.5 text-xs font-semibold hover:bg-muted"
+                  >
+                    <Mail className="size-3.5" /> Email
+                  </a>
+                ) : null}
+              </li>
+            ))}
+          </ul>
+        </Carte>
+      ) : lead.responsable ? (
+        <Carte titre="Votre conseiller">
+          <p className="text-sm font-semibold">{lead.responsable.nom ?? "Pergolab"}</p>
+          {lead.responsable.email ? (
+            <a
+              href={`mailto:${lead.responsable.email}`}
+              className="mt-1 inline-flex items-center gap-1.5 text-sm text-primary hover:underline"
+            >
+              <Mail className="size-4" /> {lead.responsable.email}
+            </a>
+          ) : null}
+        </Carte>
+      ) : null}
 
       {devisSigne || autresDevis.length ? (
         <Carte titre={devisSigne ? "Votre devis signé" : "Vos devis"}>
@@ -381,7 +469,7 @@ export default async function EspaceClientPage({
         </Carte>
       ) : null}
 
-      {lead.documents.length ? (
+      {lead.documents.length && stockageClientDisponible() ? (
         <Carte titre="Vos documents">
           <ul className="divide-y divide-border">
             {lead.documents.map((d) => (
@@ -402,17 +490,78 @@ export default async function EspaceClientPage({
         </Carte>
       ) : null}
 
-      {lead.responsable ? (
-        <Carte titre="Votre conseiller">
-          <p className="text-sm font-semibold">{lead.responsable.nom ?? "Pergolab"}</p>
-          {lead.responsable.email ? (
-            <a
-              href={`mailto:${lead.responsable.email}`}
-              className="mt-1 inline-flex items-center gap-1.5 text-sm text-primary hover:underline"
-            >
-              <Mail className="size-4" /> {lead.responsable.email}
-            </a>
-          ) : null}
+      <Carte titre="Une question, un commentaire ?">
+        <MessageForm jeton={jeton} conseiller={lead.responsable?.nom ?? null} />
+      </Carte>
+
+      {infos.raisonSociale || infos.siret || infos.assurance || infos.garanties || infos.conditions ? (
+        <Carte titre="Votre installateur">
+          <div className="space-y-3 text-sm">
+            <div className="flex items-start gap-2">
+              <Building2 className="mt-0.5 size-4 shrink-0 text-muted-foreground" />
+              <div>
+                {infos.raisonSociale ? <p className="font-semibold">{infos.raisonSociale}</p> : null}
+                {infos.adresse ? <p className="text-muted-foreground">{infos.adresse}</p> : null}
+                <p className="text-xs text-muted-foreground">
+                  {[
+                    infos.siret ? `SIRET ${formatSiret(infos.siret)}` : null,
+                    infos.tvaIntracom ? `TVA ${infos.tvaIntracom}` : null,
+                  ]
+                    .filter(Boolean)
+                    .join(" · ")}
+                </p>
+                {infos.telephone || infos.email || infos.siteWeb ? (
+                  <p className="mt-1 flex flex-wrap gap-x-3 text-xs">
+                    {infos.telephone ? (
+                      <a href={telHref(infos.telephone)} className="text-primary hover:underline">
+                        {formatTelephone(infos.telephone)}
+                      </a>
+                    ) : null}
+                    {infos.email ? (
+                      <a href={`mailto:${infos.email}`} className="text-primary hover:underline">
+                        {infos.email}
+                      </a>
+                    ) : null}
+                    {/^https?:\/\//i.test(infos.siteWeb) ? (
+                      <a href={infos.siteWeb} target="_blank" rel="noopener noreferrer" className="text-primary hover:underline">
+                        {infos.siteWeb.replace(/^https?:\/\//i, "")}
+                      </a>
+                    ) : null}
+                  </p>
+                ) : null}
+              </div>
+            </div>
+            {infos.assurance ? (
+              <div className="flex items-start gap-2">
+                <ShieldCheck className="mt-0.5 size-4 shrink-0 text-emerald-700" />
+                <p>{infos.assurance}</p>
+              </div>
+            ) : null}
+            {infos.garanties ? (
+              <div className="rounded-lg bg-emerald-50 px-3 py-2">
+                <p className="text-xs font-semibold text-emerald-900">Vos garanties</p>
+                <p className="whitespace-pre-line text-emerald-950">{infos.garanties}</p>
+              </div>
+            ) : null}
+            {infos.conditions || infos.lienConditions ? (
+              <details className="rounded-lg border border-border px-3 py-2">
+                <summary className="cursor-pointer text-xs font-semibold">Nos conditions</summary>
+                {infos.conditions ? (
+                  <p className="mt-2 whitespace-pre-line text-xs text-muted-foreground">{infos.conditions}</p>
+                ) : null}
+                {infos.lienConditions ? (
+                  <a
+                    href={infos.lienConditions}
+                    target="_blank"
+                    rel="noopener noreferrer"
+                    className="mt-2 inline-block text-xs font-semibold text-primary hover:underline"
+                  >
+                    Conditions générales de vente complètes ↗
+                  </a>
+                ) : null}
+              </details>
+            ) : null}
+          </div>
         </Carte>
       ) : null}
 

@@ -453,6 +453,23 @@ export const accesClient = pgTable("acces_client", {
   revokedAt: timestamp("revoked_at", { withTimezone: true }),
   derniereVisite: timestamp("derniere_visite", { withTimezone: true }),
   nbVisites: integer("nb_visites").notNull().default(0),
+  // Dernier email « accéder à votre projet » envoyé (anti-rafale de la page de connexion).
+  dernierEnvoiAt: timestamp("dernier_envoi_at", { withTimezone: true }),
+});
+
+// ---------------------------------------------------------------------------
+// parametres — réglages globaux clé → valeur JSON (ex. « espace_client » :
+// contacts de confiance, SIRET, assurance, conditions affichés au client).
+// ---------------------------------------------------------------------------
+export const parametres = pgTable("parametres", {
+  cle: text("cle").primaryKey(),
+  valeur: jsonb("valeur").notNull(),
+  updatedAt: timestamp("updated_at", { withTimezone: true })
+    .notNull()
+    .defaultNow(),
+  updatedBy: uuid("updated_by").references(() => profiles.id, {
+    onDelete: "set null",
+  }),
 });
 
 // ---------------------------------------------------------------------------
@@ -470,7 +487,13 @@ export const validationsChantier = pgTable("validations_chantier", {
     .references(() => leads.id, { onDelete: "cascade" }),
   statut: text("statut").notNull().default("demandee"),
   points: jsonb("points").notNull(),
+  // Schéma de production figé à la demande (lib/schema-production.ts) : dimensions,
+  // pose, modèle et coloris, fermetures par côté, options, adresse, documents.
+  // Null = ancienne demande (chat simple, avant le schéma).
+  schema: jsonb("schema"),
   reponses: jsonb("reponses"),
+  // Précisions du client : côté maison, ouverture des lames, sol, photos (ids documents).
+  details: jsonb("details"),
   demandeeAt: timestamp("demandee_at", { withTimezone: true })
     .notNull()
     .defaultNow(),

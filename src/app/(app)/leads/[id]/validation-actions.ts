@@ -63,7 +63,7 @@ export async function demanderValidation(leadId: string) {
     .update(validationsChantier)
     .set({ statut: "annulee" })
     .where(and(eq(validationsChantier.leadId, leadId), eq(validationsChantier.statut, "demandee")));
-  await db.insert(validationsChantier).values({ leadId, points: r.points, demandeePar: userId });
+  await db.insert(validationsChantier).values({ leadId, points: r.points, schema: r.schema, demandeePar: userId });
 
   let jeton = (await lienActif(leadId))?.jeton ?? null;
   if (!jeton) {
@@ -75,7 +75,7 @@ export async function demanderValidation(leadId: string) {
     leadId,
     userId,
     type: "espace_client",
-    contenu: `Validation du chantier demandée au client (${r.points.length} points)`,
+    contenu: `Validation du schéma de production demandée au client (${r.points.length} points)`,
   });
   revalidatePath(`/leads/${leadId}`);
   return { ok: true as const, error: null, jeton };

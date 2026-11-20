@@ -47,6 +47,8 @@ import { FilActivite, type FilItem } from "./fil-activite";
 import { MetaReponses, extraireReponsesMeta } from "./meta-reponses";
 import { EspaceClient } from "./espace-client";
 import { lienActif } from "@/lib/espace-client";
+import type { DetailsClient } from "@/lib/schema-production";
+import { emailDisponible, stockageClientDisponible } from "@/lib/espace-client-config";
 import { MetreForm } from "./metre-form";
 import { ValidationChantier } from "./validation-chantier";
 import { validationCourante } from "@/lib/chantier-validation-server";
@@ -209,7 +211,9 @@ export default async function LeadPage({
       kind: "echange" as const,
       type: e.type,
       date: e.date,
-      auteur: e.auteur?.nom ?? e.auteur?.email ?? null,
+      // Message laissé par le client depuis son espace : auteur = le client.
+      auteur:
+        e.auteur?.nom ?? e.auteur?.email ?? (e.type === "commentaire_client" ? lead.nom : null),
       contenu: e.contenu ?? "",
     })),
   ];
@@ -304,7 +308,7 @@ export default async function LeadPage({
           auteur: d.auteur?.nom ?? d.auteur?.email ?? null,
           partage: d.partage,
         }))}
-        partageClient={isClient}
+        partageClient={isClient && stockageClientDisponible()}
       />
     </Bloc>
   );
@@ -687,6 +691,8 @@ export default async function LeadPage({
                 <Bloc titre="Espace client" id="espace-client" accent>
                   <EspaceClient
                     leadId={lead.id}
+                    emailClient={lead.email}
+                    emailActif={emailDisponible()}
                     acces={
                       accesEspace
                         ? {
@@ -712,6 +718,7 @@ export default async function LeadPage({
                               ip: validation.ip,
                               points: validation.points as PointValidation[],
                               reponses: (validation.reponses as Reponses | null) ?? null,
+                              details: (validation.details as DetailsClient | null) ?? null,
                             }
                           : null
                       }

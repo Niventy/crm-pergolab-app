@@ -1,5 +1,6 @@
 import {
   ClipboardCheck,
+  MessageCircle,
   Phone,
   RefreshCw,
   Mail,
@@ -58,6 +59,7 @@ const META: Record<string, { label: string; Icon: typeof Phone; cls: string }> =
   suppression: { label: "Corbeille", Icon: Trash2, cls: "bg-red-100 text-red-700" },
   restauration: { label: "Restauré", Icon: RotateCcw, cls: "bg-green-100 text-green-700" },
   espace_client: { label: "Espace client", Icon: ClipboardCheck, cls: "bg-cyan-100 text-cyan-800" },
+  commentaire_client: { label: "Message du client", Icon: MessageCircle, cls: "bg-cyan-600 text-white" },
 };
 
 const MENTION_ALL = /(@[\p{L}\p{N}._-]+)/gu;

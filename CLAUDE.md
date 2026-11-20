@@ -141,12 +141,33 @@ Annulée (`annulee`, perdue — commande annulée après signature).
   (`/espace/[jeton]/devis|facture|document/[id]` → redirection URL fraîche ; documents
   via `lib/supabase/admin.ts`, clé `SUPABASE_SERVICE_ROLE_KEY` serveur uniquement).
   **Pas de server action côté espace** : le middleware refuse (401) toute server action
-  sans session hors `/login`. Fiche : bouton « Espace client » + bloc (lien, validation).
+  sans session hors `/login`. Fiche : bouton « Espace client » + bloc (lien, validation,
+  « Envoyer l'accès par email »).
+  **Connexion** (`/espace`) : le client saisit son email → si fiche CLIENT (gagnée / cycle 3)
+  avec cet email, email Gmail « Accéder à mon projet » (`lib/espace-client-email.ts`,
+  boîte du responsable) ; recherche + envoi dans `after()` → réponse identique et même
+  durée que l'adresse soit connue ou non ; 1 envoi / 2 min / fiche (`dernier_envoi_at`).
+  Ouvrir le lien pose le cookie httpOnly `pl_espace` (middleware) → `/espace` redirige
+  vers le projet ; `/espace/deconnexion` l'efface. Pas de mot de passe.
+  **Confiance** : Réglages → Espace client (`parametres` clé `espace_client`,
+  `lib/infos-entreprise.ts`) = contacts (affichés s'ils ont tél. ou email, sinon le
+  responsable), raison sociale, SIRET, TVA, assurance, garanties, conditions.
+  **Message client** : POST `/espace/[jeton]/commentaire` → `echanges` type
+  `commentaire_client` (fil, auteur = client) + notification ; 10 / 24 h / fiche.
+  **Clés optionnelles** (`lib/espace-client-config.ts`) : sans vraie `SUPABASE_SERVICE_ROLE_KEY`,
+  documents ni partageables ni affichés ni à valider ; sans Gmail (`GOOGLE_*`), pas d'email
+  (page `/espace` = « utilisez le lien de votre conseiller », bouton fiche désactivé) —
+  tout s'active seul quand la variable est ajoutée sur Vercel (puis redéploiement).
 - **Métré & validation du chantier** : `leads.metre` (jsonb structuré, mm, pré-rempli du
   devis signé, écarts signalés à l'ADV — `lib/chantier-validation.ts`). « Demander la
   validation » fige les points (`validations_chantier.points` : adresse, dimensions, pose,
   modèle/coloris, équipements, remarques, documents « à valider ») ; le client répond
-  dans un chat GUIDÉ sans IA (`chat-validation.tsx`) → POST `/espace/[jeton]/validation`
+  dans le formulaire « Validez votre schéma de production » (`schema-form.tsx`, look du
+  configurateur de pergolab.fr : vue 3D + fermetures par côté, catalogue CRM ;
+  `lib/schema-production.ts`, figé dans `validations_chantier.schema`) : chaque point
+  Conforme / À corriger + précisions (`details` : côté maison si adossée, ouverture des
+  lames, sol, hauteur dispo, photos via POST `/espace/[jeton]/photo` → document interne
+  « Photo client — », clé service_role requise) → POST `/espace/[jeton]/validation`
   → `validee` (tout OK + case d'accord) ou `a_corriger` (commentaire obligatoire),
   IP + user-agent, journal `espace_client`, notification `validation_client` au
   responsable + métreur. Aucune avance d'étape automatique.
@@ -193,7 +214,8 @@ montant_ht, **montant_ttc**, **lignes** par taux, statut draft|finalized|supprim
 reference ; `leads.acompte_encaisse` / `paiement_espece` = SOMMES recalculées à
 chaque écriture, `paiements-actions.ts`) · taches · documents · notifications ·
 produits_catalogue · sur_mesure_mapping · options_configurateur · **poseurs** ·
-**acces_client** · **validations_chantier** (RLS sans politique) ; `leads.metre`, `documents.partage`.
+**acces_client** · **validations_chantier** (RLS sans politique) · **parametres** (clé → jsonb) ;
+`leads.metre`, `documents.partage`.
 **Client pro** : `leads.entreprise` (raison
 sociale) + `siret` + `tva_intracom` → Pennylane `company_customer` (type mémorisé dans
 `pennylane_customer_type`) ; sinon `individual_customer`.
