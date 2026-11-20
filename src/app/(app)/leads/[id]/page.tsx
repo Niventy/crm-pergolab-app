@@ -47,6 +47,19 @@ import { FilActivite, type FilItem } from "./fil-activite";
 import { MetaReponses, extraireReponsesMeta } from "./meta-reponses";
 import { EspaceClient } from "./espace-client";
 import { lienActif } from "@/lib/espace-client";
+import { MetreForm } from "./metre-form";
+import { ValidationChantier } from "./validation-chantier";
+import { validationCourante } from "@/lib/chantier-validation-server";
+import {
+  ecartsMetre,
+  lireMetre,
+  metreComplet,
+  metreDepuisDevis,
+  pergolaDuDevis,
+  type PointValidation,
+  type Reponses,
+  type StatutValidation,
+} from "@/lib/chantier-validation";
 
 export const dynamic = "force-dynamic";
 
@@ -159,7 +172,7 @@ export default async function LeadPage({
       ? [sql`regexp_replace(regexp_replace(coalesce(${leadsTable.telephone}, ''), '\\D', '', 'g'), '^33', '0') = ${telDigits}`]
       : []),
   ];
-  const [facturation, autresFiches, accesEspace] = await Promise.all([
+  const [facturation, autresFiches, accesEspace, validation] = await Promise.all([
     isClient ? etatFacturation(lead.id) : Promise.resolve(null),
     identites.length
       ? db.query.leads.findMany({
@@ -170,7 +183,13 @@ export default async function LeadPage({
         })
       : Promise.resolve([]),
     isClient ? lienActif(lead.id) : Promise.resolve(null),
+    isClient ? validationCourante(lead.id) : Promise.resolve(null),
   ]);
+  // Métré structuré + pergola du devis de référence (signé, sinon le plus récent retenu).
+  const metre = lireMetre(lead.metre);
+  const pergolaRef = pergolaDuDevis(
+    (lead.devis.find((d) => d.accepteAt) ?? lead.devis.find((d) => d.statut !== "Non retenu"))?.config ?? null,
+  );
   const devisAccepte = lead.devis.some((d) => d.accepteAt);
   const choixDevisRequis = isClient && lead.devis.length > 1 && !devisAccepte;
   const devisRef = facturation?.devisRef ?? null;
@@ -283,7 +302,9 @@ export default async function LeadPage({
           taille: d.taille,
           createdAt: d.createdAt,
           auteur: d.auteur?.nom ?? d.auteur?.email ?? null,
+          partage: d.partage,
         }))}
+        partageClient={isClient}
       />
     </Bloc>
   );
@@ -451,12 +472,22 @@ export default async function LeadPage({
           >
             {isClient ? "← Clients" : "← Kanban"}
           </Link>
-          <Link
-            href={`/leads/${lead.id}/modifier`}
-            className={buttonVariants({ variant: "outline", size: "sm" })}
-          >
-            Tout modifier
-          </Link>
+          <div className="flex items-center gap-2">
+            {isClient && !lead.deletedAt ? (
+              <a
+                href="#espace-client"
+                className={buttonVariants({ variant: "outline", size: "sm" })}
+              >
+                Espace client
+              </a>
+            ) : null}
+            <Link
+              href={`/leads/${lead.id}/modifier`}
+              className={buttonVariants({ variant: "outline", size: "sm" })}
+            >
+              Tout modifier
+            </Link>
+          </div>
         </div>
 
         {lead.deletedAt ? (
@@ -644,7 +675,16 @@ export default async function LeadPage({
                     }}
                   />
                 </Bloc>
-                <Bloc titre="Espace client" id="espace-client">
+                <Bloc titre="Métré" id="metre">
+                  <MetreForm
+                    leadId={lead.id}
+                    metre={metreComplet(metre) ? metre : null}
+                    prerempli={metreDepuisDevis(pergolaRef)}
+                    ecarts={ecartsMetre(metre, pergolaRef)}
+                    ancienTexte={lead.mesure}
+                  />
+                </Bloc>
+                <Bloc titre="Espace client" id="espace-client" accent>
                   <EspaceClient
                     leadId={lead.id}
                     acces={
@@ -659,6 +699,24 @@ export default async function LeadPage({
                         : null
                     }
                   />
+                  <div className="mt-3">
+                    <ValidationChantier
+                      leadId={lead.id}
+                      metreSaisi={metreComplet(metre)}
+                      validation={
+                        validation
+                          ? {
+                              statut: validation.statut as StatutValidation,
+                              demandeeAt: validation.demandeeAt.toISOString(),
+                              reponduAt: validation.reponduAt?.toISOString() ?? null,
+                              ip: validation.ip,
+                              points: validation.points as PointValidation[],
+                              reponses: (validation.reponses as Reponses | null) ?? null,
+                            }
+                          : null
+                      }
+                    />
+                  </div>
                 </Bloc>
                 <div id="argent" className="space-y-4">
                   {devisBloc}

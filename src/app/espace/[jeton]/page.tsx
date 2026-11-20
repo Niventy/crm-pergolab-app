@@ -1,11 +1,15 @@
 import type { Metadata } from "next";
 import { and, asc, eq } from "drizzle-orm";
-import { Check, FileText, Mail } from "lucide-react";
+import { Check, CheckCircle2, ClipboardCheck, Download, FileText, Mail, MessageSquareText } from "lucide-react";
 import { db } from "@/db";
 import { leads as leadsTable, stages as stagesTable } from "@/db/schema";
-import { devisVisibleClient, resoudreJeton } from "@/lib/espace-client";
+import { devisVisibleClient, factureVisibleClient, resoudreJeton } from "@/lib/espace-client";
+import { adresseChantier, type PointValidation } from "@/lib/chantier-validation";
+import { validationCourante } from "@/lib/chantier-validation-server";
+import { MODES_PAIEMENT } from "@/app/(app)/leads/[id]/paiements-meta";
+import { ChatValidation } from "./chat-validation";
 import { STAGE } from "@/lib/pipeline";
-import { formatDate, formatEurosCents, ymdParis } from "@/lib/format";
+import { formatDate, formatEurosCents, formatHorodatage, ymdParis } from "@/lib/format";
 
 // ESPACE CLIENT — page PUBLIQUE (hors du groupe (app) : pas de nav CRM, pas de
 // session). L'accès = le jeton de l'URL, vérifié à chaque requête. On n'affiche
@@ -78,7 +82,7 @@ export default async function EspaceClientPage({
     );
   }
 
-  const [lead, etapesChantier] = await Promise.all([
+  const [lead, etapesChantier, validation] = await Promise.all([
     db.query.leads.findFirst({
       where: eq(leadsTable.id, leadId),
       with: {
@@ -86,6 +90,12 @@ export default async function EspaceClientPage({
         responsable: true,
         poseurAffecte: true,
         devis: { orderBy: (d, { desc }) => [desc(d.createdAt)] },
+        documents: {
+          where: (d, { inArray }) => inArray(d.partage, ["client", "a_valider"]),
+          orderBy: (d, { desc }) => [desc(d.createdAt)],
+        },
+        factures: { orderBy: (f, { asc }) => [asc(f.createdAt)] },
+        paiements: { orderBy: (p, { asc }) => [asc(p.date), asc(p.createdAt)] },
       },
     }),
     db
@@ -93,6 +103,7 @@ export default async function EspaceClientPage({
       .from(stagesTable)
       .where(and(eq(stagesTable.cycle, 3), eq(stagesTable.isPerdue, false)))
       .orderBy(asc(stagesTable.position)),
+    validationCourante(leadId),
   ]);
   if (!lead) return null;
 
@@ -110,11 +121,12 @@ export default async function EspaceClientPage({
   const devisSigne = devisVisibles.find((d) => d.accepteAt);
   const autresDevis = devisSigne ? [] : devisVisibles;
 
-  // Une date absente n'affiche « à planifier » que si l'étape n'est pas encore
-  // passée (sinon : chantier posé avec « métré à planifier »…) ; passée → masquée.
+  // Une date absente n'affiche « à planifier » que si l'étape correspondante
+  // n'est pas encore ATTEINTE (sinon : « métré à planifier » sur un chantier
+  // déjà métré) ; atteinte sans date → ligne masquée.
   const passee = (code: string) => {
     const i = frise.findIndex((s) => s.code === code);
-    return i >= 0 && i <= idxCourant && (i < idxCourant || code === STAGE.POSEE);
+    return i >= 0 && i <= idxCourant;
   };
   const dates = [
     { label: "Prise de mesures", valeur: lead.dateMetre, etape: STAGE.METRE_REALISE },
@@ -129,11 +141,15 @@ export default async function EspaceClientPage({
       etape: STAGE.POSEE,
     },
   ].filter((d) => d.valeur || !passee(d.etape));
-  const adressePose =
-    lead.adressePose ||
-    [lead.adresse, [lead.codePostal, lead.ville].filter(Boolean).join(" ")]
-      .filter(Boolean)
-      .join(", ");
+  const adressePose = adresseChantier(lead);
+
+  // Règlement : base = TTC du lead UNIQUEMENT (jamais le HT) ; TTC inconnu ⇒
+  // ni reste ni « soldé ».
+  const ttc = lead.montantTtc != null ? Number(lead.montantTtc) : null;
+  const regle = lead.paiements.reduce((t, p) => t + Number(p.montant), 0);
+  const reste = ttc != null ? Math.round((ttc - regle) * 100) / 100 : null;
+  const facturesVisibles = lead.factures.filter(factureVisibleClient);
+  const modeLabel = (m: string) => MODES_PAIEMENT.find((x) => x.value === m)?.label ?? m;
   // Nom tel que saisi (souvent « dupont jean », en minuscules) → « Dupont Jean ».
   const nomAffiche = lead.nom
     .trim()
@@ -151,6 +167,40 @@ export default async function EspaceClientPage({
           {adressePose ? ` Chantier : ${adressePose}.` : null}
         </p>
       </div>
+
+      {!annulee && validation?.statut === "demandee" ? (
+        <section className="rounded-xl border-2 border-primary bg-white p-5 shadow-sm">
+          <h2 className="mb-1 flex items-center gap-2 text-sm font-bold text-primary">
+            <ClipboardCheck className="size-4" /> Action requise : validez votre chantier
+          </h2>
+          <p className="mb-4 text-xs text-muted-foreground">
+            Quelques minutes suffisent. Votre validation déclenche la fabrication.
+          </p>
+          <ChatValidation
+            jeton={jeton}
+            validationId={validation.id}
+            points={validation.points as PointValidation[]}
+            prenom={nomAffiche}
+            conseiller={lead.responsable?.nom ?? null}
+          />
+        </section>
+      ) : validation?.statut === "validee" ? (
+        <section className="flex items-center gap-3 rounded-xl border border-emerald-200 bg-emerald-50 p-4 text-sm text-emerald-900">
+          <CheckCircle2 className="size-5 shrink-0" />
+          <span>
+            Vous avez validé votre chantier le <b>{formatHorodatage(validation.reponduAt)}</b>.
+            Merci !
+          </span>
+        </section>
+      ) : validation?.statut === "a_corriger" ? (
+        <section className="flex items-center gap-3 rounded-xl border border-amber-200 bg-amber-50 p-4 text-sm text-amber-900">
+          <MessageSquareText className="size-5 shrink-0" />
+          <span>
+            Vos corrections ont été transmises le <b>{formatHorodatage(validation.reponduAt)}</b>.
+            Votre conseiller revient vers vous rapidement.
+          </span>
+        </section>
+      ) : null}
 
       {annulee ? (
         <Carte titre="Votre projet">
@@ -247,6 +297,104 @@ export default async function EspaceClientPage({
                   className="shrink-0 rounded-md border border-border px-3 py-1.5 text-xs font-semibold hover:bg-muted"
                 >
                   Voir le PDF
+                </a>
+              </li>
+            ))}
+          </ul>
+        </Carte>
+      ) : null}
+
+      {ttc != null || lead.paiements.length || facturesVisibles.length ? (
+        <Carte titre="Règlement">
+          {ttc != null ? (
+            <>
+              <div className="grid grid-cols-3 gap-2 text-center">
+                <div>
+                  <p className="text-xs text-muted-foreground">Total TTC</p>
+                  <p className="text-base font-bold">{formatEurosCents(ttc)}</p>
+                </div>
+                <div>
+                  <p className="text-xs text-muted-foreground">Déjà réglé</p>
+                  <p className="text-base font-bold text-emerald-700">{formatEurosCents(regle)}</p>
+                </div>
+                <div>
+                  <p className="text-xs text-muted-foreground">Reste à régler</p>
+                  <p className="text-base font-bold">
+                    {reste != null && reste <= 0 ? (
+                      <span className="text-emerald-700">Soldé</span>
+                    ) : (
+                      formatEurosCents(reste)
+                    )}
+                  </p>
+                </div>
+              </div>
+              <div className="mt-3 h-2 overflow-hidden rounded-full bg-slate-100">
+                <div
+                  className="h-full rounded-full bg-emerald-600"
+                  style={{ width: `${Math.min(100, ttc > 0 ? (regle / ttc) * 100 : 0)}%` }}
+                />
+              </div>
+            </>
+          ) : null}
+
+          {lead.paiements.length ? (
+            <ul className="mt-4 divide-y divide-border border-t border-border">
+              {lead.paiements.map((p) => (
+                <li key={p.id} className="flex items-center justify-between py-2 text-sm">
+                  <span>
+                    {formatDate(p.date)}
+                    <span className="text-muted-foreground"> · {modeLabel(p.mode)}</span>
+                  </span>
+                  <span className="font-semibold">{formatEurosCents(p.montant)}</span>
+                </li>
+              ))}
+            </ul>
+          ) : null}
+
+          {facturesVisibles.length ? (
+            <div className="mt-4 space-y-2 border-t border-border pt-3">
+              <p className="text-xs font-semibold text-muted-foreground">Factures</p>
+              {facturesVisibles.map((f) => (
+                <div key={f.id} className="flex items-center gap-3">
+                  <FileText className="size-5 shrink-0 text-muted-foreground" />
+                  <div className="min-w-0 flex-1 text-sm">
+                    <p className="font-semibold">
+                      Facture {f.type === "acompte" ? "d\u2019acompte" : "de solde"} {f.numero ?? ""}
+                    </p>
+                    <p className="text-xs text-muted-foreground">
+                      {formatDate(ymdParis(f.createdAt))}
+                      {f.montantTtc ? ` · ${formatEurosCents(f.montantTtc)} TTC` : null}
+                    </p>
+                  </div>
+                  <a
+                    href={`/espace/${jeton}/facture/${f.id}`}
+                    target="_blank"
+                    rel="noopener noreferrer"
+                    className="shrink-0 rounded-md border border-border px-3 py-1.5 text-xs font-semibold hover:bg-muted"
+                  >
+                    Voir le PDF
+                  </a>
+                </div>
+              ))}
+            </div>
+          ) : null}
+        </Carte>
+      ) : null}
+
+      {lead.documents.length ? (
+        <Carte titre="Vos documents">
+          <ul className="divide-y divide-border">
+            {lead.documents.map((d) => (
+              <li key={d.id} className="flex items-center gap-3 py-2 first:pt-0 last:pb-0">
+                <FileText className="size-5 shrink-0 text-muted-foreground" />
+                <p className="min-w-0 flex-1 truncate text-sm font-medium">{d.nom}</p>
+                <a
+                  href={`/espace/${jeton}/document/${d.id}`}
+                  target="_blank"
+                  rel="noopener noreferrer"
+                  className="inline-flex shrink-0 items-center gap-1 rounded-md border border-border px-3 py-1.5 text-xs font-semibold hover:bg-muted"
+                >
+                  <Download className="size-3.5" /> Ouvrir
                 </a>
               </li>
             ))}

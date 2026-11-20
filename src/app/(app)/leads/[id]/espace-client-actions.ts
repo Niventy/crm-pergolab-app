@@ -64,7 +64,7 @@ export async function creerLienEspaceClient(leadId: string) {
   await db.insert(echanges).values({
     leadId,
     userId,
-    type: "modification",
+    type: "espace_client",
     contenu: remplace.length
       ? "Espace client : nouveau lien (l'ancien ne fonctionne plus)"
       : "Espace client : lien créé",
@@ -86,7 +86,7 @@ export async function revoquerLienEspaceClient(leadId: string) {
     await db.insert(echanges).values({
       leadId,
       userId,
-      type: "modification",
+      type: "espace_client",
       contenu: "Espace client : accès coupé",
     });
   }

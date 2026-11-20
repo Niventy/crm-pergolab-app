@@ -15,7 +15,14 @@ import { toast } from "sonner";
 import { tempsRelatif } from "@/lib/format";
 import { ouvrirDans } from "@/lib/ouvrir-dans";
 import { ConfirmDialog } from "@/components/confirm-dialog";
-import { uploadDocument, getDocumentUrl, deleteDocument } from "./documents-actions";
+import { PARTAGES } from "@/lib/chantier-validation";
+import { cn } from "@/lib/utils";
+import {
+  uploadDocument,
+  getDocumentUrl,
+  deleteDocument,
+  setPartageDocument,
+} from "./documents-actions";
 
 export type DocItem = {
   id: string;
@@ -24,6 +31,13 @@ export type DocItem = {
   taille: number | null;
   createdAt: Date | string;
   auteur: string | null;
+  partage: string;
+};
+
+const PARTAGE_CLS: Record<string, string> = {
+  interne: "border-border text-muted-foreground",
+  client: "border-sky-300 bg-sky-50 text-sky-800",
+  a_valider: "border-amber-300 bg-amber-50 text-amber-800",
 };
 
 function formatTaille(o: number | null): string {
@@ -44,9 +58,12 @@ function IconeType({ mime }: { mime: string | null }) {
 export function Documents({
   leadId,
   docs,
+  partageClient = false,
 }: {
   leadId: string;
   docs: DocItem[];
+  /** Fiche client : choix du partage avec l'espace client. */
+  partageClient?: boolean;
 }) {
   const router = useRouter();
   const inputRef = useRef<HTMLInputElement>(null);
@@ -72,6 +89,15 @@ export function Documents({
   function ouvrir(id: string) {
     setBusyId(id);
     ouvrirDans(() => getDocumentUrl(id), () => setBusyId(null));
+  }
+
+  function partager(id: string, partage: string) {
+    setBusyId(id);
+    setPartageDocument(id, partage).then((r) => {
+      setBusyId(null);
+      if (r.ok) router.refresh();
+      else toast.error(r.error ?? "Échec");
+    });
   }
 
   function supprimer() {
@@ -135,6 +161,25 @@ export function Documents({
                     .join(" · ")}
                 </div>
               </div>
+              {partageClient ? (
+                <select
+                  value={d.partage}
+                  onChange={(e) => partager(d.id, e.target.value)}
+                  disabled={busyId === d.id}
+                  aria-label="Partage avec l'espace client"
+                  title="Partage avec l'espace client"
+                  className={cn(
+                    "rounded-md border px-1.5 py-1 text-xs font-medium outline-none",
+                    PARTAGE_CLS[d.partage] ?? PARTAGE_CLS.interne,
+                  )}
+                >
+                  {PARTAGES.map((p) => (
+                    <option key={p.value} value={p.value}>
+                      {p.label}
+                    </option>
+                  ))}
+                </select>
+              ) : null}
               <button
                 type="button"
                 onClick={() => ouvrir(d.id)}

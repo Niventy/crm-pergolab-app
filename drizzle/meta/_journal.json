@@ -281,6 +281,20 @@
       "when": 1795164105936,
       "tag": "0039_acces_client_rls",
       "breakpoints": true
+    },
+    {
+      "idx": 40,
+      "version": "7",
+      "when": 1795165942621,
+      "tag": "0040_friendly_iron_patriot",
+      "breakpoints": true
+    },
+    {
+      "idx": 41,
+      "version": "7",
+      "when": 1795165945468,
+      "tag": "0041_validations_chantier_rls",
+      "breakpoints": true
     }
   ]
 }

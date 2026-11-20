@@ -67,6 +67,7 @@ alter table public.options_configurateur enable row level security;
 alter table public.poseurs            enable row level security;
 -- Espace client : jetons d'accès → RLS SANS politique (REST fermée à tous).
 alter table public.acces_client       enable row level security;
+alter table public.validations_chantier enable row level security;
 
 drop policy if exists "poseurs_all_authenticated" on public.poseurs;
 create policy "poseurs_all_authenticated"

@@ -179,7 +179,11 @@ export const leads = pgTable("leads", {
   equipePose: text("equipe_pose"), // texte libre (ancienne saisie / précision de pose)
   // Poseur choisi dans la liste `poseurs` (prioritaire à l'affichage).
   poseurId: uuid("poseur_id").references(() => poseurs.id, { onDelete: "set null" }),
-  mesure: text("mesure"), // nombre de kilo / métré
+  mesure: text("mesure"), // nombre de kilo / métré (ancien texte libre)
+  // Métré STRUCTURÉ saisi par le métreur (pré-rempli depuis le devis signé) :
+  // { largeurMm, avanceeMm, hauteurMm, pose, remarques, saisiAt, saisiPar }.
+  // C'est ce que le client valide dans le chat de l'espace client.
+  metre: jsonb("metre"),
   // Dossier administratif : factures de solde + date d'envoi du dossier.
   factureSoldeClient: boolean("facture_solde_client").notNull().default(false),
   factureSoldePoseur: boolean("facture_solde_poseur").notNull().default(false),
@@ -373,6 +377,9 @@ export const documents = pgTable("documents", {
   chemin: text("chemin").notNull(), // chemin dans le bucket
   mime: text("mime"),
   taille: integer("taille"), // octets
+  // Partage avec l'espace client : « interne » (défaut, jamais montré) ·
+  // « client » (consultable) · « a_valider » (présenté dans le chat de validation).
+  partage: text("partage").notNull().default("interne"),
   userId: uuid("user_id").references(() => profiles.id, {
     onDelete: "set null",
   }),
@@ -446,6 +453,33 @@ export const accesClient = pgTable("acces_client", {
   revokedAt: timestamp("revoked_at", { withTimezone: true }),
   derniereVisite: timestamp("derniere_visite", { withTimezone: true }),
   nbVisites: integer("nb_visites").notNull().default(0),
+});
+
+// ---------------------------------------------------------------------------
+// validations_chantier — validation du chantier par le client (chat guidé de
+// l'espace client). `points` = INSTANTANÉ de ce qui lui est présenté (adresse,
+// métré, pose, coloris, équipements, documents à valider), figé à la demande :
+// le client valide exactement ce texte. `reponses` = { [cle]: { ok, commentaire } }.
+// statut : demandee → validee | a_corriger ; annulee (remplacée / retirée).
+// RLS activée SANS politique (REST fermée), comme acces_client.
+// ---------------------------------------------------------------------------
+export const validationsChantier = pgTable("validations_chantier", {
+  id: uuid("id").primaryKey().defaultRandom(),
+  leadId: uuid("lead_id")
+    .notNull()
+    .references(() => leads.id, { onDelete: "cascade" }),
+  statut: text("statut").notNull().default("demandee"),
+  points: jsonb("points").notNull(),
+  reponses: jsonb("reponses"),
+  demandeeAt: timestamp("demandee_at", { withTimezone: true })
+    .notNull()
+    .defaultNow(),
+  demandeePar: uuid("demandee_par").references(() => profiles.id, {
+    onDelete: "set null",
+  }),
+  reponduAt: timestamp("repondu_at", { withTimezone: true }),
+  ip: text("ip"),
+  userAgent: text("user_agent"),
 });
 
 // ---------------------------------------------------------------------------
@@ -576,3 +610,4 @@ export type Document = typeof documents.$inferSelect;
 export type Notification = typeof notifications.$inferSelect;
 export type Facture = typeof factures.$inferSelect;
 export type Paiement = typeof paiements.$inferSelect;
+export type ValidationChantier = typeof validationsChantier.$inferSelect;

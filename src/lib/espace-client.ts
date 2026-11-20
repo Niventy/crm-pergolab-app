@@ -71,3 +71,9 @@ export function devisVisibleClient(d: {
 }): boolean {
   return !!d.externalId && (!!d.accepteAt || d.statut === "Envoyé" || d.statut === "Signé");
 }
+
+// Facture montrée au client : validée dans Pennylane (statut finalized, upcoming,
+// paid…), jamais un brouillon ni une facture disparue de Pennylane.
+export function factureVisibleClient(f: { externalId: string | null; statut: string | null }): boolean {
+  return !!f.externalId && !!f.statut && f.statut !== "draft" && f.statut !== "supprimee";
+}

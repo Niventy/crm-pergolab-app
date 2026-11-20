@@ -6,6 +6,7 @@ import { db } from "@/db";
 import { documents } from "@/db/schema";
 import { currentUserId } from "@/lib/current-user";
 import { createClient } from "@/lib/supabase/server";
+import { estPartage } from "@/lib/chantier-validation";
 
 const BUCKET = "documents";
 const MAX = 25 * 1024 * 1024; // 25 Mo
@@ -70,6 +71,21 @@ export async function deleteDocument(id: string) {
   const sb = await createClient();
   await sb.storage.from(BUCKET).remove([d.chemin]);
   await db.delete(documents).where(eq(documents.id, id));
+  revalidatePath(`/leads/${d.leadId}`);
+  return { ok: true as const, error: null };
+}
+
+// Partage d'un document avec l'espace client : interne · visible · à valider.
+export async function setPartageDocument(id: string, partage: string) {
+  const userId = await currentUserId();
+  if (!userId) return { ok: false as const, error: "Non connecté." };
+  if (!estPartage(partage)) return { ok: false as const, error: "Partage inconnu." };
+  const [d] = await db
+    .update(documents)
+    .set({ partage })
+    .where(eq(documents.id, id))
+    .returning({ leadId: documents.leadId });
+  if (!d) return { ok: false as const, error: "Introuvable." };
   revalidatePath(`/leads/${d.leadId}`);
   return { ok: true as const, error: null };
 }

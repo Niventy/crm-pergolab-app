@@ -131,6 +131,25 @@ Annulée (`annulee`, perdue — commande annulée après signature).
   Colonne droite : client du devis **éditable** (nom, adresse, CP, ville → poussés
   dans Pennylane) + aperçu : récapitulatif vivant avant création, PDF Pennylane après.
   Config persistée (`devis.config`) ; statuts Brouillon → Envoyé → Signé / Non retenu.
+- **Espace client** (`/espace/<jeton>`, PUBLIC, hors du groupe `(app)`) : lien magique
+  par fiche client (`acces_client` : jeton 256 bits, un actif par fiche, 18 mois,
+  révocable ; `lib/espace-client.ts › resoudreJeton` vérifie TOUT accès). Montre :
+  validation demandée (chat), avancement (libellés client des étapes cycle 3), dates,
+  poseur, devis signé/envoyés (`devisVisibleClient`), règlement (base `montant_ttc`,
+  paiements, factures non brouillon `factureVisibleClient`), documents `partage` =
+  client | a_valider (jamais `interne`), conseiller. Fichiers servis par routes GET
+  (`/espace/[jeton]/devis|facture|document/[id]` → redirection URL fraîche ; documents
+  via `lib/supabase/admin.ts`, clé `SUPABASE_SERVICE_ROLE_KEY` serveur uniquement).
+  **Pas de server action côté espace** : le middleware refuse (401) toute server action
+  sans session hors `/login`. Fiche : bouton « Espace client » + bloc (lien, validation).
+- **Métré & validation du chantier** : `leads.metre` (jsonb structuré, mm, pré-rempli du
+  devis signé, écarts signalés à l'ADV — `lib/chantier-validation.ts`). « Demander la
+  validation » fige les points (`validations_chantier.points` : adresse, dimensions, pose,
+  modèle/coloris, équipements, remarques, documents « à valider ») ; le client répond
+  dans un chat GUIDÉ sans IA (`chat-validation.tsx`) → POST `/espace/[jeton]/validation`
+  → `validee` (tout OK + case d'accord) ou `a_corriger` (commentaire obligatoire),
+  IP + user-agent, journal `espace_client`, notification `validation_client` au
+  responsable + métreur. Aucune avance d'étape automatique.
 - Téléphones : affichés via `formatTelephone` (« 06 58 24 33 61 »), liens via `telHref` (+33…).
 - **Planning** (`/emploi-du-temps`) : files personnelles (RDV, relances, rappels,
   devis, sommeil, chantiers) + tâches + agenda Google.
@@ -173,7 +192,8 @@ montant_ht, **montant_ttc**, **lignes** par taux, statut draft|finalized|supprim
 **paiements** (lead_id, date, montant, mode virement|cheque|cb|especes|financement|autre,
 reference ; `leads.acompte_encaisse` / `paiement_espece` = SOMMES recalculées à
 chaque écriture, `paiements-actions.ts`) · taches · documents · notifications ·
-produits_catalogue · sur_mesure_mapping · options_configurateur · **poseurs**.
+produits_catalogue · sur_mesure_mapping · options_configurateur · **poseurs** ·
+**acces_client** · **validations_chantier** (RLS sans politique) ; `leads.metre`, `documents.partage`.
 **Client pro** : `leads.entreprise` (raison
 sociale) + `siret` + `tva_intracom` → Pennylane `company_customer` (type mémorisé dans
 `pennylane_customer_type`) ; sinon `individual_customer`.

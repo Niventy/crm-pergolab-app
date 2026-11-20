@@ -2,7 +2,7 @@
 
 import { useState } from "react";
 import { useRouter } from "next/navigation";
-import { Bell, AtSign, UserCheck, CheckCheck } from "lucide-react";
+import { Bell, AtSign, UserCheck, CheckCheck, ClipboardCheck } from "lucide-react";
 import { cn } from "@/lib/utils";
 import { tempsRelatif } from "@/lib/format";
 import {
@@ -15,6 +15,8 @@ function Icone({ type }: { type: string }) {
   if (type === "mention") return <AtSign className="size-3.5 text-violet-600" />;
   if (type === "attribution")
     return <UserCheck className="size-3.5 text-primary" />;
+  if (type === "validation_client")
+    return <ClipboardCheck className="size-3.5 text-cyan-700" />;
   return <Bell className="size-3.5 text-muted-foreground" />;
 }
 
